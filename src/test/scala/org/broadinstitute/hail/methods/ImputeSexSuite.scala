@@ -86,8 +86,11 @@ class ImputeSexSuite extends SparkSuite {
           }
 
           val countAnnotated = AnnotateVariantsExpr.run(s,
-            Array("-c", "va.maf = gs.stats(g.nNonRefAlleles).sum / (gs.count(true) * 2)"))
+            Array("-c", "va.maf = gs.stats(g.nNonRefAlleles).sum / (gs.count(g.isCalled) * 2)"))
           val sexcheck2 = ImputeSex.run(countAnnotated, Array("--pop-freq", "va.maf"))
+
+          println(sexcheck2.vds.sampleAnnotations)
+          println(s.vds.sampleAnnotations)
 
           result && sexcheck2.vds.sampleAnnotations == s.vds.sampleAnnotations
         }

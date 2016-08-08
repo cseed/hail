@@ -137,6 +137,7 @@ object VariantSampleMatrix {
         metadata.copy(sampleIds = IndexedSeq.empty[String],
           sampleAnnotations = IndexedSeq.empty[Annotation]),
         df.select("variant", "annotations")
+          .rdd
           .map(row => (row.getVariant(0),
             (if (vaRequiresConversion) SparkAnnotationImpex.importAnnotation(row.get(1), vaSignature) else row.get(1),
               Iterable.empty[Genotype]))))
@@ -175,7 +176,7 @@ object VariantSampleMatrix {
       df.schema.fieldIndex(field.name)
     }
 
-    val rdd: RDD[(Variant, (Annotation, Iterable[Genotype]))] = df.map { row =>
+    val rdd: RDD[(Variant, (Annotation, Iterable[Genotype]))] = df.rdd.map { row =>
       val importedRow = KuduAnnotationImpex.importAnnotation(
         KuduAnnotationImpex.reorder(row, indices), rowType).asInstanceOf[Row]
       val v = importedRow.getVariant(0)
@@ -220,16 +221,16 @@ case class VSMSubgen[T](
 
   def gen(sc: SparkContext)(implicit tct: ClassTag[T]): Gen[VariantSampleMatrix[T]] =
     for (vaSig <- vaSigGen;
-         saSig <- saSigGen;
-         globalSig <- globalSigGen;
-         sampleIds <- sampleIdGen;
-         global <- globalGen(globalSig);
-         saValues <- saGen(sampleIds.length, saSig);
-         rows <- Gen.distinctBuildableOf[Seq, (Variant, (Annotation, Iterable[T]))](
-           for (v <- vGen;
-                va <- vaGen(vaSig);
-                ts <- Gen.buildableOfN[Iterable, T](sampleIds.length, tGen(v)))
-             yield (v, (va, ts))))
+      saSig <- saSigGen;
+      globalSig <- globalSigGen;
+      sampleIds <- sampleIdGen;
+      global <- globalGen(globalSig);
+      saValues <- saGen(sampleIds.length, saSig);
+      rows <- Gen.distinctBuildableOf[Seq, (Variant, (Annotation, Iterable[T]))](
+        for (v <- vGen;
+          va <- vaGen(vaSig);
+          ts <- Gen.buildableOfN[Iterable, T](sampleIds.length, tGen(v)))
+          yield (v, (va, ts))))
       yield VariantSampleMatrix[T](VariantMetadata(sampleIds, saValues, global, saSig, vaSig, globalSig), sc.parallelize(rows))
 }
 
@@ -892,9 +893,14 @@ class RichVDS(vds: VariantDataset) {
       kuduContext.createTable(tableName, schema, keys,
         KuduUtils.createTableOptions(schema, keys, seqDict, rowsPerPartition))
     }
+
+    /*
     df.write
       .options(Map("kudu.master" -> master, "kudu.table" -> tableName))
       .mode("append").kudu
+      */
+
+    ???
 
     println("Written to Kudu")
   }

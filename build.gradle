@@ -35,7 +35,7 @@ mainClassName = "org.broadinstitute.hail.driver.Main"
 
 String scalaVersion = '2.10.4'
 String scalaMajorVersion = '2.10'
-String sparkVersion = System.getProperty("hail.sparkversion","1.5.0")
+String sparkVersion = System.getProperty("hail.sparkversion","2.0.0")
 // String scalaVersion = '2.11.7'
 // String scalaMajorVersion = '2.11'
 
@@ -48,7 +48,7 @@ compileJava {
 
 compileScala {
     // scalaCompileOptions.compilerArgs << "-Xfatal-warnings"
-    scalaCompileOptions.additionalParameters = ["-feature", "-Xfatal-warnings"]
+    scalaCompileOptions.additionalParameters = ["-feature", "-deprecation"] // "-Xfatal-warnings"
     // scalaCompileOptions.forkOptions.jvmArgs = ['-XX:MaxPermSize=512m']
 }
 
