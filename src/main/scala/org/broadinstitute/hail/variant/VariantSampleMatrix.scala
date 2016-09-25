@@ -655,9 +655,19 @@ class VariantSampleMatrix[T](val metadata: VariantMetadata,
     }
     if (!metadataSame)
       println("metadata were not the same")
+
+    val leftCount = rdd.count()
+    val rightCount = that.rdd.count()
+    if (leftCount != rightCount)
+      println(
+        s"""different rdd counts:
+            |  left: $leftCount
+            |  right: $rightCount""".stripMargin)
+
     val vaSignatureBc = sparkContext.broadcast(vaSignature)
     var printed = false
     metadataSame &&
+      leftCount == rightCount &&
       rdd
         .fullOuterJoin(that.rdd)
         .forall {

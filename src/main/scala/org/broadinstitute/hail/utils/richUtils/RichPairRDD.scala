@@ -43,9 +43,9 @@ class RichPairRDD[K, V](val rdd: RDD[(K, V)]) extends AnyVal {
     OrderedRDD.shuffle(rdd, partitioner)
   }
 
-  def toOrderedRDD[PK](reducedRepresentation: RDD[K])
+  def toOrderedRDD[PK](reducedRepresentation: RDD[K], filterPartitionSorted: Boolean = false)
     (implicit kOk: OrderedKey[PK, K], vct: ClassTag[V]): OrderedRDD[PK, K, V] =
-    OrderedRDD[PK, K, V](rdd, Some(reducedRepresentation), None)
+    OrderedRDD[PK, K, V](rdd, Some(reducedRepresentation), None, filterPartitionSorted)
 
   def toOrderedRDD[PK](hintPartitioner: OrderedPartitioner[PK, K])
     (implicit kOk: OrderedKey[PK, K], vct: ClassTag[V]): OrderedRDD[PK, K, V] =

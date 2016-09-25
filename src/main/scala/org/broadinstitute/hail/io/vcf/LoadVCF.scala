@@ -164,7 +164,8 @@ object LoadVCF {
     nPartitions: Option[Int] = None,
     skipGenotypes: Boolean = false,
     ppAsPL: Boolean = false,
-    skipBadAD: Boolean = false): VariantDataset = {
+    skipBadAD: Boolean = false,
+    filterPartitionSorted: Boolean = false): VariantDataset = {
 
     val settings = VCFSettings(storeGQ, skipGenotypes, compress, ppAsPL, skipBadAD)
 
@@ -278,7 +279,7 @@ object LoadVCF {
           }
         }.value
         }
-      }.toOrderedRDD(justVariants)
+      }.toOrderedRDD(justVariants, filterPartitionSorted = filterPartitionSorted)
 
     justVariants.unpersist()
 

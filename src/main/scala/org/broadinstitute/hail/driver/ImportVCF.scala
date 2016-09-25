@@ -66,6 +66,9 @@ object ImportVCF extends Command with VCFImporter {
     @Args4jOption(name = "--skip-bad-ad", usage = "Set to missing all AD fields with the wrong number of elements")
     var skipBadAD: Boolean = false
 
+    @Args4jOption(name = "--filter-partition-sorted", usage = "Filter to enforce partition sortedness")
+    var filterPartitionSorted: Boolean = false
+
     @Argument(usage = "<files...>")
     var arguments: java.util.ArrayList[String] = new java.util.ArrayList[String]()
   }
@@ -104,7 +107,8 @@ object ImportVCF extends Command with VCFImporter {
       None,
     options.skipGenotypes,
     options.ppAsPL,
-    options.skipBadAD)
+    options.skipBadAD,
+    options.filterPartitionSorted)
 
     state.sc.hadoopConfiguration.set("io.compression.codecs",codecs)
 
