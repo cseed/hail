@@ -104,15 +104,21 @@ object OrderedRDD {
           val partitioner = OrderedPartitioner[PK, K](sortedKeyInfo.init.map(_.max), sortedKeyInfo.length)
 
           val adjustedPartitions = Array.tabulate[Array[Adjustment[(K, V)]]](sortedKeyInfo.length) { i =>
-            val pi = sortedKeyInfo(i).partIndex
-            val adj: Adjustment[(K, V)] = if (i == 0 ||
-              sortedKeyInfo(i - 1).max < sortedKeyInfo(i - 1).min)
-              Adjustment(pi, identity)
-            else
-              Adjustment(pi, it => it.filter { case (k, v) =>
-                kOk.project(k) > sortedKeyInfo(i - 1).max
-              })
-            Array(adj)
+            val cur = sortedKeyInfo(i)
+            val f: Iterator[(K, V)] => Iterator[(K, V)] =
+              if (i == 0)
+                identity
+              else {
+                val prev = sortedKeyInfo(i - 1)
+                val prevMax = prev.max
+                if (cur.min > prevMax)
+                  identity
+                else
+                  _.filter { case (k, v) =>
+                    kOk.project(k) > prevMax
+                  }
+              }
+            Array(Adjustment(cur.partIndex, f))
           }
           val adjustedRDD = new AdjustedPartitionsRDD(rdd, adjustedPartitions)
 
@@ -144,7 +150,9 @@ object OrderedRDD {
             it.toArray.sortBy(_._1).iterator
           }, partitioner))
       }
-    } else {
+    }
+
+    else {
       info("Ordering unsorted dataset with network shuffle")
       val p = hintPartitioner
         .filter(_.numPartitions >= rdd.partitions.length)
