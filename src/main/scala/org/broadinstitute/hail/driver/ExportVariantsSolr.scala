@@ -5,8 +5,8 @@ import java.util
 import org.apache.solr.client.solrj.SolrResponse
 import org.apache.solr.client.solrj.impl.{CloudSolrClient, HttpSolrClient}
 import org.apache.solr.client.solrj.request.schema.SchemaRequest
-import org.apache.solr.client.solrj.request.CollectionAdminRequest
 import org.apache.solr.common.{SolrException, SolrInputDocument}
+import org.apache.solr.util.SolrCLI
 import org.broadinstitute.hail.utils._
 import org.broadinstitute.hail.expr._
 import org.kohsuke.args4j.{Option => Args4jOption}
@@ -19,8 +19,7 @@ import scala.util.Random
 object ExportVariantsSolr extends Command with Serializable {
 
   class Options extends BaseOptions {
-    @Args4jOption(name = "-c",
-      usage = "SolrCloud collection")
+    @Args4jOption(required = true, name = "-c", usage = "SolrCloud collection")
     var collection: String = _
 
     @Args4jOption(name = "--export-missing", usage = "export missing genotypes")
@@ -46,13 +45,16 @@ object ExportVariantsSolr extends Command with Serializable {
     var zkHost: String = _
 
     @Args4jOption(name = "-d", aliases = Array("--drop"),
-      usage = "delete and re-create solr collection before exporting")
+      usage = "delete Solr collection before exporting")
     var drop: Boolean = false
 
-    @Args4jOption(name = "-s", aliases = Array("--num-shards"),
-      usage = "number of shards to split the collection into. Default: 1")
+    @Args4jOption(name = "-n", aliases = Array("--num-shards"),
+      usage = "number of shards to use when creating collection")
     var numShards: Int = 1
 
+    @Args4jOption(required = true, name = "-s", aliases = Array("--solr-install-dir"),
+      usage = "Solr installation directory, for example: /local/software/solr-6.2.1")
+    var solrInstallDir: String = _
   }
 
   def newOptions = new Options
@@ -109,9 +111,8 @@ object ExportVariantsSolr extends Command with Serializable {
         if (xi != null)
           document.addField(name, xi)
       }
-    } else
-      if (value != null)
-        document.addField(name, value)
+    } else if (value != null)
+      document.addField(name, value)
   }
 
   def processResponse(action: String, res: SolrResponse) {
@@ -152,6 +153,7 @@ object ExportVariantsSolr extends Command with Serializable {
     val exportRef = options.exportRef
     val drop = options.drop
     val numShards = options.numShards
+    val solrInstallDir = options.solrInstallDir
 
     val vSymTab = Map(
       "v" -> (0, TVariant),
@@ -184,9 +186,50 @@ object ExportVariantsSolr extends Command with Serializable {
     if (zkHost != null && collection == null)
       fatal("-c required with -z")
 
+    if (drop) {
+      var args = Array("-name", collection, "-deleteConfig", "true", "-verbose")
+      if (url != null)
+        args ++= Array("-solrUrl", url)
+      else
+        args ++= Array("-zkHost", zkHost)
+
+      val deleteTool = new SolrCLI.DeleteTool()
+      val commandLine = SolrCLI.processCommandLineArgs(SolrCLI.joinCommonAndToolOptions(deleteTool.getOptions), args)
+
+      val es = deleteTool.runTool(commandLine)
+      if (es != 0)
+        warn(s"delete failed with exit status: $es")
+      else
+        info(s"deleted collection $collection")
+    }
+
+    var createArgs = Array("-name", collection,
+      "-confdir", "data_driven_schema_configs",
+      "-configsetsDir", solrInstallDir + "/server/solr/configsets",
+      "-verbose")
+
+    val createTool =
+      if (url != null) {
+        createArgs ++= Array("-solrUrl", url)
+        new SolrCLI.CreateCoreTool()
+      } else {
+        createArgs ++= Array("-zkHost", zkHost,
+          "-shards", numShards.toString,
+          "-replicationFactor", "1")
+        new SolrCLI.CreateCollectionTool()
+      }
+
+    val createCommandLine = SolrCLI.processCommandLineArgs(SolrCLI.joinCommonAndToolOptions(createTool.getOptions), createArgs)
+
+    val createExitStatus = createTool.runTool(createCommandLine)
+    if (createExitStatus != 0)
+      warn(s"create $collection failed with exit status: $createExitStatus")
+    else
+      info(s"created new solr collection $collection with $numShards ${ plural(numShards, "shard", "s") }")
+
     val solr =
       if (url != null)
-        new HttpSolrClient.Builder(url)
+        new HttpSolrClient.Builder(url + "/" + collection)
           .build()
       else {
         val cc = new CloudSolrClient.Builder()
@@ -195,27 +238,6 @@ object ExportVariantsSolr extends Command with Serializable {
         cc.setDefaultCollection(collection)
         cc
       }
-
-    //delete and re-create the collection
-    if(drop) {
-      try {
-        CollectionAdminRequest.deleteCollection(collection).process(solr)
-        info(s"deleted collection ${collection}")
-      } catch {
-        case e: SolrException => warn(s"exportvariantssolr: unable to delete collection ${collection}: ${e}")
-      }
-    }
-
-    try {
-      //zookeeper needs to already have a pre-loaded config named "default_config".
-      //if it doesn't, you can upload it using the solr command-line client:
-      //   solr create_collection -c default_config; solr delete -c default_config
-      //CollectionAdminRequest.listCollections().process(solr)
-      CollectionAdminRequest.createCollection(collection, "default_config", numShards, 1).process(solr)
-      info(s"created new solr collection ${collection} with ${numShards} shard" + (if(numShards > 1) "s" else ""))
-    } catch {
-      case e: SolrException => fatal(s"exportvariantssolr: unable to create collection ${collection}: ${e}")
-    }
 
     // retrieve current fields
     val fieldsResponse = new SchemaRequest.Fields().process(solr)
@@ -284,7 +306,7 @@ object ExportVariantsSolr extends Command with Serializable {
 
         val solr =
           if (url != null)
-            new HttpSolrClient.Builder(url)
+            new HttpSolrClient.Builder(url + "/" + collection)
               .build()
           else {
             val cc = new CloudSolrClient.Builder()
@@ -296,7 +318,7 @@ object ExportVariantsSolr extends Command with Serializable {
 
         var retry = true
         var retryInterval = 3 * 1000 // 3s
-        val maxRetryInterval = 3 * 60 * 1000 // 3m
+      val maxRetryInterval = 3 * 60 * 1000 // 3m
 
         while (retry) {
           try {

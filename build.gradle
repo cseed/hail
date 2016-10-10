@@ -101,6 +101,8 @@ dependencies {
     //compile 'org.json4s:json4s-ast_' + scalaMajorVersion + ':3.3.0'
 
     compile 'org.apache.solr:solr-solrj:6.2.0'
+    compile group: 'org.apache.solr', name: 'solr-core', version: '6.2.0'
+
     compile 'com.datastax.cassandra:cassandra-driver-core:3.0.0'
 
     compile 'com.jayway.restassured:rest-assured:2.8.0'
