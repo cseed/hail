@@ -183,17 +183,17 @@ class AggregatorSuite extends SparkSuite {
     val s = State(sc, sqlContext, vds)
 
     val dummy = tmpDir.createTempFile("out")
-    TestUtils.interceptFatal("""tried to export invalid type `Aggregable\[Genotype\]'""")(
+    TestUtils.interceptFatal("unrealizable type.*Aggregable\\[Genotype\\]")(
       ExportVariants.run(s, Array("-o", dummy, "-c", "gs")))
-    TestUtils.interceptFatal("""tried to export invalid type `Aggregable\[Int\]'""")(
+    TestUtils.interceptFatal("unrealizable type.*Aggregable\\[Int\\]")(
       ExportVariants.run(s, Array("-o", dummy, "-c", "gs.map(g => 5)")))
-    TestUtils.interceptFatal("""tried to export invalid type `Aggregable\[Genotype\]'""")(
+    TestUtils.interceptFatal("unrealizable type.*Aggregable\\[Genotype\\]")(
       ExportVariants.run(s, Array("-o", dummy, "-c", "gs")))
-    TestUtils.interceptFatal("""Got invalid type `Aggregable\[Genotype\]'""")(
+    TestUtils.interceptFatal("unrealizable type.*Aggregable\\[Genotype\\]")(
       AnnotateVariants.run(s, Array("expr", "-c", "va = gs")))
-    TestUtils.interceptFatal("""Got invalid type `Aggregable\[Int\]'""")(
+    TestUtils.interceptFatal("unrealizable type.*Aggregable\\[Int\\]")(
       AnnotateVariants.run(s, Array("expr", "-c", "va = gs.map(G => 5)")))
-    TestUtils.interceptFatal("""Got invalid type `Aggregable\[Genotype\]'""")(
+    TestUtils.interceptFatal("unrealizable type.*Aggregable\\[Genotype\\]")(
       AnnotateVariants.run(s, Array("expr", "-c", "va = gs.filter(g => true)")))
   }
 

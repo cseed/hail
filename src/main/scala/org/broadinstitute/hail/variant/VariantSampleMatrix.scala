@@ -831,7 +831,7 @@ class VariantSampleMatrix[T](val metadata: VariantMetadata,
     copy(globalSignature = newT, globalAnnotation = i(globalAnnotation, Option(a)))
   }
 
-  def queryVA(code: String): (BaseType, Querier) = {
+  def queryVA(code: String): (Type, Querier) = {
 
     val st = Map(Annotation.VARIANT_HEAD -> (0, vaSignature))
     val ec = EvalContext(st)
@@ -847,7 +847,7 @@ class VariantSampleMatrix[T](val metadata: VariantMetadata,
     (t, f2)
   }
 
-  def querySA(code: String): (BaseType, Querier) = {
+  def querySA(code: String): (Type, Querier) = {
 
     val st = Map(Annotation.SAMPLE_HEAD -> (0, saSignature))
     val ec = EvalContext(st)
@@ -863,7 +863,7 @@ class VariantSampleMatrix[T](val metadata: VariantMetadata,
     (t, f2)
   }
 
-  def queryGlobal(path: String): (BaseType, Option[Annotation]) = {
+  def queryGlobal(path: String): (Type, Option[Annotation]) = {
     val st = Map(Annotation.GLOBAL_HEAD -> (0, globalSignature))
     val ec = EvalContext(st)
     val a = ec.a

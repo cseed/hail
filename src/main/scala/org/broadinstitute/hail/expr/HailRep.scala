@@ -3,6 +3,7 @@ package org.broadinstitute.hail.expr
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.broadinstitute.hail.utils.Interval
 import org.broadinstitute.hail.variant.{AltAllele, Genotype, Locus, Variant}
+import spire.std.OptionEq
 
 trait HailRep[T] {
   def typ: Type
@@ -34,6 +35,11 @@ object HailRep {
     def typ = TString
   }
 
+  // not implicit to make stringHr the default
+  object sampleHr extends HailRep[String] {
+    def typ = TSample
+  }
+
   implicit object genotypeHr extends HailRep[Genotype] {
     def typ = TGenotype
   }
@@ -62,4 +68,11 @@ object HailRep {
     def typ = TSet(hrt.typ)
   }
 
+  implicit def dictHr[T](implicit hrt: HailRep[T]) = new HailRep[Map[String, T]] {
+    def typ = TDict(hrt.typ)
+  }
+
+  implicit def unaryHr[T, U](implicit hrt: HailRep[T], hru: HailRep[U]) = new HailRep[(Any) => Any] {
+    def typ = TFunction(Seq(hrt.typ), hru.typ)
+  }
 }

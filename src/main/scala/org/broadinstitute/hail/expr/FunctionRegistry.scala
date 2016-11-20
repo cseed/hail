@@ -14,21 +14,24 @@ object FunctionRegistry {
   sealed trait LookupError {
     def message: String
   }
+
   sealed case class NotFound(name: String, typ: TypeTag) extends LookupError {
     def message = s"No function found with name `$name' and argument ${ plural(typ.xs.size, "type") } $typ"
   }
+
   sealed case class Ambiguous(name: String, typ: TypeTag, alternates: Seq[(Int, (TypeTag, Fun))]) extends LookupError {
-    def message = s"""found ${ alternates.size } ambiguous matches for $typ:
-                      |  ${ alternates.map(_._2._1).mkString("\n  ") }""".stripMargin
+    def message =
+      s"""found ${ alternates.size } ambiguous matches for $typ:
+          |  ${ alternates.map(_._2._1).mkString("\n  ") }""".stripMargin
   }
 
   type Err[T] = Either[LookupError, T]
 
   private val registry = mutable.HashMap[String, Seq[(TypeTag, Fun)]]().withDefaultValue(Seq.empty)
 
-  private val conversions = new mutable.HashMap[(BaseType, BaseType), (Int, UnaryFun[Any, Any])]
+  private val conversions = new mutable.HashMap[(Type, Type), (Int, UnaryFun[Any, Any])]
 
-  private def lookupConversion(from: BaseType, to: BaseType): Option[(Int, UnaryFun[Any, Any])] = conversions.get(from -> to)
+  private def lookupConversion(from: Type, to: Type): Option[(Int, UnaryFun[Any, Any])] = conversions.get(from -> to)
 
   private def registerConversion[T, U](how: T => U, priority: Int = 1)(implicit hrt: HailRep[T], hru: HailRep[U]) {
     val from = hrt.typ
@@ -45,9 +48,10 @@ object FunctionRegistry {
   private def lookup(name: String, typ: TypeTag): Err[Fun] = {
 
     val matches = registry(name).flatMap { case (tt, f) =>
-      if (tt == typ)
-        Some(0 -> (tt, f))
-      else if (tt.xs.size == typ.xs.size) {
+      tt.clear()
+      if (tt.unify(typ)) {
+        Some(0 -> (tt.subst(), f.subst()))
+      } else if (tt.xs.size == typ.xs.size) {
         val conversionPriorities: Seq[Option[(Int, UnaryFun[Any, Any])]] = typ.xs.zip(tt.xs)
           .map { case (l, r) =>
             if (l == r)
@@ -57,7 +61,9 @@ object FunctionRegistry {
 
         anyFailAllFail[Array, (Int, UnaryFun[Any, Any])](conversionPriorities).map(arr =>
           arr.map(_._1).max -> (tt, f.convertArgs(arr.map(_._2))))
-      } else None
+      }
+      else
+        None
     }.groupBy(_._1).toArray.sortBy(_._1)
 
     matches.headOption
@@ -69,8 +75,8 @@ object FunctionRegistry {
         else {
           assert(priority != 0)
           Left(Ambiguous(name, typ, it))
+        }
       }
-    }
   }
 
   private def bind(name: String, typ: TypeTag, f: Fun) = {
@@ -82,18 +88,44 @@ object FunctionRegistry {
     }
   }
 
-  def lookupField(ec: EvalContext)(typ: BaseType, name: String)(xAst: AST): Err[() => Any] =
-    lookup(name, MethodType(typ)).map {
-      case f: UnaryFun[_, _] => AST.evalCompose(ec, xAst)(f)
-      case f: OptionUnaryFun[_, _] => AST.evalFlatCompose(ec, xAst)(f)
-      case f =>
-        throw new RuntimeException(s"Internal hail error, bad binding in function registry for `$name' with argument type $typ: $f")
+  def lookupMethodReturnType(typ: Type, typs: Seq[Type], name: String): Err[Type] =
+    lookup(name, MethodType(typ +: typs: _*)).map(_.retType)
+
+  def lookupMethod(ec: EvalContext)(typ: Type, typs: Seq[Type], name: String)(lhs: AST, args: Seq[AST]): Err[() => Any] = {
+    require(typs.length == args.length)
+
+    val m = lookup(name, MethodType(typ +: typs: _*))
+    m.map {
+      case f: UnaryFun[_, _] =>
+        AST.evalCompose(ec, lhs)(f)
+      case f: OptionUnaryFun[_, _] =>
+        AST.evalFlatCompose(ec, lhs)(f)
+      case f: BinaryFun[_, _, _] =>
+        AST.evalCompose(ec, lhs, args(0))(f)
+      case f: BinaryLambdaFun[t, _, _] =>
+        val Lambda(_, param, body) = args(0)
+
+        val localIdx = ec.a.length
+        val localA = ec.a
+        localA += null
+
+        val bodyFn = body.eval(ec.copy(st = ec.st + (param -> (localIdx, lhs.`type`.asInstanceOf[TContainer].elementType))))
+        val g = (x: Any) => {
+          localA(localIdx) = x
+          bodyFn()
+        }
+
+        AST.evalCompose[t](ec, lhs) { x1 => f(x1, g) }
+      case f: Arity3Fun[_, _, _, _] =>
+        AST.evalCompose(ec, lhs, args(0), args(1))(f)
+      case f: Arity4Fun[_, _, _, _, _] =>
+        AST.evalCompose(ec, lhs, args(0), args(1), args(2))(f)
+      case fn =>
+        throw new RuntimeException(s"Internal hail error, bad binding in function registry for `$name' with argument types $typ, $typs: $fn")
     }
+  }
 
-  def lookupFieldType(typ: BaseType, name: String): Err[BaseType] =
-    lookup(name, MethodType(typ)).map(_.retType)
-
-  def lookupFun(ec: EvalContext)(name: String, typs: Seq[BaseType])(args: Seq[AST]): Err[() => Any] = {
+  def lookupFun(ec: EvalContext)(name: String, typs: Seq[Type])(args: Seq[AST]): Err[() => Any] = {
     require(typs.length == args.length)
 
     lookup(name, FunType(typs: _*)).map {
@@ -112,12 +144,29 @@ object FunctionRegistry {
     }
   }
 
-  def lookupFunReturnType(name: String, typs: Seq[BaseType]): Err[BaseType] =
+  def lookupFunReturnType(name: String, typs: Seq[Type]): Err[Type] =
     lookup(name, FunType(typs: _*)).map(_.retType)
 
-  def registerField[T, U](name: String, impl: T => U)
+  def registerMethod[T, U](name: String, impl: T => U)
     (implicit hrt: HailRep[T], hru: HailRep[U]) = {
     bind(name, MethodType(hrt.typ), UnaryFun[T, U](hru.typ, impl))
+  }
+
+  def registerMethod[T, U, V](name: String, impl: (T, U) => V)
+    (implicit hrt: HailRep[T], hru: HailRep[U], hrv: HailRep[V]) = {
+    bind(name, MethodType(hrt.typ, hru.typ), BinaryFun[T, U, V](hrv.typ, impl))
+  }
+
+  def registerLambdaMethod[T, U, V](name: String, impl: (T, (Any) => Any) => V)
+    (implicit hrt: HailRep[T], hru: HailRep[U], hrv: HailRep[V]) = {
+    val m = BinaryLambdaFun[T, U, V](hrv.typ, impl)
+    println("registerLambdaMethod", m)
+    bind(name, MethodType(hrt.typ, hru.typ), m)
+  }
+
+  def registerMethod[T, U, V, W](name: String, impl: (T, U, V) => W)
+    (implicit hrt: HailRep[T], hru: HailRep[U], hrv: HailRep[V], hrw: HailRep[W]) = {
+    bind(name, MethodType(hrt.typ, hru.typ, hrv.typ), Arity3Fun[T, U, V, W](hrw.typ, impl))
   }
 
   def register[T, U](name: String, impl: T => U)
@@ -125,7 +174,7 @@ object FunctionRegistry {
     bind(name, FunType(hrt.typ), UnaryFun[T, U](hru.typ, impl))
   }
 
-  def registerOptionField[T, U](name: String, impl: T => Option[U])
+  def registerOptionMethod[T, U](name: String, impl: T => Option[U])
     (implicit hrt: HailRep[T], hru: HailRep[U]) = {
     bind(name, MethodType(hrt.typ), OptionUnaryFun[T, U](hru.typ, impl))
   }
@@ -135,7 +184,7 @@ object FunctionRegistry {
     bind(name, FunType(hrt.typ), OptionUnaryFun[T, U](hru.typ, impl))
   }
 
-  def registerUnaryNAFilteredCollectionField[T, U](name: String, impl: TraversableOnce[T] => U)
+  def registerUnaryNAFilteredCollectionMethod[T, U](name: String, impl: TraversableOnce[T] => U)
     (implicit hrt: HailRep[T], hru: HailRep[U]) = {
     bind(name, MethodType(TArray(hrt.typ)), UnaryFun[IndexedSeq[_], U](hru.typ, { (ts: IndexedSeq[_]) =>
       impl(ts.filter(t => t != null).map(_.asInstanceOf[T]))
@@ -188,109 +237,123 @@ object FunctionRegistry {
     })
   }
 
-  registerOptionField("gt", { (x: Genotype) => x.gt })
-  registerOptionField("gtj", { (x: Genotype) => x.gt.map(gtx => Genotype.gtPair(gtx).j) })
-  registerOptionField("gtk", { (x: Genotype) => x.gt.map(gtx => Genotype.gtPair(gtx).k) })
-  registerOptionField("ad", { (x: Genotype) => x.ad.map(a => a: IndexedSeq[Int]) })
-  registerOptionField("dp", { (x: Genotype) => x.dp })
-  registerOptionField("od", { (x: Genotype) => x.od })
-  registerOptionField("gq", { (x: Genotype) => x.gq })
-  registerOptionField("pl", { (x: Genotype) => x.pl.map(a => a: IndexedSeq[Int]) })
-  registerOptionField("dosage", { (x: Genotype) => x.dosage.map(a => a: IndexedSeq[Double]) })
-  registerField("isHomRef", { (x: Genotype) => x.isHomRef })
-  registerField("isHet", { (x: Genotype) => x.isHet })
-  registerField("isHomVar", { (x: Genotype) => x.isHomVar })
-  registerField("isCalledNonRef", { (x: Genotype) => x.isCalledNonRef })
-  registerField("isHetNonRef", { (x: Genotype) => x.isHetNonRef })
-  registerField("isHetRef", { (x: Genotype) => x.isHetRef })
-  registerField("isCalled", { (x: Genotype) => x.isCalled })
-  registerField("isNotCalled", { (x: Genotype) => x.isNotCalled })
-  registerOptionField("nNonRefAlleles", { (x: Genotype) => x.nNonRefAlleles })
-  registerOptionField("pAB", { (x: Genotype) => x.pAB() })
-  registerOptionField("fractionReadsRef", { (x: Genotype) => x.fractionReadsRef() })
-  registerField("fakeRef", { (x: Genotype) => x.fakeRef })
-  registerField("isDosage", { (x: Genotype) => x.isDosage })
-  registerField("contig", { (x: Variant) => x.contig })
-  registerField("start", { (x: Variant) => x.start })
-  registerField("ref", { (x: Variant) => x.ref })
-  registerField("altAlleles", { (x: Variant) => x.altAlleles })
-  registerField("nAltAlleles", { (x: Variant) => x.nAltAlleles })
-  registerField("nAlleles", { (x: Variant) => x.nAlleles })
-  registerField("isBiallelic", { (x: Variant) => x.isBiallelic })
-  registerField("nGenotypes", { (x: Variant) => x.nGenotypes })
-  registerField("inXPar", { (x: Variant) => x.inXPar })
-  registerField("inYPar", { (x: Variant) => x.inYPar })
-  registerField("inXNonPar", { (x: Variant) => x.inXNonPar })
-  registerField("inYNonPar", { (x: Variant) => x.inYNonPar })
+  val TT = TVariable()
+  val TU = TVariable()
+  val TV = TVariable()
+
+  val TTHr = new HailRep[Any] {
+    def typ = TT
+  }
+  val TUHr = new HailRep[Any] {
+    def typ = TU
+  }
+  val TVHr = new HailRep[Any] {
+    def typ = TV
+  }
+
+  registerOptionMethod("gt", { (x: Genotype) => x.gt })
+  registerOptionMethod("gtj", { (x: Genotype) => x.gt.map(gtx => Genotype.gtPair(gtx).j) })
+  registerOptionMethod("gtk", { (x: Genotype) => x.gt.map(gtx => Genotype.gtPair(gtx).k) })
+  registerOptionMethod("ad", { (x: Genotype) => x.ad.map(a => a: IndexedSeq[Int]) })
+  registerOptionMethod("dp", { (x: Genotype) => x.dp })
+  registerOptionMethod("od", { (x: Genotype) => x.od })
+  registerOptionMethod("gq", { (x: Genotype) => x.gq })
+  registerOptionMethod("pl", { (x: Genotype) => x.pl.map(a => a: IndexedSeq[Int]) })
+  registerOptionMethod("dosage", { (x: Genotype) => x.dosage.map(a => a: IndexedSeq[Double]) })
+  registerMethod("isHomRef", { (x: Genotype) => x.isHomRef })
+  registerMethod("isHet", { (x: Genotype) => x.isHet })
+  registerMethod("isHomVar", { (x: Genotype) => x.isHomVar })
+  registerMethod("isCalledNonRef", { (x: Genotype) => x.isCalledNonRef })
+  registerMethod("isHetNonRef", { (x: Genotype) => x.isHetNonRef })
+  registerMethod("isHetRef", { (x: Genotype) => x.isHetRef })
+  registerMethod("isCalled", { (x: Genotype) => x.isCalled })
+  registerMethod("isNotCalled", { (x: Genotype) => x.isNotCalled })
+  registerOptionMethod("nNonRefAlleles", { (x: Genotype) => x.nNonRefAlleles })
+  registerOptionMethod("pAB", { (x: Genotype) => x.pAB() })
+  registerOptionMethod("fractionReadsRef", { (x: Genotype) => x.fractionReadsRef() })
+  registerMethod("fakeRef", { (x: Genotype) => x.fakeRef })
+  registerMethod("isDosage", { (x: Genotype) => x.isDosage })
+  registerMethod("contig", { (x: Variant) => x.contig })
+  registerMethod("start", { (x: Variant) => x.start })
+  registerMethod("ref", { (x: Variant) => x.ref })
+  registerMethod("altAlleles", { (x: Variant) => x.altAlleles })
+  registerMethod("nAltAlleles", { (x: Variant) => x.nAltAlleles })
+  registerMethod("nAlleles", { (x: Variant) => x.nAlleles })
+  registerMethod("isBiallelic", { (x: Variant) => x.isBiallelic })
+  registerMethod("nGenotypes", { (x: Variant) => x.nGenotypes })
+  registerMethod("inXPar", { (x: Variant) => x.inXPar })
+  registerMethod("inYPar", { (x: Variant) => x.inYPar })
+  registerMethod("inXNonPar", { (x: Variant) => x.inXNonPar })
+  registerMethod("inYNonPar", { (x: Variant) => x.inYNonPar })
   // assumes biallelic
-  registerField("alt", { (x: Variant) => x.alt })
-  registerField("altAllele", { (x: Variant) => x.altAllele })
-  registerField("locus", { (x: Variant) => x.locus })
-  registerField("contig", { (x: Locus) => x.contig })
-  registerField("position", { (x: Locus) => x.position })
-  registerField("start", { (x: Interval[Locus]) => x.start })
-  registerField("end", { (x: Interval[Locus]) => x.end })
-  registerField("ref", { (x: AltAllele) => x.ref })
-  registerField("alt", { (x: AltAllele) => x.alt })
-  registerField("isSNP", { (x: AltAllele) => x.isSNP })
-  registerField("isMNP", { (x: AltAllele) => x.isMNP })
-  registerField("isIndel", { (x: AltAllele) => x.isIndel })
-  registerField("isInsertion", { (x: AltAllele) => x.isInsertion })
-  registerField("isDeletion", { (x: AltAllele) => x.isDeletion })
-  registerField("isComplex", { (x: AltAllele) => x.isComplex })
-  registerField("isTransition", { (x: AltAllele) => x.isTransition })
-  registerField("isTransversion", { (x: AltAllele) => x.isTransversion })
-  registerField("isAutosomal", { (x: Variant) => x.isAutosomal })
+  registerMethod("alt", { (x: Variant) => x.alt })
+  registerMethod("altAllele", { (x: Variant) => x.altAllele })
+  registerMethod("locus", { (x: Variant) => x.locus })
+  registerMethod("contig", { (x: Locus) => x.contig })
+  registerMethod("position", { (x: Locus) => x.position })
+  registerMethod("start", { (x: Interval[Locus]) => x.start })
+  registerMethod("end", { (x: Interval[Locus]) => x.end })
+  registerMethod("ref", { (x: AltAllele) => x.ref })
+  registerMethod("alt", { (x: AltAllele) => x.alt })
+  registerMethod("isSNP", { (x: AltAllele) => x.isSNP })
+  registerMethod("isMNP", { (x: AltAllele) => x.isMNP })
+  registerMethod("isIndel", { (x: AltAllele) => x.isIndel })
+  registerMethod("isInsertion", { (x: AltAllele) => x.isInsertion })
+  registerMethod("isDeletion", { (x: AltAllele) => x.isDeletion })
+  registerMethod("isComplex", { (x: AltAllele) => x.isComplex })
+  registerMethod("isTransition", { (x: AltAllele) => x.isTransition })
+  registerMethod("isTransversion", { (x: AltAllele) => x.isTransversion })
+  registerMethod("isAutosomal", { (x: Variant) => x.isAutosomal })
 
-  registerField("toInt", { (x: Int) => x })
-  registerField("toLong", { (x: Int) => x.toLong })
-  registerField("toFloat", { (x: Int) => x.toFloat })
-  registerField("toDouble", { (x: Int) => x.toDouble })
+  registerMethod("toInt", { (x: Int) => x })
+  registerMethod("toLong", { (x: Int) => x.toLong })
+  registerMethod("toFloat", { (x: Int) => x.toFloat })
+  registerMethod("toDouble", { (x: Int) => x.toDouble })
 
-  registerField("toInt", { (x: Long) => x.toInt })
-  registerField("toLong", { (x: Long) => x })
-  registerField("toFloat", { (x: Long) => x.toFloat })
-  registerField("toDouble", { (x: Long) => x.toDouble })
+  registerMethod("toInt", { (x: Long) => x.toInt })
+  registerMethod("toLong", { (x: Long) => x })
+  registerMethod("toFloat", { (x: Long) => x.toFloat })
+  registerMethod("toDouble", { (x: Long) => x.toDouble })
 
-  registerField("toInt", { (x: Float) => x.toInt })
-  registerField("toLong", { (x: Float) => x.toLong })
-  registerField("toFloat", { (x: Float) => x })
-  registerField("toDouble", { (x: Float) => x.toDouble })
+  registerMethod("toInt", { (x: Float) => x.toInt })
+  registerMethod("toLong", { (x: Float) => x.toLong })
+  registerMethod("toFloat", { (x: Float) => x })
+  registerMethod("toDouble", { (x: Float) => x.toDouble })
 
-  registerField("toInt", { (x: Boolean) => if (x) 1 else 0 })
+  registerMethod("toInt", { (x: Boolean) => if (x) 1 else 0 })
 
-  registerField("toInt", { (x: Double) => x.toInt })
-  registerField("toLong", { (x: Double) => x.toLong })
-  registerField("toFloat", { (x: Double) => x.toFloat })
-  registerField("toDouble", { (x: Double) => x })
+  registerMethod("toInt", { (x: Double) => x.toInt })
+  registerMethod("toLong", { (x: Double) => x.toLong })
+  registerMethod("toFloat", { (x: Double) => x.toFloat })
+  registerMethod("toDouble", { (x: Double) => x })
 
-  registerField("toInt", { (x: String) => x.toInt })
-  registerField("toLong", { (x: String) => x.toLong })
-  registerField("toFloat", { (x: String) => x.toFloat })
-  registerField("toDouble", { (x: String) => x.toDouble })
+  registerMethod("toInt", { (x: String) => x.toInt })
+  registerMethod("toLong", { (x: String) => x.toLong })
+  registerMethod("toFloat", { (x: String) => x.toFloat })
+  registerMethod("toDouble", { (x: String) => x.toDouble })
 
-  registerField("abs", { (x: Int) => x.abs })
-  registerField("abs", { (x: Long) => x.abs })
-  registerField("abs", { (x: Float) => x.abs })
-  registerField("abs", { (x: Double) => x.abs })
+  registerMethod("abs", { (x: Int) => x.abs })
+  registerMethod("abs", { (x: Long) => x.abs })
+  registerMethod("abs", { (x: Float) => x.abs })
+  registerMethod("abs", { (x: Double) => x.abs })
 
-  registerField("signum", { (x: Double) => x.signum })
-  registerField("length", { (x: String) => x.length })
+  registerMethod("signum", { (x: Double) => x.signum })
+  registerMethod("length", { (x: String) => x.length })
 
-  registerUnaryNAFilteredCollectionField("sum", { (x: TraversableOnce[Int]) => x.sum })
-  registerUnaryNAFilteredCollectionField("sum", { (x: TraversableOnce[Long]) => x.sum })
-  registerUnaryNAFilteredCollectionField("sum", { (x: TraversableOnce[Float]) => x.sum })
-  registerUnaryNAFilteredCollectionField("sum", { (x: TraversableOnce[Double]) => x.sum })
+  registerUnaryNAFilteredCollectionMethod("sum", { (x: TraversableOnce[Int]) => x.sum })
+  registerUnaryNAFilteredCollectionMethod("sum", { (x: TraversableOnce[Long]) => x.sum })
+  registerUnaryNAFilteredCollectionMethod("sum", { (x: TraversableOnce[Float]) => x.sum })
+  registerUnaryNAFilteredCollectionMethod("sum", { (x: TraversableOnce[Double]) => x.sum })
 
-  registerUnaryNAFilteredCollectionField("min", { (x: TraversableOnce[Int]) => x.min })
-  registerUnaryNAFilteredCollectionField("min", { (x: TraversableOnce[Long]) => x.min })
-  registerUnaryNAFilteredCollectionField("min", { (x: TraversableOnce[Float]) => x.min })
-  registerUnaryNAFilteredCollectionField("min", { (x: TraversableOnce[Double]) => x.min })
+  registerUnaryNAFilteredCollectionMethod("min", { (x: TraversableOnce[Int]) => x.min })
+  registerUnaryNAFilteredCollectionMethod("min", { (x: TraversableOnce[Long]) => x.min })
+  registerUnaryNAFilteredCollectionMethod("min", { (x: TraversableOnce[Float]) => x.min })
+  registerUnaryNAFilteredCollectionMethod("min", { (x: TraversableOnce[Double]) => x.min })
 
-  registerUnaryNAFilteredCollectionField("max", { (x: TraversableOnce[Int]) => x.max })
-  registerUnaryNAFilteredCollectionField("max", { (x: TraversableOnce[Long]) => x.max })
-  registerUnaryNAFilteredCollectionField("max", { (x: TraversableOnce[Float]) => x.max })
-  registerUnaryNAFilteredCollectionField("max", { (x: TraversableOnce[Double]) => x.max })
+  registerUnaryNAFilteredCollectionMethod("max", { (x: TraversableOnce[Int]) => x.max })
+  registerUnaryNAFilteredCollectionMethod("max", { (x: TraversableOnce[Long]) => x.max })
+  registerUnaryNAFilteredCollectionMethod("max", { (x: TraversableOnce[Float]) => x.max })
+  registerUnaryNAFilteredCollectionMethod("max", { (x: TraversableOnce[Double]) => x.max })
 
   register("range", { (x: Int) =>
     val l = math.max(x, 0)
@@ -350,7 +413,9 @@ object FunctionRegistry {
   register("exp", { (x: Double) => math.exp(x) })
   register("log10", { (x: Double) => math.log10(x) })
   register("sqrt", { (x: Double) => math.sqrt(x) })
-  register("log", { (x: Double) => math.log(x) })
+  register("log", (x: Double) => math.log(x))
+  register("log", (x: Double, b: Double) => math.log(x) / math.log(b))
+  register("pow", (b: Double, x: Double) => math.pow(b, x))
 
   register("pcoin", { (p: Double) => math.random < p })
   register("runif", { (min: Double, max: Double) => min + (max - min) * math.random })
@@ -364,4 +429,136 @@ object FunctionRegistry {
   register("gtj", (i: Int) => Genotype.gtPair(i).j)
   register("gtk", (i: Int) => Genotype.gtPair(i).k)
   register("gtIndex", (j: Int, k: Int) => Genotype.gtIndex(j, k))
+
+  registerMethod("split", (s: String, p: String) => s.split(p): IndexedSeq[String])
+
+  registerMethod("oneHotAlleles", (g: Genotype, v: Variant) => g.oneHotAlleles(v).orNull)
+
+  registerMethod("oneHotGenotype", (g: Genotype, v: Variant) => g.oneHotGenotype(v).orNull)
+
+  registerMethod("replace", (str: String, pattern1: String, pattern2: String) =>
+    str.replaceAll(pattern1, pattern2))
+
+  registerMethod("contains", (interval: Interval[Locus], locus: Locus) => interval.contains(locus))
+
+  registerMethod("min", (a: Int, b: Int) => a.min(b))
+  registerMethod("min", (a: Long, b: Long) => a.min(b))
+  registerMethod("min", (a: Float, b: Float) => a.min(b))
+  registerMethod("min", (a: Double, b: Double) => a.min(b))
+
+  registerMethod("max", (a: Int, b: Int) => a.max(b))
+  registerMethod("max", (a: Long, b: Long) => a.max(b))
+  registerMethod("max", (a: Float, b: Float) => a.max(b))
+  registerMethod("max", (a: Double, b: Double) => a.max(b))
+
+  registerMethod("length", (a: IndexedSeq[Any]) => a.length)(arrayHr(TTHr), intHr)
+  registerMethod("size", (a: IndexedSeq[Any]) => a.size)(arrayHr(TTHr), intHr)
+  registerMethod("size", (s: Set[Any]) => s.size)(setHr(TTHr), intHr)
+  registerMethod("size", (d: Map[String, Any]) => d.size)(dictHr(TTHr), intHr)
+
+  registerMethod("id", (s: String) => s)(sampleHr, stringHr)
+
+  registerMethod("isEmpty", (a: IndexedSeq[Any]) => a.isEmpty)(arrayHr(TTHr), boolHr)
+  registerMethod("isEmpty", (s: Set[Any]) => s.isEmpty)(setHr(TTHr), boolHr)
+  registerMethod("isEmpty", (d: Map[String, Any]) => d.isEmpty)(dictHr(TTHr), boolHr)
+
+  registerMethod("toSet", (a: IndexedSeq[Any]) => a.toSet)(arrayHr(TTHr), setHr(TTHr))
+  registerMethod("toArray", (a: Set[Any]) => a.toArray[Any]: IndexedSeq[Any])(setHr(TTHr), arrayHr(TTHr))
+
+  registerMethod("head", (a: IndexedSeq[Any]) => a.head)(arrayHr(TTHr), TTHr)
+  registerMethod("tail", (a: IndexedSeq[Any]) => a.tail)(arrayHr(TTHr), arrayHr(TTHr))
+
+  registerMethod("flatten", (a: IndexedSeq[IndexedSeq[Any]]) =>
+    flattenOrNull[IndexedSeq, Any](IndexedSeq.newBuilder[Any], a)
+  )(arrayHr(arrayHr(TTHr)), arrayHr(TTHr))
+
+  registerMethod("flatten", (s: Set[Set[Any]]) =>
+    flattenOrNull[Set, Any](Set.newBuilder[Any], s)
+  )(setHr(setHr(TTHr)), setHr(TTHr))
+
+  registerMethod("mkString", (a: IndexedSeq[String], d: String) => a.mkString(d))(
+    arrayHr(stringHr), stringHr, stringHr)
+  registerMethod("mkString", (s: Set[String], d: String) => s.mkString(d))(
+    setHr(stringHr), stringHr, stringHr)
+
+  registerMethod("contains", (s: Set[Any], x: Any) => s.contains(x))(setHr(TTHr), TTHr, boolHr)
+  registerMethod("contains", (d: Map[String, Any], x: String) => d.contains(x))(dictHr(TTHr), stringHr, boolHr)
+
+  registerLambdaMethod("find", (a: IndexedSeq[Any], f: (Any) => Any) =>
+    a.find { elt =>
+      val r = f(elt)
+      r != null && r.asInstanceOf[Boolean]
+    }.orNull
+  )(arrayHr(TTHr), unaryHr(TTHr, boolHr), TTHr)
+
+  registerLambdaMethod("find", (s: Set[Any], f: (Any) => Any) =>
+    s.find { elt =>
+      val r = f(elt)
+      r != null && r.asInstanceOf[Boolean]
+    }.orNull
+  )(setHr(TTHr), unaryHr(TTHr, boolHr), TTHr)
+
+  registerLambdaMethod("map", (a: IndexedSeq[Any], f: (Any) => Any) =>
+    a.map(f)
+  )(arrayHr(TTHr), unaryHr(TTHr, TUHr), arrayHr(TUHr))
+
+  registerLambdaMethod("map", (s: Set[Any], f: (Any) => Any) =>
+    s.map(f)
+  )(setHr(TTHr), unaryHr(TTHr, TUHr), setHr(TUHr))
+
+  registerLambdaMethod("mapValues", (a: Map[String, Any], f: (Any) => Any) =>
+    a.mapValues(f)
+  )(dictHr(TTHr), unaryHr(TTHr, TUHr), dictHr(TUHr))
+
+  registerLambdaMethod("flatMap", (a: IndexedSeq[Any], f: (Any) => Any) =>
+    flattenOrNull[IndexedSeq, Any](IndexedSeq.newBuilder[Any],
+      a.map(f).asInstanceOf[IndexedSeq[IndexedSeq[Any]]])
+  )(arrayHr(TTHr), unaryHr(TTHr, arrayHr(TUHr)), arrayHr(TUHr))
+
+  registerLambdaMethod("flatMap", (s: Set[Any], f: (Any) => Any) =>
+    flattenOrNull[Set, Any](Set.newBuilder[Any],
+      s.map(f).asInstanceOf[Set[Set[Any]]])
+  )(setHr(TTHr), unaryHr(TTHr, setHr(TUHr)), setHr(TUHr))
+
+  registerLambdaMethod("exists", (a: IndexedSeq[Any], f: (Any) => Any) =>
+    a.exists { x =>
+      val r = f(x)
+      r != null && r.asInstanceOf[Boolean]
+    }
+  )(arrayHr(TTHr), unaryHr(TTHr, boolHr), boolHr)
+
+  registerLambdaMethod("exists", (s: Set[Any], f: (Any) => Any) =>
+    s.exists { x =>
+      val r = f(x)
+      r != null && r.asInstanceOf[Boolean]
+    }
+  )(setHr(TTHr), unaryHr(TTHr, boolHr), boolHr)
+
+  registerLambdaMethod("forall", (a: IndexedSeq[Any], f: (Any) => Any) =>
+    a.forall { x =>
+      val r = f(x)
+      r != null && r.asInstanceOf[Boolean]
+    }
+  )(arrayHr(TTHr), unaryHr(TTHr, boolHr), boolHr)
+
+  registerLambdaMethod("forall", (s: Set[Any], f: (Any) => Any) =>
+    s.forall { x =>
+      val r = f(x)
+      r != null && r.asInstanceOf[Boolean]
+    }
+  )(setHr(TTHr), unaryHr(TTHr, boolHr), boolHr)
+
+  registerLambdaMethod("filter", (a: IndexedSeq[Any], f: (Any) => Any) =>
+    a.filter { x =>
+      val r = f(x)
+      r != null && r.asInstanceOf[Boolean]
+    }
+  )(arrayHr(TTHr), unaryHr(TTHr, boolHr), arrayHr(TTHr))
+
+  registerLambdaMethod("filter", (s: Set[Any], f: (Any) => Any) =>
+    s.filter { x =>
+      val r = f(x)
+      r != null && r.asInstanceOf[Boolean]
+    }
+  )(setHr(TTHr), unaryHr(TTHr, boolHr), setHr(TTHr))
 }

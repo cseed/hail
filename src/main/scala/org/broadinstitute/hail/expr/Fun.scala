@@ -1,13 +1,17 @@
 package org.broadinstitute.hail.expr
 
 sealed trait Fun {
-  def retType: BaseType
+  def retType: Type
+
+  def subst(): Fun
 
   def convertArgs(transformations: Array[UnaryFun[Any, Any]]): Fun
 }
 
-case class UnaryFun[T, U](retType: BaseType, f: (T) => U) extends Fun with Serializable with ((T) => U) {
+case class UnaryFun[T, U](retType: Type, f: (T) => U) extends Fun with Serializable with ((T) => U) {
   def apply(t: T): U = f(t)
+
+  def subst() = UnaryFun(retType.subst(), f)
 
   def convertArgs(transformations: Array[UnaryFun[Any, Any]]): Fun = {
     require(transformations.length == 1)
@@ -16,8 +20,10 @@ case class UnaryFun[T, U](retType: BaseType, f: (T) => U) extends Fun with Seria
   }
 }
 
-case class OptionUnaryFun[T, U](retType: BaseType, f: (T) => Option[U]) extends Fun with Serializable with ((T) => Option[U]) {
+case class OptionUnaryFun[T, U](retType: Type, f: (T) => Option[U]) extends Fun with Serializable with ((T) => Option[U]) {
   def apply(t: T): Option[U] = f(t)
+
+  def subst() = OptionUnaryFun(retType.subst(), f)
 
   def convertArgs(transformations: Array[UnaryFun[Any, Any]]): Fun = {
     require(transformations.length == 1)
@@ -26,8 +32,10 @@ case class OptionUnaryFun[T, U](retType: BaseType, f: (T) => Option[U]) extends 
   }
 }
 
-case class BinaryFun[T, U, V](retType: BaseType, f: (T, U) => V) extends Fun with Serializable with ((T, U) => V) {
+case class BinaryFun[T, U, V](retType: Type, f: (T, U) => V) extends Fun with Serializable with ((T, U) => V) {
   def apply(t: T, u: U): V = f(t, u)
+
+  def subst() = BinaryFun(retType.subst(), f)
 
   def convertArgs(transformations: Array[UnaryFun[Any, Any]]): Fun = {
     require(transformations.length == 2)
@@ -37,8 +45,19 @@ case class BinaryFun[T, U, V](retType: BaseType, f: (T, U) => V) extends Fun wit
   }
 }
 
-case class Arity3Fun[T, U, V, W](retType: BaseType, f: (T, U, V) => W) extends Fun with Serializable with ((T, U, V) => W) {
+case class BinaryLambdaFun[T, U, V](retType: Type, f: (T, (Any) => Any) => V)
+  extends Fun with Serializable with ((T, (Any) => Any) => V) {
+  def apply(t: T, u: (Any) => Any): V = f(t, u)
+
+  def subst() = BinaryLambdaFun(retType.subst(), f)
+
+  def convertArgs(transformations: Array[UnaryFun[Any, Any]]): Fun = ???
+}
+
+case class Arity3Fun[T, U, V, W](retType: Type, f: (T, U, V) => W) extends Fun with Serializable with ((T, U, V) => W) {
   def apply(t: T, u: U, v: V): W = f(t, u, v)
+
+  def subst() = Arity3Fun(retType.subst(), f)
 
   def convertArgs(transformations: Array[UnaryFun[Any, Any]]): Fun = {
     require(transformations.length == 3)
@@ -49,8 +68,10 @@ case class Arity3Fun[T, U, V, W](retType: BaseType, f: (T, U, V) => W) extends F
   }
 }
 
-case class Arity4Fun[T, U, V, W, X](retType: BaseType, f: (T, U, V, W) => X) extends Fun with Serializable with ((T, U, V, W) => X) {
+case class Arity4Fun[T, U, V, W, X](retType: Type, f: (T, U, V, W) => X) extends Fun with Serializable with ((T, U, V, W) => X) {
   def apply(t: T, u: U, v: V, w: W): X = f(t, u, v, w)
+
+  def subst() = Arity4Fun(retType.subst(), f)
 
   def convertArgs(transformations: Array[UnaryFun[Any, Any]]): Fun = {
     require(transformations.length == 4)
