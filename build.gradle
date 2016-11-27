@@ -30,7 +30,7 @@ buildScan {
 
 mainClassName = "org.broadinstitute.hail.driver.Main"
 
-String sparkVersion = System.getProperty("spark.version","1.6.2")
+String sparkVersion = System.getProperty("spark.version","2.0.2")
 
 Boolean spark2 = sparkVersion ==~ /^2.*/
 
@@ -60,17 +60,8 @@ compileJava {
 
 compileScala {
     // scalaCompileOptions.compilerArgs << "-Xfatal-warnings"
-    scalaCompileOptions.additionalParameters = ["-feature", "-Xfatal-warnings"]
+    scalaCompileOptions.additionalParameters = ["-feature"] // , "-Xfatal-warnings"]
     // scalaCompileOptions.forkOptions.jvmArgs = ['-XX:MaxPermSize=512m']
-}
-
-configurations.all {
-    resolutionStrategy {
-        // override new version pulled in by solrj
-        // http://stackoverflow.com/questions/31039367/spark-parallelize-could-not-find-creator-property-with-name-id
-
-        force 'com.fasterxml.jackson.core:jackson-databind:2.4.4'
-    }
 }
 
 dependencies {
