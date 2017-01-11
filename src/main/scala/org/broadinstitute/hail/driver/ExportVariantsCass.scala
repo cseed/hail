@@ -10,6 +10,7 @@ import org.kohsuke.args4j.{Option => Args4jOption}
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
+import scala.util.Random
 
 object CassandraStuff {
   private var cluster: Cluster = null
@@ -206,8 +207,8 @@ object ExportVariantsCass extends Command {
     if (tableMetadata == null) {
       info(s"creating table ${ qualifiedTable }")
       try {
-        session.execute(s"CREATE TABLE $qualifiedTable (${escapeString("dataset_id")} text, chrom text, start int, ref text, alt text, " +
-          s"PRIMARY KEY ((${escapeString("dataset_id")}, chrom, start), ref, alt))") // WITH COMPACT STORAGE")
+        session.execute(s"CREATE TABLE $qualifiedTable (${ escapeString("dataset_id") } text, chrom text, start int, ref text, alt text, " +
+          s"PRIMARY KEY ((${ escapeString("dataset_id") }, chrom, start), ref, alt))") // WITH COMPACT STORAGE")
       } catch {
         case e: Exception => fatal(s"exportvariantscass: unable to create table ${ qualifiedTable }: ${ e }")
       }
@@ -230,48 +231,71 @@ object ExportVariantsCass extends Command {
     val sampleIdsBc = sc.broadcast(vds.sampleIds)
     val sampleAnnotationsBc = sc.broadcast(vds.sampleAnnotations)
     val localBlockSize = options.blockSize
+    val maxRetryInterval = 3 * 60 * 1000 // 3m
 
     val futures = vds.rdd
       .foreachPartition { it =>
         val session = CassandraStuff.getSession(address)
-        val nb = mutable.ArrayBuilder.make[String]
-        val vb = mutable.ArrayBuilder.make[AnyRef]
+        val nb = new mutable.ArrayBuffer[String]
+        val vb = new mutable.ArrayBuffer[AnyRef]
 
         it
           .grouped(localBlockSize)
           .foreach { block =>
-            val futures = block
-              .map { case (v, (va, gs)) =>
-                nb.clear()
-                vb.clear()
 
-                vEC.setAll(v, va)
-                vf().zipWithIndex.foreach { case (a, i) =>
-                  nb += s""""${ escapeString(vNames(i)) }""""
-                  vb += toCassValue(a, vTypes(i))
-                }
+            var retryInterval = 3 * 1000 // 3s
 
-                gs.iterator.zipWithIndex.foreach { case (g, i) =>
-                  val s = sampleIdsBc.value(i)
-                  val sa = sampleAnnotationsBc.value(i)
-                  if ((exportMissing || g.isCalled) && (exportRef || !g.isHomRef)) {
-                    gEC.setAll(v, va, s, sa, g)
-                    gf().zipWithIndex.foreach { case (a, j) =>
-                      nb += s""""${ escapeString(s) }__${ escapeString(gHeader(j)) }""""
-                      vb += toCassValue(a, gTypes(j))
-                    }
-                  }
-                }
+            var toInsert = block.map { case (v, (va, gs)) =>
+              nb.clear()
+              vb.clear()
 
-                val names = nb.result()
-                val values = vb.result()
-
-                session.executeAsync(QueryBuilder
-                  .insertInto(keyspace, table)
-                  .values(names, values))
+              vEC.setAll(v, va)
+              vf().zipWithIndex.foreach { case (a, i) =>
+                nb += s""""${ escapeString(vNames(i)) }""""
+                vb += toCassValue(a, vTypes(i))
               }
 
-            futures.foreach(_.getUninterruptibly())
+              gs.iterator.zipWithIndex.foreach { case (g, i) =>
+                val s = sampleIdsBc.value(i)
+                val sa = sampleAnnotationsBc.value(i)
+                if ((exportMissing || g.isCalled) && (exportRef || !g.isHomRef)) {
+                  gEC.setAll(v, va, s, sa, g)
+                  gf().zipWithIndex.foreach { case (a, j) =>
+                    nb += s""""${ escapeString(s) }__${ escapeString(gHeader(j)) }""""
+                    vb += toCassValue(a, gTypes(j))
+                  }
+                }
+              }
+
+              (nb.toArray, vb.toArray)
+            }
+
+            while (toInsert.nonEmpty) {
+              toInsert = toInsert.map { case nv@(names, values) =>
+                val future = session.executeAsync(QueryBuilder
+                  .insertInto(keyspace, table)
+                  .values(names, values))
+
+                (nv, future)
+              }.flatMap { case (nv, future) =>
+                try {
+                  future.getUninterruptibly()
+                  None
+                } catch {
+                  case t: Throwable =>
+                    warn(s"caught exception while adding inserting: ${
+                      Main.expandException(t)
+                    }\n\tretrying")
+
+                    Some(nv)
+                }
+              }
+            }
+
+            if (toInsert.nonEmpty) {
+              Thread.sleep(Random.nextInt(retryInterval))
+              retryInterval = (retryInterval * 2).max(maxRetryInterval)
+            }
           }
 
         CassandraStuff.disconnect()
