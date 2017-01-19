@@ -36,7 +36,7 @@ object VariantSampleMatrix {
     new VariantSampleMatrix(metadata, rdd)
   }
 
-  private def readMetadata(hConf: hadoop.conf.Configuration, dirname: String,
+  def readMetadata(hConf: hadoop.conf.Configuration, dirname: String,
     requireParquetSuccess: Boolean = true): VariantMetadata = {
     if (!dirname.endsWith(".vds") && !dirname.endsWith(".vds/"))
       fatal(s"input path ending in `.vds' required, found `$dirname'")
@@ -994,6 +994,8 @@ class VariantSampleMatrix[T](val metadata: VariantMetadata,
 class RichVDS(vds: VariantDataset) {
   def makeSchema(): StructType =
     StructType(Array(
+      StructField("contig", StringType, nullable = false),
+      StructField("start", IntegerType, nullable = false),
       StructField("variant", Variant.schema, nullable = false),
       StructField("annotations", vds.vaSignature.schema, nullable = false),
       StructField("gs", GenotypeStream.schema, nullable = false)
@@ -1066,7 +1068,9 @@ class RichVDS(vds: VariantDataset) {
 
     val isDosage = vds.isDosage
     val rowRDD = ordered.map { case (v, (va, gs)) =>
-      Row.fromSeq(Array(v.toRow,
+      Row.fromSeq(Array(v.contig,
+        v.start,
+        v.toRow,
         if (vaRequiresConversion) SparkAnnotationImpex.exportAnnotation(va, vaSignature) else va,
         gs.toGenotypeStream(v, isDosage, compress).toRow))
     }

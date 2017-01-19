@@ -12,6 +12,7 @@ class RichSQLContext(val sqlContext: SQLContext) extends AnyVal {
       return sqlContext.sparkContext.emptyRDD[Row]
 
     var df = sqlContext.read.parquet(dirname + "/part-*")
+    df = df.select("variant", "annotations", "gs")
     selection.foreach { cols =>
       df = df.select(cols.map(col): _*)
     }
