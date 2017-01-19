@@ -1,10 +1,10 @@
-package org.broadinstitute.hail.variant
+package is.hail.variant
 
 import org.apache.spark.sql.{DataFrame, SQLContext}
-import org.broadinstitute.hail.annotations.Annotation
-import org.broadinstitute.hail.expr.SparkAnnotationImpex
-import org.broadinstitute.hail.sparkextras.{OrderedPartitioner, OrderedRDD}
-import org.broadinstitute.hail.utils._
+import is.hail.annotations.Annotation
+import is.hail.expr.SparkAnnotationImpex
+import is.hail.sparkextras.{OrderedPartitioner, OrderedRDD}
+import is.hail.utils._
 import org.json4s.jackson.JsonMethods
 
 import scala.collection.mutable.ArrayBuffer

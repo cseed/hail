@@ -1,5 +1,5 @@
-from pyhail.java import jarray
-from pyhail.dataset import VariantDataset
+from hail.java import jarray
+from hail.dataset import VariantDataset
 
 class VariantIndexedVDS(object):
     def __init__(self, hc, path):

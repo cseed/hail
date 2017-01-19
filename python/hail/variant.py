@@ -1,4 +1,4 @@
-from pyhail.java import jarray
+from hail.java import jarray
 
 class Variant(object):
     def __init__(self, hc, contig, start, ref, alts):
