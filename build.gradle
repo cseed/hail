@@ -6,16 +6,20 @@ buildscript {
 }
 
 plugins {
-  id "com.gradle.build-scan" version "1.0"
-  id 'java'
-  id 'scala'
-  id 'idea'
-  id 'maven'
-  id 'jacoco'
-  id 'com.github.johnrengelman.shadow' version '1.2.3'
+    id "com.gradle.build-scan" version "1.0"
+    // FIXME SeqrServer fails when run out of shadowJar with VerifyError, probably due to jar conflict
+    id 'application'
+    id 'java'
+    id 'scala'
+    id 'idea'
+    id 'maven'
+    id 'jacoco'
+    id 'com.github.johnrengelman.shadow' version '1.2.3'
 }
 
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+
+mainClassName = "is.hail.driver.Main"
 
 repositories {
     // Get kudu-spark2_2.11 with custom pom from our repo since we can't
@@ -35,7 +39,7 @@ buildScan {
     licenseAgree = 'yes'
 }
 
-String sparkVersion = System.getProperty("spark.version","2.0.2")
+String sparkVersion = System.getProperty("spark.version", "2.0.2")
 
 if (!(sparkVersion ==~ /^2\..*/))
     ant.fail('Hail does not support Spark version ' + sparkVersion + '. Hail team recommends version 2.0.2.')
@@ -191,12 +195,17 @@ test {
 
 test.dependsOn(checkSettings)
 
-task testHail(type: Exec, dependsOn: shadowJar) {
-     commandLine 'python', '-m', 'unittest', 'hail.tests'
+task hailZip(type: Exec) {
+    commandLine 'zip', '-r', '../build/hail.zip', 'hail'
+    workingDir 'python'
+}
 
-     environment SPARK_HOME: sparkHome
-     environment PYTHONPATH: '' + projectDir + '/python:' + sparkHome + '/python:' + sparkHome + '/python/lib/py4j-' + py4jVersion + '-src.zip'
-     environment SPARK_CLASSPATH: '' + projectDir + '/build/libs/hail-all-spark.jar'
+task testHail(type: Exec, dependsOn: shadowJar) {
+    commandLine 'python', '-m', 'unittest', 'hail.tests'
+
+    environment SPARK_HOME: sparkHome
+    environment PYTHONPATH: '' + projectDir + '/python:' + sparkHome + '/python:' + sparkHome + '/python/lib/py4j-' + py4jVersion + '-src.zip'
+    environment SPARK_CLASSPATH: '' + projectDir + '/build/libs/hail-all-spark.jar'
 }
 
 test.dependsOn(testHail)
@@ -228,8 +237,6 @@ shadowJar {
         // include(dependency('org.json4s:json4s-native_' + scalaMajorVersion + ':.*'))
         include(dependency('org.json4s:json4s-jackson_' + scalaMajorVersion + ':.*'))
         include(dependency('org.json4s:json4s-ast_' + scalaMajorVersion + ':.*'))
-
-        include(dependency('org.http4s:http4s-core_' + scalaMajorVersion + ':.*'))
 
         include(dependency('org.apache.kudu:kudu-client:.*'))
         include(dependency('org.apache.kudu:kudu-' + kuduSpark + '_' + scalaMajorVersion + ':.*'))
@@ -275,11 +282,6 @@ task shadowTestJar(type: ShadowJar) {
         // include(dependency('org.json4s:json4s-native_' + scalaMajorVersion + ':.*'))
         include(dependency('org.json4s:json4s-jackson_' + scalaMajorVersion + ':.*'))
         include(dependency('org.json4s:json4s-ast_' + scalaMajorVersion + ':.*'))
-
-        include(dependency('org.http4s:http4s-core_' + scalaMajorVersion + ':.*'))
-        include(dependency('org.scalaz:scalaz-core_' + scalaMajorVersion + ':.*'))
-        include(dependency('org.scalaz:scalaz-concurrent_' + scalaMajorVersion + ':.*'))
-        include(dependency('org.scalaz:scalaz-stream_' + scalaMajorVersion + ':.*'))
 
         include(dependency('org.apache.kudu:kudu-client:.*'))
         include(dependency('org.apache.kudu:kudu-' + kuduSpark + '_' + scalaMajorVersion + ':.*'))

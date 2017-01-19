@@ -7,16 +7,19 @@ import org.apache.spark.sql.{Row, SQLContext}
 
 class RichSQLContext(val sqlContext: SQLContext) extends AnyVal {
   def readParquetSorted(dirname: String, selection: Option[Array[String]] = None): RDD[Row] = {
-    val parquetFiles = sqlContext.sparkContext.hadoopConfiguration.globAll(Array(dirname + "/*.parquet"))
+    // FIXME
+    /*
+    val parquetFiles = sqlContext.sparkContext.hadoopConfiguration.globAll(Array(dirname + "*.parquet"))
     if (parquetFiles.isEmpty)
-      return sqlContext.sparkContext.emptyRDD[Row]
+      return sqlContext.sparkContext.emptyRDD[Row] */
 
-    var df = sqlContext.read.parquet(dirname + "/part-*")
+    var df = sqlContext.read.parquet(dirname)
     selection.foreach { cols =>
-      df = df.select(cols.map(col): _*)
+      df = df.select(cols(0), cols.tail: _*)
     }
 
     val rdd = df.rdd
+    println("read partitions", rdd.partitions.length)
 
     val oldIndices = rdd.partitions
       .map { p => getParquetPartNumber(partitionPath(p)) }

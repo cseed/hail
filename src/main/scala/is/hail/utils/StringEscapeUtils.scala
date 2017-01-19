@@ -58,6 +58,12 @@ object StringEscapeUtils {
     sb.result()
   }
 
+  def escapeIdentifier(str: String, escapeChar: Char = '_'): String =
+    escapeStringSimple(str, escapeChar, !_.isLetter, !_.isLetterOrDigit)
+
+  def unescapeIdentifier(str: String, escapeChar: Char = '_'): String =
+    unescapeStringSimple(str, escapeChar)
+
   def escapeString(str: String, backticked: Boolean = false): String =
     escapeString(str, new StringBuilder(capacity = str.length * 2), backticked)
 

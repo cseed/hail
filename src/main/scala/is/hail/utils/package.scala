@@ -10,7 +10,7 @@ import org.apache.hadoop.mapreduce.lib.input.{FileSplit => NewFileSplit}
 import org.apache.spark.{AccumulableParam, Partition}
 import org.json4s.Extraction.decompose
 import org.json4s.jackson.Serialization
-import org.json4s.{Formats, JValue, NoTypeHints}
+import org.json4s.{DateFormat, DefaultFormats, Formats, JValue, NoTypeHints}
 
 import scala.collection.generic.CanBuildFrom
 import scala.collection.{GenTraversableOnce, TraversableOnce, mutable}
@@ -401,7 +401,11 @@ package object utils extends Logging
     }
   }
 
-  implicit val jsonFormatsNoTypeHints: Formats = Serialization.formats(NoTypeHints)
+  implicit val jsonStrictFormats: Formats = new Formats {
+    val dateFormat: DateFormat = DefaultFormats.lossless.dateFormat
+
+    override def strict: Boolean = true
+  }
 
   def caseClassJSONReaderWriter[T](implicit mf: scala.reflect.Manifest[T]): JSONReaderWriter[T] = new JSONReaderWriter[T] {
     def toJSON(x: T): JValue = decompose(x)

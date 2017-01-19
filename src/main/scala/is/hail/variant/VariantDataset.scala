@@ -18,7 +18,7 @@ import org.apache.hadoop
 import org.apache.kudu.spark.kudu.{KuduContext, _}
 import org.apache.spark.SparkEnv
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.types.{ArrayType, StringType, StructField, StructType}
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.{Row, SQLContext}
 import org.apache.spark.storage.StorageLevel
 import org.json4s.jackson.{JsonMethods, Serialization}
@@ -60,7 +60,7 @@ object VariantDataset {
             (if (vaRequiresConversion) SparkAnnotationImpex.importAnnotation(row.get(1), vaSignature) else row.get(1),
               Iterable.empty[Genotype])))
       else {
-        val rdd = sqlContext.readParquetSorted(parquetFile)
+        val rdd = sqlContext.readParquetSorted(parquetFile, Some(Array("variant", "annotations", "gs")))
         if (parquetGenotypes)
           rdd.map { row =>
             val v = row.getVariant(0)
@@ -624,8 +624,8 @@ class VariantDatasetFunctions(private val vds: VariantSampleMatrix[Genotype]) ex
 
   /**
     *
-    * @param path output path
-    * @param append append file to header
+    * @param path     output path
+    * @param append   append file to header
     * @param exportPP export Hail PLs as a PP format field
     * @param parallel export VCF in parallel using the path argument as a directory
     */
@@ -652,7 +652,7 @@ class VariantDatasetFunctions(private val vds: VariantSampleMatrix[Genotype]) ex
     *
     * @param filterExpr filter expression involving v (Variant), va (variant annotations), s (sample),
     *                   sa (sample annotations), and g (genotype), which returns a boolean value
-    * @param keep keep genotypes where filterExpr evaluates to true
+    * @param keep       keep genotypes where filterExpr evaluates to true
     */
   def filterGenotypes(filterExpr: String, keep: Boolean = true): VariantDataset = {
     val vas = vds.vaSignature
@@ -705,7 +705,59 @@ class VariantDatasetFunctions(private val vds: VariantSampleMatrix[Genotype]) ex
     }
   }
 
+  /**
+    * Filter samples using the Hail expression language.
+    *
+    * @param filterExpr Filter expression involving `s' (sample) and `sa' (sample annotations)
+    * @param keep       keep where filterExpr evaluates to true
+    */
+  def filterSamplesExpr(filterExpr: String, keep: Boolean = true): VariantDataset = {
+    val localGlobalAnnotation = vds.globalAnnotation
 
+    val sas = vds.saSignature
+
+    val ec = vds.sampleEC
+
+    val f: () => java.lang.Boolean = Parser.parseTypedExpr[java.lang.Boolean](filterExpr, ec)
+
+    val sampleAggregationOption = Aggregators.buildSampleAggregations(vds, ec)
+
+    val localKeep = keep
+    val sampleIds = vds.sampleIds
+    val p = (s: String, sa: Annotation) => {
+      sampleAggregationOption.foreach(f => f.apply(s))
+      ec.setAll(localGlobalAnnotation, s, sa)
+      Filter.boxedKeepThis(f(), localKeep)
+    }
+
+    vds.filterSamples(p)
+  }
+
+  /**
+    * Filter variants using the Hail expression language.
+    *
+    * @param filterExpr filter expression
+    * @param keep       keep variants where filterExpr evaluates to true
+    * @return
+    */
+  def filterVariantsExpr(filterExpr: String, keep: Boolean = true): VariantDataset = {
+    val localGlobalAnnotation = vds.globalAnnotation
+    val ec = vds.variantEC
+
+    val f: () => java.lang.Boolean = Parser.parseTypedExpr[java.lang.Boolean](filterExpr, ec)
+
+    val aggregatorOption = Aggregators.buildVariantAggregations(vds, ec)
+
+    val localKeep = keep
+    val p = (v: Variant, va: Annotation, gs: Iterable[Genotype]) => {
+      aggregatorOption.foreach(f => f(v, va, gs))
+
+      ec.setAll(localGlobalAnnotation, v, va)
+      Filter.boxedKeepThis(f(), localKeep)
+    }
+
+    vds.filterVariants(p)
+  }
 
   def gqByDP(path: String) {
     val nBins = GQByDPBins.nBins
@@ -735,10 +787,10 @@ class VariantDatasetFunctions(private val vds: VariantSampleMatrix[Genotype]) ex
 
   /**
     *
-    * @param path output path
+    * @param path   output path
     * @param format output format: one of rel, gcta-grm, gcta-grm-bin
     * @param idFile write ID file to this path
-    * @param nFile N file path, used with gcta-grm-bin only
+    * @param nFile  N file path, used with gcta-grm-bin only
     */
   def grm(path: String, format: String, idFile: Option[String] = None, nFile: Option[String] = None) {
     requireSplit("GRM")
@@ -753,10 +805,10 @@ class VariantDatasetFunctions(private val vds: VariantSampleMatrix[Genotype]) ex
     *
     * @param computeMafExpr An expression for the minor allele frequency of the current variant, `v', given
     *                       the variant annotations `va'. If unspecified, MAF will be estimated from the dataset
-    * @param bounded Allows the estimations for Z0, Z1, Z2, and PI_HAT to take on biologically-nonsense values
-    *                (e.g. outside of [0,1]).
-    * @param minimum Sample pairs with a PI_HAT below this value will not be included in the output. Must be in [0,1]
-    * @param maximum Sample pairs with a PI_HAT above this value will not be included in the output. Must be in [0,1]
+    * @param bounded        Allows the estimations for Z0, Z1, Z2, and PI_HAT to take on biologically-nonsense values
+    *                       (e.g. outside of [0,1]).
+    * @param minimum        Sample pairs with a PI_HAT below this value will not be included in the output. Must be in [0,1]
+    * @param maximum        Sample pairs with a PI_HAT above this value will not be included in the output. Must be in [0,1]
     */
   def ibd(computeMafExpr: Option[String] = None, bounded: Boolean = true,
     minimum: Option[Double] = None, maximum: Option[Double] = None): KeyTable = {
@@ -773,11 +825,11 @@ class VariantDatasetFunctions(private val vds: VariantSampleMatrix[Genotype]) ex
 
   /**
     *
-    * @param mafThreshold Minimum minor allele frequency threshold
-    * @param includePAR Include pseudoautosomal regions
+    * @param mafThreshold     Minimum minor allele frequency threshold
+    * @param includePAR       Include pseudoautosomal regions
     * @param fFemaleThreshold Samples are called females if F < femaleThreshold
-    * @param fMaleThreshold Samples are called males if F > maleThreshold
-    * @param popFreqExpr Use an annotation expression for estimate of MAF rather than computing from the data
+    * @param fMaleThreshold   Samples are called males if F > maleThreshold
+    * @param popFreqExpr      Use an annotation expression for estimate of MAF rather than computing from the data
     */
   def imputeSex(mafThreshold: Double = 0.0, includePAR: Boolean = false, fFemaleThreshold: Double = 0.2,
     fMaleThreshold: Double = 0.8, popFreqExpr: Option[String] = None): VariantDataset = {
@@ -827,7 +879,7 @@ class VariantDatasetFunctions(private val vds: VariantSampleMatrix[Genotype]) ex
   /**
     *
     * @param pathBase output root filename
-    * @param famFile path to pedigree .fam file
+    * @param famFile  path to pedigree .fam file
     */
   def mendelErrors(pathBase: String, famFile: String) {
     requireSplit("mendel errors")
@@ -843,11 +895,11 @@ class VariantDatasetFunctions(private val vds: VariantSampleMatrix[Genotype]) ex
 
   /**
     *
-    * @param scoresRoot Sample annotation path for scores (period-delimited path starting in 'sa')
-    * @param k Number of principal components
+    * @param scoresRoot   Sample annotation path for scores (period-delimited path starting in 'sa')
+    * @param k            Number of principal components
     * @param loadingsRoot Variant annotation path for site loadings (period-delimited path starting in 'va')
-    * @param eigenRoot Global annotation path for eigenvalues (period-delimited path starting in 'global'
-    * @param asArrays Store score and loading results as arrays, rather than structs
+    * @param eigenRoot    Global annotation path for eigenvalues (period-delimited path starting in 'global'
+    * @param asArrays     Store score and loading results as arrays, rather than structs
     */
   def pca(scoresRoot: String, k: Int = 10, loadingsRoot: Option[String] = None, eigenRoot: Option[String] = None,
     asArrays: Boolean = false): VariantDataset = {
@@ -882,8 +934,8 @@ class VariantDatasetFunctions(private val vds: VariantSampleMatrix[Genotype]) ex
   /**
     *
     * @param propagateGQ Propagate GQ instead of computing from PL
-    * @param keepStar Do not filter * alleles
-    * @param maxShift Maximum possible position change during minimum representation calculation
+    * @param keepStar    Do not filter * alleles
+    * @param maxShift    Maximum possible position change during minimum representation calculation
     */
   def splitMulti(propagateGQ: Boolean = false, keepStar: Boolean = false,
     maxShift: Int = 100): VariantDataset = {
@@ -908,6 +960,17 @@ class VariantDatasetFunctions(private val vds: VariantSampleMatrix[Genotype]) ex
     VariantQC(vds, root)
   }
 
+  /**
+    *
+    * @param config    VEP configuration file
+    * @param root      Variant annotation path to store VEP output
+    * @param csq       Annotates with the VCF CSQ field as a string, rather than the full nested struct schema
+    * @param blockSize Variants per VEP invocation
+    */
+  def vep(config: String, root: String = "va.vep", csq: Boolean = false, blockSize: Int = 1000): VariantDataset = {
+    VEP.annotate(vds, config, root, csq, blockSize)
+  }
+
   def write(dirname: String, overwrite: Boolean = false, parquetGenotypes: Boolean = false) {
     require(dirname.endsWith(".vds"), "variant dataset write paths must end in '.vds'")
 
@@ -922,28 +985,35 @@ class VariantDatasetFunctions(private val vds: VariantSampleMatrix[Genotype]) ex
     val vaRequiresConversion = SparkAnnotationImpex.requiresConversion(vaSignature)
 
     val genotypeSignature = vds.genotypeSignature
-    require(genotypeSignature == TGenotype, s"Expecting a genotype signature of TGenotype, but found `${genotypeSignature.toPrettyString()}'")
+    require(genotypeSignature == TGenotype, s"Expecting a genotype signature of TGenotype, but found `${ genotypeSignature.toPrettyString() }'")
 
     vds.hadoopConf.writeTextFile(dirname + "/partitioner.json.gz") { out =>
       Serialization.write(vds.rdd.orderedPartitioner.toJSON, out)
     }
 
     val isDosage = vds.isDosage
-    val rowRDD = vds.rdd.map { case (v, (va, gs)) =>
-      Row.fromSeq(Array(v.toRow,
-        if (vaRequiresConversion) SparkAnnotationImpex.exportAnnotation(va, vaSignature) else va,
-        if (parquetGenotypes)
-          gs.lazyMap(_.toRow).toArray[Row]: IndexedSeq[Row]
-        else
-          gs.toGenotypeStream(v, isDosage).toRow))
+    val rowRDD = vds.rdd.mapPartitionsWithIndex { (i, it) =>
+      it.map { case (v, (va, gs)) =>
+        Row.fromSeq(Array(i,
+          v.contig,
+          v.start, v.toRow,
+          if (vaRequiresConversion) SparkAnnotationImpex.exportAnnotation(va, vaSignature) else va,
+          if (parquetGenotypes)
+            gs.lazyMap(_.toRow).toArray[Row]: IndexedSeq[Row]
+          else
+            gs.toGenotypeStream(v, isDosage).toRow))
+      }
     }
     vds.hc.sqlContext.createDataFrame(rowRDD, makeSchema(parquetGenotypes = parquetGenotypes))
-      .write.parquet(dirname + "/rdd.parquet")
+      .write.partitionBy("part").parquet(dirname + "/rdd.parquet")
   }
 
   def makeSchema(parquetGenotypes: Boolean): StructType = {
     require(!(parquetGenotypes && vds.isGenericGenotype))
     StructType(Array(
+      StructField("part", IntegerType, nullable = false),
+      StructField("contig", StringType, nullable = false),
+      StructField("start", IntegerType, nullable = false),
       StructField("variant", Variant.schema, nullable = false),
       StructField("annotations", vds.vaSignature.schema),
       StructField("gs",

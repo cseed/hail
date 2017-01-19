@@ -4,6 +4,8 @@ import is.hail.expr.Type
 import is.hail.utils._
 import org.apache.hadoop.conf.Configuration
 
+import scala.io.Source
+
 package object io {
   def exportTypes(filename: String, hConf: Configuration, info: Array[(String, Type)]) {
     val sb = new StringBuilder
