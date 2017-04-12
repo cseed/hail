@@ -1237,10 +1237,10 @@ class VariantSampleMatrix[T](val hc: HailContext, val metadata: VariantMetadata,
     filterVariants(p)
   }
 
-  def filterVariantsList(input: String, keep: Boolean): VariantSampleMatrix[T] = {
+  def filterVariantsList(variants: RDD[(Variant, Unit)], keep: Boolean): VariantSampleMatrix[T] = {
     copy(
       rdd = rdd
-        .orderedLeftJoinDistinct(Variant.variantUnitRdd(sparkContext, input).toOrderedRDD)
+        .orderedLeftJoinDistinct(variants.toOrderedRDD)
         .mapPartitions({ it =>
           it.flatMap { case (v, ((va, gs), o)) =>
             o match {
@@ -1251,9 +1251,11 @@ class VariantSampleMatrix[T](val hc: HailContext, val metadata: VariantMetadata,
             }
           }
         }, preservesPartitioning = true)
-        .asOrderedRDD
-    )
+        .asOrderedRDD)
   }
+
+  def filterVariantsList(input: String, keep: Boolean): VariantSampleMatrix[T] =
+    filterVariantsList(Variant.variantUnitRdd(sparkContext, input).toOrderedRDD, keep)
 
   def sparkContext: SparkContext = hc.sc
 

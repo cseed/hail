@@ -360,15 +360,16 @@ class VDSHandler(hc: HailContext,
 class VDSLookupEngine(
   hc: HailContext, vExpr: String, gExpr: String, datasetPath: String) extends LookupEngine {
 
-  private val vivds = VariantIndexedVDS(hc, datasetPath)
-  private val metadata = vivds.metadata
+  private val vds = hc.read(datasetPath)
 
   def lookup(req: SeqrRequest, keys: Seq[Key]): SeqrResponse = {
-    val vds = vivds.query(
-      keys.map(k =>
-        Variant(k.chrom, k.start, k.ref, k.alt)).toArray)
-    val kt = vds
-      .renameSamples(vds.sampleIds.map(s => s -> q(s)).toMap)
+    val filtered = vds.filterVariantsList(
+      hc.sc.parallelize(keys.map(k =>
+        Variant(k.chrom, k.start, k.ref, k.alt)))
+        .map(k => (k, ())), keep = true)
+
+    val kt = filtered
+      .renameSamples(filtered.sampleIds.map(s => s -> q(s)).toMap)
       .makeKT(vExpr, gExpr, seperator = "__")
 
     ktToResponse(req, kt)
