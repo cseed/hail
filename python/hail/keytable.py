@@ -596,7 +596,7 @@ class KeyTable(object):
          .exportMongoDB(self.hc._jsql_context, self._jkt, mode))
 
     @handle_py4j
-    def export_solr(self, zk_host, collection, block_size=100):
+    def export_solr(self, zk_host, collection, field_attributes = {}, block_size=100):
         """Export to Solr.
         
         .. warning::
@@ -605,10 +605,10 @@ class KeyTable(object):
 
         """
 
-        self._jkt.exportSolr(zk_host, collection, block_size)
+        self._jkt.exportSolr(zk_host, collection, field_attributes, block_size)
 
     @handle_py4j
-    def export_cassandra(self, address, keyspace, table, block_size=100, rate=1000):
+    def export_cassandra(self, address, keyspace, table, port=None, block_size=100, rate=1000):
         """Export to Cassandra.
 
         .. warning::
@@ -617,7 +617,7 @@ class KeyTable(object):
 
         """
 
-        self._jkt.exportCassandra(address, keyspace, table, block_size, rate)
+        self._jkt.exportCassandra(address, keyspace, table, port, block_size, rate)
 
     @handle_py4j
     def explode(self, column_names):

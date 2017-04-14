@@ -1,0 +1,11 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: cassandra-svc
+spec:
+  type: NodePort
+  ports:
+  - port: 9042
+    nodePort: 30001
+  selector:
+    name: cassandra

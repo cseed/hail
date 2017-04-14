@@ -1,0 +1,21 @@
+kind: Deployment
+apiVersion: extensions/v1beta1
+metadata:
+  name: seqrserver
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        name: seqrserver
+    spec:
+      volumes:
+      containers:
+      - name: seqrserver-pod
+        image: gcr.io/seqr-project/seqrserver
+        ports:
+        - containerPort: 6060
+          protocol: TCP
+        imagePullPolicy: Always
+      restartPolicy: Always
+      dnsPolicy: ClusterFirst

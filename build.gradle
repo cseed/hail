@@ -9,11 +9,14 @@ plugins {
   id "com.gradle.build-scan" version "1.0"
   id 'java'
   id 'scala'
+  id 'application'
   id 'idea'
   id 'maven'
   id 'jacoco'
   id 'com.github.johnrengelman.shadow' version '1.2.3'
 }
+
+mainClassName = "is.hail.driver.Main"
 
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 
@@ -232,8 +235,6 @@ shadowJar {
         include(dependency('org.json4s:json4s-jackson_' + scalaMajorVersion + ':.*'))
         include(dependency('org.json4s:json4s-ast_' + scalaMajorVersion + ':.*'))
 
-        include(dependency('org.http4s:http4s-core_' + scalaMajorVersion + ':.*'))
-
         include(dependency('org.apache.kudu:kudu-client:.*'))
         include(dependency('org.apache.kudu:kudu-' + kuduSpark + '_' + scalaMajorVersion + ':.*'))
 
@@ -278,11 +279,6 @@ task shadowTestJar(type: ShadowJar) {
         // include(dependency('org.json4s:json4s-native_' + scalaMajorVersion + ':.*'))
         include(dependency('org.json4s:json4s-jackson_' + scalaMajorVersion + ':.*'))
         include(dependency('org.json4s:json4s-ast_' + scalaMajorVersion + ':.*'))
-
-        include(dependency('org.http4s:http4s-core_' + scalaMajorVersion + ':.*'))
-        include(dependency('org.scalaz:scalaz-core_' + scalaMajorVersion + ':.*'))
-        include(dependency('org.scalaz:scalaz-concurrent_' + scalaMajorVersion + ':.*'))
-        include(dependency('org.scalaz:scalaz-stream_' + scalaMajorVersion + ':.*'))
 
         include(dependency('org.apache.kudu:kudu-client:.*'))
         include(dependency('org.apache.kudu:kudu-' + kuduSpark + '_' + scalaMajorVersion + ':.*'))

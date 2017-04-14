@@ -131,6 +131,8 @@ class AnnotationsSuite extends SparkSuite {
 
   @Test def testReadWrite() {
     val vds1 = hc.importVCF("src/test/resources/sample.vcf")
+    vds1.typecheck()
+
     val vds2 = hc.importVCF("src/test/resources/sample.vcf")
     assert(vds1.same(vds2))
 

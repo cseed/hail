@@ -2,7 +2,6 @@ import io
 
 from hail.java import Env, handle_py4j, jiterable_to_list
 
-
 class Summary(object):
     """Class holding summary statistics about a dataset.
     
@@ -225,3 +224,32 @@ def wrap_to_list(s):
         return s
     else:
         return [s]
+
+def escape_identifier(str, escape_char='_'):
+    """Escape string.  The result is an identifier: an identifier contains
+    only letters, numbers and ``escape_char``, and starts with a
+    letter or ``escape_char``.
+
+    :param str str: String to escape.
+    :param str escape_char: Escape character.
+
+    :return: String escaped as an identifier.
+    :rtype: str
+
+    """
+    
+    return Env.hail().utils.StringEscapeUtils.escapeIdentifier(str, escape_char)
+
+def unescape_identifier(id, escape_char='_'):
+    """Unescape identifier.  Satisfies ``s ==
+    unescape_identifier(escape_identifier(s))`` for all strings ``s``.
+
+    :param str id: String to unescape.
+    :param str escape_char: Escape character.
+
+    :return: unescaped string.
+    :rtype: str
+
+    """
+    
+    return Env.hail().utils.StringEscapeUtils.unescapeIdentifier(escaped_id, escape_char)

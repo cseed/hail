@@ -54,13 +54,15 @@ object SolrConnector {
   }
 
   def documentAddField(document: SolrInputDocument, name: String, t: Type, value: Any) {
-    if (t.isInstanceOf[TIterable]) {
-      value.asInstanceOf[Traversable[_]].foreach { xi =>
-        if (xi != null)
-          document.addField(name, xi)
-      }
-    } else if (value != null)
-      document.addField(name, value)
+    if (value != null) {
+      if (t.isInstanceOf[TIterable]) {
+        value.asInstanceOf[Traversable[_]].foreach { xi =>
+          if (xi != null)
+            document.addField(name, xi)
+        }
+      } else
+        document.addField(name, value)
+    }
   }
 
   def processResponse(action: String, res: SolrResponse) {
@@ -100,6 +102,7 @@ object SolrConnector {
   def export(kt: KeyTable,
     zkHost: String,
     collection: String,
+    fieldAttributes: Map[String, Map[String, AnyRef]],
     blockSize: Int) {
 
     val sc = kt.hc.sc
@@ -114,7 +117,8 @@ object SolrConnector {
       .toSet
 
     val addFieldReqs = kt.signature.fields.flatMap { f =>
-      addFieldReq(preexistingFields, f.name, Map.empty, f.typ)
+      val attrs = fieldAttributes.getOrElse(f.name, Map.empty)
+      addFieldReq(preexistingFields, f.name, attrs, f.typ)
     }
 
     info(s"adding ${

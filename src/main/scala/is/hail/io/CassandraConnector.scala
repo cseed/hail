@@ -183,12 +183,16 @@ object CassandraConnector {
 
   private var refcount: Int = 0
 
-  def getSession(address: String): Session = {
+  def getSession(address: String, port: java.lang.Integer): Session = {
     this.synchronized {
-      if (cluster == null)
-        cluster = Cluster.builder()
-          .addContactPoint(address)
-          .build()
+      if (cluster == null) {
+        val b = Cluster.builder()
+        b.addContactPoint(address)
+        if (port != null)
+          b.withPort(port)
+
+        cluster = b.build()
+      }
 
       if (session == null)
         session = cluster.connect()
@@ -212,14 +216,14 @@ object CassandraConnector {
     }
   }
 
-  def pause(nano: Long) {
+  def pause(nano: Long): Unit = {
     if (nano > 0) {
       Thread.sleep((nano / 1000000).toInt, (nano % 1000000).toInt)
     }
   }
 
   def export(kt: KeyTable,
-    address: String, keyspace: String, table: String,
+    address: String, port: java.lang.Integer, keyspace: String, table: String,
     blockSize: Int = 100, rate: Int = 1000) {
 
     val sc = kt.hc.sc
@@ -228,7 +232,7 @@ object CassandraConnector {
 
     val fields = kt.signature.fields.map { f => (f.name, f.typ) }
 
-    val session = CassandraConnector.getSession(address)
+    val session = CassandraConnector.getSession(address, port)
 
     var keyspaceMetadata = session.getCluster.getMetadata.getKeyspace(keyspace)
     var tableMetadata = keyspaceMetadata.getTable(table)
@@ -288,7 +292,7 @@ object CassandraConnector {
     val minInsertTimeNano = 1000000000L / rate
 
     kt.rdd.foreachPartition { it =>
-      val session = CassandraConnector.getSession(address)
+      val session = CassandraConnector.getSession(address, port)
       val nb = new mutable.ArrayBuffer[String]
       val vb = new mutable.ArrayBuffer[AnyRef]
 

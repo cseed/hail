@@ -1,0 +1,11 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: seqrserver-svc
+spec:
+  type: NodePort
+  ports:
+  - port: 6060
+    nodePort: 30004
+  selector:
+    name: seqrserver

@@ -708,13 +708,21 @@ case class KeyTable(hc: HailContext, rdd: RDD[Row],
     copy(rdd = rdd.sortBy(identity[Annotation], ascending = true)(ord, act))
   }
 
-  def exportSolr(zkHost: String, collection: String, blockSize: Int = 100): Unit = {
-    SolrConnector.export(this, zkHost, collection, blockSize)
+  def exportSolr(zkHost: String, collection: String,
+    fieldAttributes: java.util.Map[String, java.util.Map[String, AnyRef]], blockSize: Int): Unit =
+    exportSolr(zkHost, collection,
+      fieldAttributes.asScala.map { case (k, v) =>
+        (k, v.asScala.toMap)
+      }.toMap, blockSize)
+
+  def exportSolr(zkHost: String, collection: String,
+    fieldAttributes: Map[String, Map[String, AnyRef]] = Map.empty, blockSize: Int = 100): Unit = {
+    SolrConnector.export(this, zkHost, collection, fieldAttributes, blockSize)
   }
 
   def exportCassandra(address: String, keyspace: String, table: String,
-    blockSize: Int = 100, rate: Int = 1000): Unit = {
-    CassandraConnector.export(this, address, keyspace, table, blockSize, rate)
+    port: java.lang.Integer = null, blockSize: Int = 100, rate: Int = 1000): Unit = {
+    CassandraConnector.export(this, address, port, keyspace, table, blockSize, rate)
   }
 
   def repartition(n: Int): KeyTable = copy(rdd = rdd.repartition(n))

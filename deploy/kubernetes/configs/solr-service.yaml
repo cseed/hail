@@ -1,0 +1,15 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: solr-svc
+spec:
+  type: NodePort
+  ports:
+  - name: solr
+    port: 30002
+    nodePort: 30002
+  - name: zk
+    port: 31002
+    nodePort: 31002
+  selector:
+    name: solr

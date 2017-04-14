@@ -47,7 +47,7 @@ class KeyTableSuite extends SparkSuite {
     val exportedData = sc.hadoopConfiguration.readLines(outputFile)(_.map(_.value).toIndexedSeq)
 
     intercept[HailException] {
-      hc.importTable(inputFile).keyBy(List("Sample", "Status", "BadKeyName"))
+      hc.importTable(inputFile).keyBy("Sample", "Status", "BadKeyName")
     }
 
     assert(importedData == exportedData)

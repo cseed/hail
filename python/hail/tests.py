@@ -3,6 +3,7 @@ Unit tests for Hail.
 """
 from __future__ import print_function  # Python 2 and 3 print compatibility
 
+import time
 import unittest
 
 from hail import HailContext, KeyTable
@@ -16,7 +17,6 @@ import time
 from hail.keytable import desc
 
 hc = None
-
 
 def setUpModule():
     global hc
