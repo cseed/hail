@@ -2,6 +2,7 @@ import io
 
 from hail.java import Env, handle_py4j, jiterable_to_list
 
+
 class Summary(object):
     """Class holding summary statistics about a dataset.
     

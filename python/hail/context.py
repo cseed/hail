@@ -399,7 +399,6 @@ class HailContext(object):
         :rtype: :class:`.KeyTable`
         """
 
-
         key = wrap_to_list(key)
         paths = wrap_to_list(paths)
         jtypes = {k: v._jtype for k, v in types.items()}
