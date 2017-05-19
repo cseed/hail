@@ -382,6 +382,8 @@ class VariantSampleMatrix[T](val hc: HailContext, val metadata: VSMMetadata,
 
   lazy val value: MatrixValue[T] = {
     val opt = MatrixAST.optimize(ast)
+    println(ast)
+    println(opt)
     opt.execute(hc)
   }
 
@@ -814,6 +816,45 @@ class VariantSampleMatrix[T](val hc: HailContext, val metadata: VSMMetadata,
   }
 
   def annotateVariantsExpr(expr: String): VariantSampleMatrix[T] = {
+
+    val assignments = Parser.annotation_assignments.parse(expr)
+
+    // FIXME don't reuse
+    val ec = ast.typ.variantEC
+
+    val expandedAssignments = assignments.flatMap { case (path, rhs, splat) =>
+      rhs.typecheck(ec)
+      if (splat) {
+        rhs.`type` match {
+          case t: TStruct =>
+            t.fields.map { f =>
+              val newRHS = Select(rhs.getPos, rhs, f.name)
+              // FIXME will generate duplicate entries
+              newRHS.typecheck(ec)
+              (path :+ f.name, newRHS)
+            }
+          case t =>
+            // FIXME pos
+            fatal(s"cannot splat non-struct type: $t")
+        }
+      } else
+        Seq((path, rhs))
+    }
+
+    copyAST(ast = AnnotateVariantsExpr[T](ast,
+      expandedAssignments.map { case (path, rhs) =>
+        // FIXME get pos of equals?
+        Assign(rhs.getPos,
+          if (path.isEmpty || path.head != "va")
+          // FIXME pos
+            fatal(s"invalid path in annotation assignment, must begin with `va': ${ path.mkString(".") }")
+          else
+            path.tail,
+          rhs)
+      }))
+
+    /*
+
     val localGlobalAnnotation = globalAnnotation
 
     val ec = variantEC
@@ -837,7 +878,7 @@ class VariantSampleMatrix[T](val hc: HailContext, val metadata: VSMMetadata,
         .foldLeft(va) { case (va, (v, inserter)) =>
           inserter(va, v)
         }
-    }.copy(vaSignature = finalType)
+    }.copy(vaSignature = finalType) */
   }
 
   def annotateVariantsTable(kt: KeyTable, vdsKey: java.util.ArrayList[String],

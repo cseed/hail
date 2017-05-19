@@ -713,3 +713,9 @@ case class If(pos: Position, cond: AST, thenTree: AST, elseTree: AST)
     ) yield result
   }
 }
+
+case class Assign(posn: Position, path: List[String], rhs: AST) extends AST(posn, rhs) {
+  def compileAggregator(): CMCodeCPS[AnyRef] = throw new UnsupportedOperationException
+
+  def compile(): CM[Code[AnyRef]] = throw new UnsupportedOperationException
+}

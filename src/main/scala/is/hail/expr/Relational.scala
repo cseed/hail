@@ -3,7 +3,7 @@ package is.hail.expr
 import java.io.FileNotFoundException
 
 import is.hail.HailContext
-import is.hail.annotations.Annotation
+import is.hail.annotations.{Annotation, Inserter}
 import is.hail.methods.{Aggregators, Filter}
 import is.hail.sparkextras.{OrderedPartitioner, OrderedRDD}
 import is.hail.variant.{Genotype, Locus, VSMLocalValue, VSMMetadata, Variant, VariantDataset, VariantSampleMatrix}
@@ -25,6 +25,16 @@ case class MatrixType(
   def vaType: Type = metadata.vaSignature
 
   def genotypeType: Type = metadata.genotypeSignature
+
+  def copy(globalType: Type = globalType,
+    saType: Type = saType,
+    vaType: Type = vaType,
+    genotypeType: Type = genotypeType): MatrixType =
+    MatrixType(metadata.copy(
+      globalSignature = globalType,
+      saSignature = saType,
+      vaSignature = vaType,
+      genotypeSignature = genotypeType))
 
   def typ = TStruct(
     "v" -> TVariant,
@@ -109,7 +119,7 @@ object NewAST {
 
     rewrite(ast)
   }
-  
+
   def rewriteBottomUp[T](ast: MatrixAST[T], rule: PartialFunction[NewAST, NewAST]): MatrixAST[T] =
     genericRewriteBottomUp(ast, rule).asInstanceOf[MatrixAST[T]]
 
@@ -356,6 +366,50 @@ case class FilterVariants[T](
     }
 
     prev.copy(rdd = prev.rdd.filter { case (v, (va, gs)) => p(v, va, gs) }.asOrderedRDD)
+  }
+}
+
+case class AnnotateVariantsExpr[T](child: MatrixAST[T], assignments: Seq[Assign])(implicit tct: ClassTag[T]) extends MatrixAST[T] {
+  def children: IndexedSeq[NewAST] = Array(child)
+
+  def copy(newChildren: IndexedSeq[NewAST]): AnnotateVariantsExpr[T] = {
+    assert(newChildren.length == 1)
+    AnnotateVariantsExpr(newChildren(0).asInstanceOf[MatrixAST[T]], assignments)
+  }
+
+  lazy val (typ, inserters) = {
+    val b = new ArrayBuilder[Inserter]()
+    val newVAT = assignments.foldLeft(child.typ.metadata.vaSignature) { (vas, a) =>
+      val (s, i) = vas.insert(a.rhs.`type`, a.path)
+      b += i
+      s
+    }
+    (child.typ.copy(vaType = newVAT), b.result())
+  }
+
+  def execute(hc: HailContext): MatrixValue[T] = {
+    val prev = child.execute(hc)
+
+    val localGlobalAnnotation = prev.localValue.globalAnnotation
+    val ec = child.typ.variantEC
+
+    val aggregateOption = Aggregators.buildVariantAggregations(prev.sparkContext, prev.localValue, ec)
+
+    // FIXME bad name
+    val fs = assignments.map(a => Parser.evalNoTypeCheck(a.rhs, ec))
+
+    val localInserters = inserters
+
+    val newRDD = prev.rdd.mapValuesWithKey { case (v, (va, gs)) =>
+      ec.setAll(localGlobalAnnotation, v, va)
+      aggregateOption.foreach(f => f(v, va, gs))
+      (fs.zip(localInserters)
+        .foldLeft(va) { case (acc, (f, inserter)) =>
+          inserter(acc, f())
+        }, gs)
+    }.asOrderedRDD
+
+    prev.copy(rdd = newRDD)
   }
 }
 

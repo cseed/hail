@@ -42,7 +42,7 @@ object ParserUtils {
 }
 
 object Parser extends JavaTokenParsers {
-  private def evalNoTypeCheck(t: AST, ec: EvalContext): () => Any = {
+  def evalNoTypeCheck(t: AST, ec: EvalContext): () => Any = {
     val typedNames = ec.st.toSeq
       .sortBy { case (name, (i, _)) => i }
       .map { case (name, (_, typ)) => (name, typ) }
@@ -53,7 +53,7 @@ object Parser extends JavaTokenParsers {
     () => f(ec.a.asInstanceOf[mutable.ArrayBuffer[AnyRef]])
   }
 
-  private def eval(t: AST, ec: EvalContext): (Type, () => Any) = {
+  def eval(t: AST, ec: EvalContext): (Type, () => Any) = {
     t.typecheck(ec)
 
     if (!t.`type`.isRealizable)
@@ -509,6 +509,9 @@ object Parser extends JavaTokenParsers {
   def splat: Parser[Boolean] =
     "." ~ "*" ^^ { _ => true } |
       success(false)
+
+  def annotation_assignments: Parser[Seq[(List[String], AST, Boolean)]] =
+    repsep((repsep(identifier, ".") <~ "=") ~ expr ~ splat, ",") ^^ { _.map(tuplify) }
 
   def named_expr[T](name: Parser[T]): Parser[(Option[T], AST, Boolean)] =
     (((name <~ "=") ^^ { n => Some(n) }) ~ expr ~ splat |||
