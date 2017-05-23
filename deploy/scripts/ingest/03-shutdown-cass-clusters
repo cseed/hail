@@ -1,0 +1,11 @@
+#!/bin/bash
+
+set -ex
+
+kubectl delete \
+	-f ../../kubernetes/configs/cassandra-ingest.yaml \
+	-f ../../kubernetes/configs/cassandra-service.yaml
+
+gcloud -q --project seqr-project container clusters delete --zone us-central1-a seqr-backend-cassandra-ingest
+
+gcloud -q --project seqr-project dataproc clusters delete --zone us-central1-a seqr-backend-export-cluster

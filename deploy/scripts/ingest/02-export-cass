@@ -1,0 +1,22 @@
+#!/bin/bash
+
+set -ex
+
+POD=`kubectl get pods -l name=cassandra -o jsonpath={.items[0].metadata.name}`
+
+NAMENODE=`kubectl get pods -l name=cassandra -o jsonpath={.items[0].spec.nodeName}`
+
+# drop/create database
+kubectl exec -i $POD -- cqlsh < create-db.cql
+
+# HASH=`gsutil cat gs://seqr-hail/latest-hash.txt`
+HASH=88f7220
+
+JAR=hail-$HASH.jar
+
+gcloud --project seqr-project dataproc jobs submit pyspark export-cass.py \
+       --cluster seqr-backend-export-cluster \
+       --files=gs://seqr-hail/$JAR \
+       --py-files=gs://seqr-hail/hail-$HASH.zip \
+       --properties=spark.driver.extraClassPath=./$JAR,spark.executor.extraClassPath=./$JAR \
+       -- $NAMENODE
