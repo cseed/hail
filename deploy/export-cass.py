@@ -4,10 +4,13 @@ from hail.seqr import *
 
 import sys
 
-hc = HailContext()
-
 seqr_host = sys.argv[1]
 print('seqr_host', seqr_host)
+
+vds_path = sys.argv[2]
+print('vds_path', vds_path)
+
+hc = HailContext()
 
 def escaped_export_expr(exprs):
     return ' , '.join(['{} = {}'.format(escape_identifier(e[0]), e[1])
@@ -66,7 +69,7 @@ gexprs = escaped_export_expr([
     ('ab', 'let s = g.ad.sum in g.ad[0] / s'),
     ('dp', 'g.dp')])
 
-vds = hc.read('gs://seqr-hail/annotated/Cohen.1kpart.vds')
+vds = hc.read(vds_path)
 
 print(vds.variant_schema)
 print(vds.global_schema)

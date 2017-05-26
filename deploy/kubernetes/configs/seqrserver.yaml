@@ -17,5 +17,8 @@ spec:
         - containerPort: 6060
           protocol: TCP
         imagePullPolicy: Always
+        resources:
+          requests:
+            cpu: 200m
       restartPolicy: Always
       dnsPolicy: ClusterFirst

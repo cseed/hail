@@ -36,7 +36,8 @@ spec:
           mountPath: /solr-data
         resources:
           requests:
-            cpu: 200m
+            memory: "28G"
+            cpu: "7"
       securityContext:
         fsGroup: 1000
       restartPolicy: Always

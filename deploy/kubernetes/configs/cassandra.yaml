@@ -27,8 +27,7 @@ spec:
           mountPath: /var/lib/cassandra
         resources:
           requests:
-            memory: "28G"
-            cpu: "7"
+            cpu: 200m
       securityContext:
         fsGroup: 999
       restartPolicy: Always

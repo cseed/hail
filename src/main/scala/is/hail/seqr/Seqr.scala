@@ -317,7 +317,7 @@ class CassLookupEngine(hc: HailContext, address: String, keyspace: String, table
 
     val rows = hc.sc.parallelize(keys)
       .mapPartitions { it =>
-        val session = CassandraConnector.getSession(localAddress, port)
+        val session = CassandraConnector.getSession(localAddress, localPort)
 
         val prepared = session.prepare(
           s"SELECT * FROM ${ localKeyspace }.${ localTable } WHERE dataset_5fid=? AND chrom=? AND start=? AND ref=? AND alt=?")
