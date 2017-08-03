@@ -13,25 +13,29 @@ object DMatrix {
 
   def read(hc: HailContext, dirname: String,
     dropCols: Boolean = false, dropRows: Boolean = false): DMatrix = {
-    // FIXME only read/write unsafe rows
     ???
   }
 }
 
-// problem 1: we don't want OrderedRDD split keys: no tuples
-case class DMatrixValue(
-  global: Annotation,
-  cols: Annotation,
-  rows: RowRDD) {
+case class Region(mem: Array[Long]) // aka MemoryBuffer
 
+case class Value(r: Region, var offset: Long)
+
+case class DMatrixValue(
+  global: Value,
+  // FIXME should this be RDD[Value]?
+  cols: Value,
+  rows: DMatrixRowRDD) {
 }
 
 case class DMatrixType(
+  rowPartitionKey: Array[String],
+  // superset of rowPartitionKey
   rowKey: Array[String],
   rowAnnotation: Array[String],
   colKey: Array[String],
   colAnnotation: Array[String],
-  typ: Type)
+  typ: TStruct)
 
 abstract class DMatrixAST {
   def typ: DMatrixType
@@ -54,9 +58,9 @@ class DMatrix(val hc: HailContext,
 
   lazy val DMatrixValue(global, cols, rows) = value
 
-  lazy val colKeysBc: Broadcast[Annotation] = sc.broadcast(cols)
+  lazy val colsBc: Broadcast[Annotation] = sc.broadcast(cols)
 
   def write(dirname: String, overwrite: Boolean = false) {
-    // FIXME only read/write unsafe rows
+    ???
   }
 }
