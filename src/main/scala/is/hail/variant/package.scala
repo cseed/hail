@@ -1,6 +1,7 @@
 package is.hail
 
 import is.hail.annotations.Annotation
+import is.hail.sparkextras.OrderedRDD
 import is.hail.utils.HailIterator
 
 import scala.language.implicitConversions
