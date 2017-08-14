@@ -284,7 +284,7 @@ class RichRDDRow(val rdd: RDD[Row]) extends AnyVal {
           rvb.addRow(t, r)
           val offset = rvb.end()
 
-          val rowSize = region.offset
+          val rowSize = region.offset.toInt
           out.writeInt(rowSize)
 
           en.writeRegionValue(f, region, offset)
