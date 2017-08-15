@@ -300,7 +300,7 @@ class RichRDDRow(val rdd: RDD[Row]) extends AnyVal {
           rvb.start(f)
           rvb.addRow(t, r)
           val offset = rvb.end()
-          
+
           val rowSize = region.offset
           out.writeLong(rowSize)
 
@@ -309,7 +309,7 @@ class RichRDDRow(val rdd: RDD[Row]) extends AnyVal {
           rowCount += 1
         }
 
-        out.writeInt(-1)
+        out.writeLong(-1)
       }
 
       Iterator(rowCount)
