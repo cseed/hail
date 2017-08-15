@@ -1,26 +1,52 @@
 package is.hail.annotations
 
+import java.io.{DataInputStream, DataOutputStream}
+
+import com.esotericsoftware.kryo.io.{Input, Output}
+import com.esotericsoftware.kryo.{Kryo, KryoSerializable}
 import is.hail.expr._
 import is.hail.utils.Interval
 import is.hail.variant.{AltAllele, GenericGenotype, Locus, Variant}
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.Row
 
-class UnsafeIndexedSeqAnnotation(val region: MemoryBuffer,
-  arrayTTBc: Broadcast[TypeTree],
-  elemSize: Long, val offset: Long, elemOffset: Long,
-  val length: Int) extends IndexedSeq[Annotation] {
+class UnsafeIndexedSeqAnnotation(
+  var ttBc: Broadcast[TypeTree],
+  var region: MemoryBuffer, var aoff: Long, var elemsOffset: Long,
+  var length: Int,
+  var elemSize: Long) extends IndexedSeq[Annotation] with KryoSerializable {
   def apply(i: Int): Annotation = {
     if (i < 0 || i >= length)
       throw new IndexOutOfBoundsException(i.toString)
     assert(i >= 0 && i < length)
-    if (region.loadBit(offset + 4, i))
+    if (region.loadBit(aoff + 4, i))
       null
     else {
-      UnsafeRow.read(region, elemOffset + i * elemSize,
-        arrayTTBc.value.typ.asInstanceOf[TContainer].elementType,
-        arrayTTBc.value.subtree(0))
+      UnsafeRow.read(region, elemsOffset + i * elemSize,
+        ttBc.value.typ.asInstanceOf[TContainer].elementType,
+        ttBc.value.subtree(0))
     }
+  }
+
+  override def write(kryo: Kryo, output: Output) {
+    kryo.writeObject(output, ttBc)
+    val enc = new Encoder(new DataOutputStream(output))
+    enc.writeRegionValue(ttBc.value.typ, region, aoff)
+  }
+
+  override def read(kryo: Kryo, input: Input) {
+    val cTorrentBroadcast = Class.forName("org.apache.spark.broadcast.TorrentBroadcast")
+    ttBc = kryo.readObject(input, cTorrentBroadcast).asInstanceOf[Broadcast[TypeTree]]
+    val t = ttBc.value.typ.asInstanceOf[TArray]
+
+    val dec = new Decoder(new DataInputStream(input))
+    region = MemoryBuffer()
+    aoff = dec.readRegionValue(t, region)
+
+    length = region.loadInt(aoff)
+
+    elemSize = UnsafeUtils.arrayElementSize(t.elementType)
+    elemsOffset = aoff + t.elementsOffset(length)
   }
 }
 
@@ -36,10 +62,10 @@ object UnsafeRow {
     val aoff = region.loadAddress(offset)
 
     val length = region.loadInt(aoff)
-    val elemOffset = arrayTTBc.value.typ.asInstanceOf[TContainer].elementsOffset(length)
+    val elemsOffset = arrayTTBc.value.typ.asInstanceOf[TContainer].elementsOffset(length)
     val elemSize = UnsafeUtils.arrayElementSize(elemType)
 
-    new UnsafeIndexedSeqAnnotation(region, arrayTTBc, elemSize, aoff, aoff + elemOffset, length)
+    new UnsafeIndexedSeqAnnotation(arrayTTBc, region, aoff, aoff + elemsOffset, length, elemSize)
   }
 
   def readStruct(region: MemoryBuffer, offset: Long, ttBc: Broadcast[TypeTree]): UnsafeRow = {
@@ -173,8 +199,8 @@ object UnsafeRow {
   }
 }
 
-class UnsafeRow(val ttBc: Broadcast[TypeTree],
-  val region: MemoryBuffer, var offset: Long) extends Row {
+class UnsafeRow(var ttBc: Broadcast[TypeTree],
+  var region: MemoryBuffer, var offset: Long) extends Row with KryoSerializable {
 
   def t: TStruct = ttBc.value.typ.asInstanceOf[TStruct]
 
@@ -228,5 +254,19 @@ class UnsafeRow(val ttBc: Broadcast[TypeTree],
     if (i < 0 || i >= t.size)
       throw new IndexOutOfBoundsException(i.toString)
     region.loadBit(offset, i)
+  }
+
+  override def write(kryo: Kryo, output: Output) {
+    kryo.writeObject(output, ttBc)
+    val enc = new Encoder(new DataOutputStream(output))
+    enc.writeRegionValue(ttBc.value.typ, region, offset)
+  }
+
+  override def read(kryo: Kryo, input: Input) {
+    val cTorrentBroadcast = Class.forName("org.apache.spark.broadcast.TorrentBroadcast")
+    ttBc = kryo.readObject(input, cTorrentBroadcast).asInstanceOf[Broadcast[TypeTree]]
+    val dec = new Decoder(new DataInputStream(input))
+    region = MemoryBuffer()
+    offset = dec.readRegionValue(ttBc.value.typ, region)
   }
 }

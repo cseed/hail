@@ -1,12 +1,9 @@
 package is.hail.annotations
 
-import java.util
-
 import is.hail.expr._
 import is.hail.utils._
 import is.hail.variant.{AltAllele, Genotype, Locus, Variant}
 import org.apache.spark.sql.Row
-import org.apache.spark.unsafe.Platform
 
 import scala.collection.mutable
 
@@ -508,7 +505,7 @@ class RegionValueBuilder(region: MemoryBuffer) {
     val (toT, toOff) = current()
     assert(toT == t.fundamentalType)
 
-    val toBOff = fixupArray(t.fundamentalType, uis.region, uis.offset)
+    val toBOff = fixupArray(t.fundamentalType, uis.region, uis.aoff)
     region.storeAddress(toOff, toBOff)
 
     advance()
