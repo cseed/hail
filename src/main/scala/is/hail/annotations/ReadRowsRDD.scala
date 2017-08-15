@@ -300,9 +300,9 @@ class RichRDDRow(val rdd: RDD[Row]) extends AnyVal {
           rvb.start(f)
           rvb.addRow(t, r)
           val offset = rvb.end()
-
-          val rowSize = region.offset.toInt
-          out.writeInt(rowSize)
+          
+          val rowSize = region.offset
+          out.writeLong(rowSize)
 
           en.writeRegionValue(t, region, offset)
 
@@ -345,7 +345,7 @@ class ReadRowsRDD(sc: SparkContext,
             LZ4Factory.fastestInstance().fastDecompressor()))
       }
 
-      private var rowSize = in.readInt()
+      private var rowSize = in.readLong()
 
       private val buffer = new Array[Byte](8 * 1024)
       private val region = MemoryBuffer(rowSize.max(8 * 1024))
@@ -365,7 +365,7 @@ class ReadRowsRDD(sc: SparkContext,
 
         dec.readRegionValue(t, region)
 
-        rowSize = in.readInt()
+        rowSize = in.readLong()
         if (rowSize == -1)
           in.close()
 
