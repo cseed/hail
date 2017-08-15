@@ -50,18 +50,10 @@ object Memory {
   def memcpy(dst: Long, src: Long, n: Long): Unit = unsafe.copyMemory(src, dst, n)
 
   def copyToArray(dst: Array[Byte], src: Long, n: Long): Unit = {
-    var i = 0
-    while (i < n) {
-      dst(i) = loadByte(src + i)
-      i += 1
-    }
+    unsafe.copyMemory(null, src, dst, Unsafe.ARRAY_BYTE_BASE_OFFSET, n)
   }
 
   def copyFromArray(dst: Long, src: Array[Byte], n: Long): Unit = {
-    var i = 0
-    while (i < n) {
-      storeByte(dst + i, src(i))
-      i += 1
-    }
+    unsafe.copyMemory(src, Unsafe.ARRAY_BYTE_BASE_OFFSET, null, dst, n)
   }
 }

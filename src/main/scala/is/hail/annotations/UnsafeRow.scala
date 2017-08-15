@@ -143,9 +143,7 @@ object UnsafeRow {
         readArray(region, offset, elementType, ttBc).toSet
       case TString => readString(region, offset)
       case td: TDict =>
-        println(td)
         val a = readArray(region, offset, td.elementType, ttBc)
-        println(a)
         a.asInstanceOf[IndexedSeq[Row]].map(r => (r.get(0), r.get(1))).toMap
       case struct: TStruct =>
         readStruct(region, offset, ttBc)
