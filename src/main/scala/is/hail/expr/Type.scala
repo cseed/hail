@@ -292,7 +292,7 @@ case object TBoolean extends Type {
 
   override def unsafeOrdering(missingGreatest: Boolean): UnsafeOrdering = new UnsafeOrdering {
     override def compare(r1: MemoryBuffer, o1: Int, r2: MemoryBuffer, o2: Int): Int = {
-      java.lang.Boolean.compare(r1.loadBit(o1, 0), r2.loadBit(o2, 0))
+      java.lang.Boolean.compare(r1.loadBoolean(o1), r2.loadBoolean(o1))
     }
   }
 
@@ -454,6 +454,11 @@ case object TString extends Type {
   override def byteSize: Int = 4
 
   override lazy val fundamentalType: Type = TBinary
+
+  def loadString(region: MemoryBuffer, offset: Int): String = {
+    val length = TBinary.loadLength(region, offset)
+    new String(region.loadBytes(TBinary.bytesOffset(offset), length))
+  }
 }
 
 final case class TFunction(paramTypes: Seq[Type], returnType: Type) extends Type {
@@ -622,9 +627,6 @@ abstract class TContainer extends Type {
   // FIXME LCM
   def contentsAlignment: Int = elementType.alignment.max(4)
 
-  override def unsafeOrdering(missingGreatest: Boolean): UnsafeOrdering =
-    TArray(elementType).unsafeOrdering(missingGreatest)
-
   def elementsOffset(length: Int): Int =
     UnsafeUtils.roundUpAlignment(4 + (length + 7) / 8, elementType.alignment)
 
@@ -632,6 +634,73 @@ abstract class TContainer extends Type {
 
   def contentsByteSize(length: Int): Int =
     elementsOffset(length) + length * elementByteSize
+
+  def loadLength(region: MemoryBuffer, aoff: Int): Int =
+    region.loadInt(aoff)
+
+  def isElementDefined(region: MemoryBuffer, aoff: Int, i: Int): Boolean =
+    !region.loadBit(aoff + 4, i)
+
+  def setElementMissing(region: MemoryBuffer, aoff: Int, i: Int) {
+    region.setBit(aoff + 4, i)
+  }
+
+  def elementOffset(aoff: Int, length: Int, i: Int): Int =
+    aoff + elementsOffset(length) + i * UnsafeUtils.arrayElementSize(elementType)
+
+  def elementOffset(region: MemoryBuffer, aoff: Int, i: Int): Int =
+    elementOffset(aoff, region.loadInt(aoff), i)
+
+  def loadElement(region: MemoryBuffer, aoff: Int, length: Int, i: Int): Int = {
+    val off = elementOffset(aoff, length, i)
+    elementType.fundamentalType match {
+      case _: TArray | TBinary => region.loadInt(off)
+      case _ => off
+    }
+  }
+
+  def loadElement(region: MemoryBuffer, aoff: Int, i: Int): Int =
+    loadElement(region, aoff, region.loadInt(aoff), i)
+
+  def allocate(region: MemoryBuffer, length: Int): Int = {
+    region.align(contentsAlignment)
+    region.allocate(contentsByteSize(length))
+  }
+
+  override def unsafeOrdering(missingGreatest: Boolean): UnsafeOrdering = {
+    val eltOrd = elementType.unsafeOrdering(missingGreatest)
+
+    new UnsafeOrdering {
+      override def compare(r1: MemoryBuffer, o1: Int, r2: MemoryBuffer, o2: Int): Int = {
+        val length1 = loadLength(r1, o1)
+        val length2 = loadLength(r2, o2)
+
+        var i = 0
+        while (i < math.min(length1, length2)) {
+          val leftDefined = isElementDefined(r1, o1, i)
+          val rightDefined = isElementDefined(r2, o2, i)
+
+          if (leftDefined && rightDefined) {
+            val eOff1 = loadElement(r1, o1, length1, i)
+            val eOff2 = loadElement(r2, o2, length2, i)
+            val c = eltOrd.compare(r1, eOff1, r2, eOff2)
+            if (c != 0)
+              return c
+          } else if (leftDefined != rightDefined) {
+            val c = if (leftDefined) -1 else 1
+            if (missingGreatest)
+              return c
+            else
+              return -c
+          }
+          i += 1
+        }
+        Integer.compare(length1, length2)
+      }
+    }
+  }
+
+  override lazy val fundamentalType: TArray = TArray(elementType.fundamentalType)
 }
 
 abstract class TIterable extends TContainer {
@@ -678,40 +747,6 @@ final case class TArray(elementType: Type) extends TIterable {
     annotationOrdering(extendOrderingToNull(missingGreatest)(
       Ordering.Iterable(elementType.ordering(missingGreatest))))
 
-  override def unsafeOrdering(missingGreatest: Boolean): UnsafeOrdering = {
-    val eltOrd = elementType.unsafeOrdering(missingGreatest)
-    val mg = missingGreatest
-    val fund = fundamentalType
-
-    new UnsafeOrdering {
-      override def compare(r1: MemoryBuffer, o1: Int, r2: MemoryBuffer, o2: Int): Int = {
-        val length1 = loadLength(r1, o1)
-        val length2 = loadLength(r2, o2)
-
-        var i = 0
-        while (i < math.min(length1, length2)) {
-          val leftDefined = isElementDefined(r1, o1, i)
-          val rightDefined = isElementDefined(r2, o2, i)
-
-          if (leftDefined && rightDefined) {
-            val eOff1 = fund.loadElement(r1, o1, length1, i)
-            val eOff2 = fund.loadElement(r2, o2, length2, i)
-            val c = eltOrd.compare(r1, eOff1, r2, eOff2)
-            if (c != 0)
-              return c
-          } else if (leftDefined != rightDefined) {
-            val c = if (leftDefined) -1 else 1
-            if (mg)
-              return c
-            else
-              return -c
-          }
-          i += 1
-        }
-        Integer.compare(length1, length2)
-      }
-    }
-  }
 
   override def desc: String =
     """
@@ -735,46 +770,6 @@ final case class TArray(elementType: Type) extends TIterable {
     """
 
   override def scalaClassTag: ClassTag[IndexedSeq[AnyRef]] = classTag[IndexedSeq[AnyRef]]
-
-  override lazy val fundamentalType: TArray = {
-    val elementFundamentalType = elementType.fundamentalType
-    if (elementFundamentalType == elementType)
-      this
-    else
-      TArray(elementType.fundamentalType)
-  }
-
-  def loadLength(region: MemoryBuffer, aoff: Int): Int =
-    region.loadInt(aoff)
-
-  def isElementDefined(region: MemoryBuffer, aoff: Int, i: Int): Boolean =
-    !region.loadBit(aoff + 4, i)
-
-  def setElementMissing(region: MemoryBuffer, aoff: Int, i: Int) {
-    region.setBit(aoff + 4, i)
-  }
-
-  def elementOffset(aoff: Int, length: Int, i: Int): Int =
-    aoff + elementsOffset(length) + i * UnsafeUtils.arrayElementSize(elementType)
-
-  def elementOffset(region: MemoryBuffer, aoff: Int, i: Int): Int =
-    elementOffset(aoff, region.loadInt(aoff), i)
-
-  def loadElement(region: MemoryBuffer, aoff: Int, length: Int, i: Int): Int = {
-    val off = elementOffset(aoff, length, i)
-    elementType match {
-      case _: TArray | TBinary => region.loadInt(off)
-      case _ => off
-    }
-  }
-
-  def loadElement(region: MemoryBuffer, aoff: Int, i: Int): Int =
-    loadElement(region, aoff, region.loadInt(aoff), i)
-
-  def allocate(region: MemoryBuffer, length: Int): Int = {
-    region.align(contentsAlignment)
-    region.allocate(contentsByteSize(length))
-  }
 }
 
 final case class TSet(elementType: Type) extends TIterable {
@@ -840,8 +835,6 @@ final case class TSet(elementType: Type) extends TIterable {
     """
 
   override def scalaClassTag: ClassTag[Set[AnyRef]] = classTag[Set[AnyRef]]
-
-  override lazy val fundamentalType: Type = TArray(elementType.fundamentalType)
 }
 
 final case class TDict(keyType: Type, valueType: Type) extends TContainer {
@@ -913,8 +906,6 @@ final case class TDict(keyType: Type, valueType: Type) extends TContainer {
 
     annotationOrdering(extendOrderingToNull(missingGreatest)(dict))
   }
-
-  override lazy val fundamentalType: Type = TArray(elementType.fundamentalType)
 }
 
 case object TGenotype extends ComplexType {
@@ -1040,10 +1031,8 @@ case object TVariant extends ComplexType {
         val cOff1 = repr.loadField(r1, o1, 0)
         val cOff2 = repr.loadField(r2, o2, 0)
 
-        val cLen1 = TBinary.loadLength(r1, cOff1)
-        val cLen2 = TBinary.loadLength(r2, cOff2)
-        val contig1 = new String(r1.loadBytes(TBinary.bytesOffset(cOff1), cLen1))
-        val contig2 = new String(r2.loadBytes(TBinary.bytesOffset(cOff2), cLen2))
+        val contig1 = TString.loadString(r1, cOff1)
+        val contig2 = TString.loadString(r2, cOff2)
 
         val c = Contig.compare(contig1, contig2)
         if (c != 0)
@@ -1096,10 +1085,8 @@ case object TLocus extends ComplexType {
         val cOff1 = repr.loadField(r1, o1, 0)
         val cOff2 = repr.loadField(r2, o2, 0)
 
-        val cLen1 = TBinary.loadLength(r1, cOff1)
-        val cLen2 = TBinary.loadLength(r2, cOff2)
-        val contig1 = new String(r1.loadBytes(TBinary.bytesOffset(cOff1), cLen1))
-        val contig2 = new String(r2.loadBytes(TBinary.bytesOffset(cOff2), cLen2))
+        val contig1 = TString.loadString(r1, cOff1)
+        val contig2 = TString.loadString(r2, cOff2)
 
         val c = Contig.compare(contig1, contig2)
         if (c != 0)
@@ -1609,11 +1596,8 @@ final case class TStruct(fields: IndexedSeq[Field]) extends Type {
   }
 
   override def unsafeOrdering(missingGreatest: Boolean): UnsafeOrdering = {
-    val mg = missingGreatest
     val fieldOrderings = fields.map(_.typ.unsafeOrdering(missingGreatest)).toArray
 
-    // FIXME: remove when genome reference comes in and we can compare fundamental types
-    val repr = fundamentalType
     new UnsafeOrdering {
       override def compare(r1: MemoryBuffer, o1: Int, r2: MemoryBuffer, o2: Int): Int = {
         var i = 0
@@ -1622,12 +1606,12 @@ final case class TStruct(fields: IndexedSeq[Field]) extends Type {
           val rightDefined = isFieldDefined(r2, o2, i)
 
           if (leftDefined && rightDefined) {
-            val c = fieldOrderings(i).compare(r1, repr.loadField(r1, o1, i), r2, repr.loadField(r2, o2, i))
+            val c = fieldOrderings(i).compare(r1, loadField(r1, o1, i), r2, loadField(r2, o2, i))
             if (c != 0)
               return c
           } else if (leftDefined != rightDefined) {
             val c = if (leftDefined) -1 else 1
-            if (mg)
+            if (missingGreatest)
               return c
             else
               return -c
@@ -1702,7 +1686,7 @@ final case class TStruct(fields: IndexedSeq[Field]) extends Type {
 
   def loadField(region: MemoryBuffer, offset: Int, fieldIdx: Int): Int = {
     val off = fieldOffset(offset, fieldIdx)
-    fields(fieldIdx).typ match {
+    fields(fieldIdx).typ.fundamentalType match {
       case _: TArray | TBinary => region.loadInt(off)
       case _ => off
     }
