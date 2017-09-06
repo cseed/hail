@@ -5,6 +5,7 @@ import is.hail.check._
 import is.hail.check.Arbitrary._
 import is.hail.expr._
 import is.hail.utils._
+import is.hail.variant.{GenomeReference, Variant}
 import org.apache.spark.sql.Row
 import org.testng.annotations.Test
 
@@ -161,6 +162,29 @@ class UnsafeSuite extends SparkSuite {
 
   @Test def testEmptySize() {
     assert(TStruct().byteSize == 0)
+  }
+
+  @Test def orderingRegression() {
+    val region = MemoryBuffer()
+    val region2 = MemoryBuffer()
+    val rvb = new RegionValueBuilder(region)
+    val rvb2 = new RegionValueBuilder(region2)
+
+    val v1 = Variant("1", 1, "T", Array("A", "G"))
+    val v2 = Variant("1", 1, "T", "C")
+
+    val t = TVariant(GenomeReference.GRCh37)
+
+    rvb.start(t)
+    rvb.addAnnotation(t, v1)
+    val rv = RegionValue(region, rvb.end())
+
+    rvb2.start(t)
+    rvb2.addAnnotation(t, v2)
+    val rv2 = RegionValue(region2, rvb2.end())
+
+    assert(math.signum(t.ordering(missingGreatest = true).compare(v1, v2)) ==
+      math.signum(t.unsafeOrdering(missingGreatest = true).compare(rv, rv2)))
   }
 
   @Test def testUnsafeOrdering() {
