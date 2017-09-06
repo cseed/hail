@@ -104,7 +104,7 @@ object PartitionKeyInfo2 {
 
     while (it.hasNext) {
       val f = it.next()
-      
+
       val pkOff = fullKeyType.loadField(f.region, f.offset, 0)
       if (fOrd.lt(f, prevF.value)) {
         if (pkOrd.compare(
