@@ -121,20 +121,6 @@ class VariantDatasetFunctions(private val vds: VariantDataset) extends AnyVal {
       .result(vds.nSamples)
   }
 
-  def eraseSplit(): VariantDataset = {
-    if (vds.wasSplit) {
-      val (newSignatures1, f1) = vds.deleteVA("wasSplit")
-      val vds1 = vds.copy(vaSignature = newSignatures1)
-      val (newSignatures2, f2) = vds1.deleteVA("aIndex")
-      vds1.copy(wasSplit = false,
-        vaSignature = newSignatures2,
-        rdd = vds1.rdd.mapValuesWithKey { case (v, (va, gs)) =>
-          (f2(f1(va)), gs.lazyMap(g => g.copy(fakeRef = false)))
-        }.asOrderedRDD)
-    } else
-      vds
-  }
-
   def exportGen(path: String, precision: Int = 4) {
     requireSplit("export gen")
 
