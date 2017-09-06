@@ -662,6 +662,11 @@ class OrderedRDD2 private(
     OrderedRDD2(partitionKey, key, rowType,
       orderedPartitioner,
       rdd.filter(p))
+
+  override def sample(withReplacement: Boolean, fraction: Double, seed: Long): OrderedRDD2 =
+    OrderedRDD2(partitionKey, key, rowType,
+      orderedPartitioner,
+      rdd.sample(withReplacement, fraction, seed))
 }
 
 object OrderedPartitioner2 {
