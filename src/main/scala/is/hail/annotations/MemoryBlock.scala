@@ -450,6 +450,8 @@ final case class RegionValue(var region: MemoryBuffer,
 }
 
 class RegionValueBuilder(var region: MemoryBuffer) {
+  def this() = this(null)
+
   var start: Long = _
   var root: Type = _
 
@@ -688,7 +690,7 @@ class RegionValueBuilder(var region: MemoryBuffer) {
 
     region.copyFrom(fromRegion, fromAOff, toAOff, t.contentsByteSize(length))
 
-    if (requiresFixup(t.elementType)) {
+    if (region.ne(fromRegion) && requiresFixup(t.elementType)) {
       var i = 0
       while (i < length) {
         if (t.isElementDefined(fromRegion, fromAOff, i)) {
@@ -715,6 +717,8 @@ class RegionValueBuilder(var region: MemoryBuffer) {
   }
 
   def fixupStruct(t: TStruct, toOff: Long, fromRegion: MemoryBuffer, fromOff: Long) {
+    assert(region.ne(fromRegion))
+
     var i = 0
     while (i < t.size) {
       if (t.isFieldDefined(fromRegion, fromOff, i)) {
@@ -739,7 +743,7 @@ class RegionValueBuilder(var region: MemoryBuffer) {
 
   def addField(t: TStruct, fromRegion: MemoryBuffer, fromOff: Long, i: Int) {
     if (t.isFieldDefined(fromRegion, fromOff, i))
-      addRegionValue(t.fieldType(i), fromRegion, t.fieldOffset(fromOff, i))
+      addRegionValue(t.fieldType(i), fromRegion, t.loadField(fromRegion, fromOff, i))
     else
       setMissing()
   }
@@ -768,19 +772,26 @@ class RegionValueBuilder(var region: MemoryBuffer) {
     val toT = currentType()
     val toOff = currentOffset()
     assert(toT == t.fundamentalType)
+    assert(typestk.nonEmpty || toOff == start)
 
     t.fundamentalType match {
       case t: TStruct =>
         region.copyFrom(fromRegion, fromOff, toOff, t.byteSize)
-        fixupStruct(t, toOff, fromRegion, fromOff)
+        if (region.ne(fromRegion))
+          fixupStruct(t, toOff, fromRegion, fromOff)
       case t: TArray =>
-        assert(typestk.isEmpty)
+        // FIXME shouldn't copy if in same region (set start to fromOff?)
         val toAOff = fixupArray(t, fromRegion, fromOff)
-        assert(toAOff == start)
+        if (typestk.nonEmpty)
+          region.storeAddress(toOff, toAOff)
+        else
+          assert(toAOff == start)
       case TBinary =>
-        assert(typestk.isEmpty)
         val toBOff = fixupBinary(fromRegion, fromOff)
-        assert(toBOff == start)
+        if (typestk.nonEmpty)
+          region.storeAddress(toOff, toBOff)
+        else
+          assert(toBOff == start)
       case _ =>
         region.copyFrom(fromRegion, fromOff, toOff, t.byteSize)
     }
@@ -796,8 +807,12 @@ class RegionValueBuilder(var region: MemoryBuffer) {
     val toOff = currentOffset()
     assert(toT == t.fundamentalType)
 
-    val toBOff = fixupArray(t.fundamentalType, uis.region, uis.aoff)
-    region.storeAddress(toOff, toBOff)
+    if (region.eq(uis.region))
+      region.storeAddress(toOff, uis.aoff)
+    else {
+      val toAOff = fixupArray(t.fundamentalType, uis.region, uis.aoff)
+      region.storeAddress(toOff, toAOff)
+    }
 
     advance()
   }

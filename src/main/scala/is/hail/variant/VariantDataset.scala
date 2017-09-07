@@ -290,13 +290,13 @@ class VariantDatasetFunctions(private val vds: VariantDataset) extends AnyVal {
 
   /**
     *
-    * @param filterExpr Filter expression involving v (variant), va (variant annotations), and aIndex (allele index)
-    * @param annotationExpr Annotation modifying expression involving v (new variant), va (old variant annotations),
-    * and aIndices (maps from new to old indices)
+    * @param filterExpr             Filter expression involving v (variant), va (variant annotations), and aIndex (allele index)
+    * @param annotationExpr         Annotation modifying expression involving v (new variant), va (old variant annotations),
+    *                               and aIndices (maps from new to old indices)
     * @param filterAlteredGenotypes any call that contains a filtered allele is set to missing instead
-    * @param keep Keep variants matching condition
-    * @param subset subsets the PL and AD. Genotype and GQ are set based on the resulting PLs.  Downcodes by default.
-    * @param maxShift Maximum possible position change during minimum representation calculation
+    * @param keep                   Keep variants matching condition
+    * @param subset                 subsets the PL and AD. Genotype and GQ are set based on the resulting PLs.  Downcodes by default.
+    * @param maxShift               Maximum possible position change during minimum representation calculation
     */
   def filterAlleles(filterExpr: String, annotationExpr: String = "va = va", filterAlteredGenotypes: Boolean = false,
     keep: Boolean = true, subset: Boolean = true, maxShift: Int = 100, keepStar: Boolean = false): VariantDataset = {
@@ -306,8 +306,8 @@ class VariantDatasetFunctions(private val vds: VariantDataset) extends AnyVal {
   /**
     *
     * @param filterExpr filter expression involving v (Variant), va (variant annotations), s (sample),
-    * sa (sample annotations), and g (genotype), which returns a boolean value
-    * @param keep keep genotypes where filterExpr evaluates to true
+    *                   sa (sample annotations), and g (genotype), which returns a boolean value
+    * @param keep       keep genotypes where filterExpr evaluates to true
     */
   def filterGenotypes(filterExpr: String, keep: Boolean = true): VariantDataset = {
     val vas = vds.vaSignature
@@ -333,15 +333,14 @@ class VariantDatasetFunctions(private val vds: VariantDataset) extends AnyVal {
 
     val noCall = Genotype()
     val localKeep = keep
-    vds.mapValuesWithAll(vds.genotypeSignature,
-      { (v: Variant, va: Annotation, s: Annotation, sa: Annotation, g: Genotype) =>
-        ec.setAll(v, va, s, sa, g)
+    vds.mapValuesWithAll(vds.genotypeSignature, { (v: Variant, va: Annotation, s: Annotation, sa: Annotation, g: Genotype) =>
+      ec.setAll(v, va, s, sa, g)
 
-        if (Filter.boxedKeepThis(f(), localKeep))
-          g
-        else
-          noCall
-      })
+      if (Filter.boxedKeepThis(f(), localKeep))
+        g
+      else
+        noCall
+    })
   }
 
   def grm(): KinshipMatrix = {
@@ -351,22 +350,84 @@ class VariantDatasetFunctions(private val vds: VariantDataset) extends AnyVal {
   }
 
   def hardCalls(): VariantDataset = {
-    vds.mapValues(vds.genotypeSignature, { g =>
+    val localNSamples = vds.nSamples
+
+    val rowType = vds.matrixType.rowType
+    val gst = TArray(TGenotype)
+    val gt = TGenotype.representation
+
+    vds.copy2(
+      rdd2 = vds.rdd2.mapPartitionsPreservesPartitioning { it =>
+        val rvb = new RegionValueBuilder()
+
+        it.map { rv =>
+          val region = rv.region
+
+          rvb.set(rv.region)
+          rvb.start(rowType)
+          rvb.startStruct()
+          rvb.addField(rowType, rv, 0) // pk
+          rvb.addField(rowType, rv, 1) // v
+          rvb.addField(rowType, rv, 2) // va
+
+          // gs
+          rvb.startArray(localNSamples)
+          val gsAOff = rowType.loadField(region, rv.offset, 3)
+          var i = 0
+          while (i < localNSamples) {
+            if (gst.isElementDefined(region, gsAOff, i)) {
+              rvb.startStruct()
+              val gOff = gst.elementOffset(gsAOff, localNSamples, i)
+
+              // gt
+              if (gt.isFieldDefined(region, gOff, 0)) {
+                rvb.addInt(region.loadInt(gt.loadField(region, gOff, 0)))
+              } else
+                rvb.setMissing()
+
+              rvb.setMissing() // ad
+              rvb.setMissing() // dp
+              rvb.setMissing() // gq
+              rvb.setMissing() // pl
+
+              // fakeRef
+              assert(gt.isFieldDefined(region, gOff, 5))
+              rvb.addBoolean(region.loadBoolean(gt.loadField(region, gOff, 5)))
+
+              rvb.addBoolean(false) // isLinearScale = false
+
+              rvb.endStruct()
+            } else
+              rvb.setMissing()
+
+            i += 1
+          }
+          rvb.endArray() // gs
+          rvb.endStruct()
+
+          rv.offset = rvb.end()
+
+          rv
+        }
+      }
+    )
+
+    /* vds.mapValues(vds.genotypeSignature, { g =>
       if (g == null)
         null
       else
         Genotype(g._unboxedGT, g._fakeRef)
-    })
+    }) */
   }
 
   /**
     *
     * @param computeMafExpr An expression for the minor allele frequency of the current variant, `v', given
-    * the variant annotations `va'. If unspecified, MAF will be estimated from the dataset
-    * @param bounded Allows the estimations for Z0, Z1, Z2, and PI_HAT to take on biologically-nonsense values
-    * (e.g. outside of [0,1]).
-    * @param minimum Sample pairs with a PI_HAT below this value will not be included in the output. Must be in [0,1]
-    * @param maximum Sample pairs with a PI_HAT above this value will not be included in the output. Must be in [0,1]
+    *                       the variant annotations `va'. If unspecified, MAF will be estimated from the dataset
+    * @param bounded        Allows the estimations for Z0, Z1, Z2, and PI_HAT to take on biologically-nonsense values
+    *                       (e.g. outside of [0,1]).
+    * @param minimum        Sample pairs with a PI_HAT below this value will not be included in the output. Must be in [0,1]
+    * @param maximum        Sample pairs with a PI_HAT above this value will not be included in the output. Must be in [0,1]
     */
   def ibd(computeMafExpr: Option[String] = None, bounded: Boolean = true,
     minimum: Option[Double] = None, maximum: Option[Double] = None): KeyTable = {
@@ -383,11 +444,11 @@ class VariantDatasetFunctions(private val vds: VariantDataset) extends AnyVal {
 
   /**
     *
-    * @param mafThreshold Minimum minor allele frequency threshold
-    * @param includePAR Include pseudoautosomal regions
+    * @param mafThreshold     Minimum minor allele frequency threshold
+    * @param includePAR       Include pseudoautosomal regions
     * @param fFemaleThreshold Samples are called females if F < femaleThreshold
-    * @param fMaleThreshold Samples are called males if F > maleThreshold
-    * @param popFreqExpr Use an annotation expression for estimate of MAF rather than computing from the data
+    * @param fMaleThreshold   Samples are called males if F > maleThreshold
+    * @param popFreqExpr      Use an annotation expression for estimate of MAF rather than computing from the data
     */
   def imputeSex(mafThreshold: Double = 0.0, includePAR: Boolean = false, fFemaleThreshold: Double = 0.2,
     fMaleThreshold: Double = 0.8, popFreqExpr: Option[String] = None): VariantDataset = {
@@ -471,11 +532,11 @@ class VariantDatasetFunctions(private val vds: VariantDataset) extends AnyVal {
 
   /**
     *
-    * @param scoresRoot Sample annotation path for scores (period-delimited path starting in 'sa')
-    * @param k Number of principal components
+    * @param scoresRoot   Sample annotation path for scores (period-delimited path starting in 'sa')
+    * @param k            Number of principal components
     * @param loadingsRoot Variant annotation path for site loadings (period-delimited path starting in 'va')
-    * @param eigenRoot Global annotation path for eigenvalues (period-delimited path starting in 'global'
-    * @param asArrays Store score and loading results as arrays, rather than structs
+    * @param eigenRoot    Global annotation path for eigenvalues (period-delimited path starting in 'global'
+    * @param asArrays     Store score and loading results as arrays, rather than structs
     */
   def pca(scoresRoot: String, k: Int = 10, loadingsRoot: Option[String] = None, eigenRoot: Option[String] = None,
     asArrays: Boolean = false): VariantDataset = {
@@ -536,8 +597,8 @@ class VariantDatasetFunctions(private val vds: VariantDataset) extends AnyVal {
   /**
     *
     * @param propagateGQ Propagate GQ instead of computing from PL
-    * @param keepStar Do not filter * alleles
-    * @param maxShift Maximum possible position change during minimum representation calculation
+    * @param keepStar    Do not filter * alleles
+    * @param maxShift    Maximum possible position change during minimum representation calculation
     */
   def splitMulti(propagateGQ: Boolean = false, keepStar: Boolean = false,
     maxShift: Int = 100): VariantDataset = {

@@ -586,9 +586,6 @@ object OrderedRDD2 {
 
     val partitionerBc = sc.broadcast(orderedPartitioner)
 
-    val rangeBoundsTTBc = BroadcastTypeTree(sc, orderedPartitioner.rangeBoundsType)
-    val pkTTBc = BroadcastTypeTree(sc, pkType)
-
     new OrderedRDD2(partitionKey, key, rowType, orderedPartitioner,
       rdd.mapPartitionsWithIndex { case (i, it) =>
         val partitioner = partitionerBc.value
