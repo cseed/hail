@@ -3,7 +3,7 @@ package is.hail.sparkextras
 import is.hail.annotations._
 import is.hail.expr.{JSONAnnotationImpex, Parser, TArray, TSet, TStruct, Type}
 import is.hail.utils._
-import org.apache.spark.{Partition, Partitioner, SparkContext, TaskContext}
+import org.apache.spark._
 import org.apache.spark.rdd.{RDD, ShuffledRDD}
 import org.json4s.JsonAST.{JInt, JObject, JString, JValue}
 
@@ -628,6 +628,84 @@ object OrderedRDD2 {
         }
       })
   }
+
+  def leftJoin(left: TStruct, leftKey: Array[String],
+    right: TStruct, rightKey: Array[String]): (
+    TStruct, UnsafeOrdering, (RegionValueBuilder, RegionValue, RegionValue) => Unit) = {
+    val rightKeySet = rightKey.toSet
+    val rightValueIdx: Array[Int] =
+      (0 until right.size)
+        .filter(i => !rightKeySet(right.fields(i).name))
+        .toArray
+
+    val (leftKeyType, _) = left.select(leftKey)
+    val (rightKeyType, _) = right.select(rightKey)
+
+    if (leftKeyType != rightKeyType)
+      fatal(
+        s"""Incompatible join keys.  Keys must have same length and types, in order:
+           | Left key type: ${ leftKeyType.toPrettyString(compact = true) }
+           | Right key type: ${ rightKeyType.toPrettyString(compact = true) }
+         """.stripMargin)
+
+    val (rightValueType, _) = right.filter(rightKey.toSet, include = false)
+
+    // checks disjoint names
+    val joinType = left ++ rightValueType
+
+    val leftKeyIdx = leftKey.map(left.fieldIdx)
+    val rightKeyIdx = rightKey.map(right.fieldIdx)
+    val keyOrd = leftKeyIdx.map { i =>
+      assert(left.fieldType(leftKeyIdx(i)) == right.fieldType(rightKeyIdx(i)))
+      left.fieldType(leftKeyIdx(i)).unsafeOrdering(missingGreatest = true)
+    }
+
+    val fkOrd = new UnsafeOrdering {
+      def compare(r1: MemoryBuffer, o1: Long, r2: MemoryBuffer, o2: Long): Int = {
+        var i = 0
+        while (i < leftKeyIdx.length) {
+          val c = keyOrd(i).compare(r1, left.loadField(r1, o1, leftKeyIdx(i)),
+            r2, right.loadField(r2, o2, rightKeyIdx(i)))
+          if (c != 0)
+            return c
+          i += 1
+        }
+
+        0
+      }
+    }
+
+    val merge = { (rvb: RegionValueBuilder, lrv: RegionValue, rrv: RegionValue) =>
+      rvb.set(lrv.region)
+      rvb.start(joinType)
+      rvb.startStruct() // row
+    var i = 0
+      while (i < left.size) {
+        rvb.addField(left, lrv, i)
+        i += 1
+      }
+
+      if (rrv != null) {
+        i = 0
+        while (i < rightValueIdx.length) {
+          rvb.addField(right, rrv, rightValueIdx(i))
+          i += 1
+        }
+      } else {
+        i = 0
+        while (i < rightValueIdx.length) {
+          rvb.setMissing()
+          i += 1
+        }
+      }
+      rvb.endStruct()
+
+      // leave result in lrv
+      lrv.offset = rvb.end()
+    }
+
+    (joinType, fkOrd, merge)
+  }
 }
 
 class OrderedRDD2 private(
@@ -664,6 +742,103 @@ class OrderedRDD2 private(
     OrderedRDD2(partitionKey, key, rowType,
       orderedPartitioner,
       rdd.sample(withReplacement, fraction, seed))
+
+  def orderedLeftJoinDistinct(right: OrderedRDD2): OrderedRDD2 = {
+    val (joinType, fkOrd, merge) = OrderedRDD2.leftJoin(rowType, Array(partitionKey, key),
+      right.rowType, Array(right.partitionKey, right.key))
+
+    OrderedRDD2(partitionKey, key,
+      joinType,
+      orderedPartitioner,
+      new OrderedLeftJoinDistinctRDD2(this, right, fkOrd, merge))
+  }
+}
+
+class OrderedDependency2(left: OrderedRDD2, right: OrderedRDD2) extends NarrowDependency[RegionValue](right) {
+  override def getParents(partitionId: Int): Seq[Int] =
+    OrderedDependency2.getDependencies(left.orderedPartitioner, right.orderedPartitioner)(partitionId)
+}
+
+object OrderedDependency2 {
+  def getDependencies(p1: OrderedPartitioner2, p2: OrderedPartitioner2)(partitionId: Int): Range = {
+    val lastPartition = if (partitionId == p1.rangeBounds.length)
+      p2.numPartitions - 1
+    else
+      p2.getPartitionPK(p1.rangeBounds(partitionId))
+
+    if (partitionId == 0)
+      0 to lastPartition
+    else {
+      val startPartition = p2.getPartitionPK(p1.rangeBounds(partitionId - 1))
+      startPartition to lastPartition
+    }
+  }
+}
+
+case class OrderedLeftJoinDistinctRDD2Partition(index: Int, leftPartition: Partition, rightPartitions: Array[Partition]) extends Partition
+
+class OrderedLeftJoinDistinctRDD2(left: OrderedRDD2, right: OrderedRDD2,
+  fkOrd: UnsafeOrdering,
+  merge: (RegionValueBuilder, RegionValue, RegionValue) => Unit)
+  extends RDD[RegionValue](left.sparkContext,
+    Seq[Dependency[_]](new OneToOneDependency(left),
+      new OrderedDependency2(left, right))) {
+
+  override val partitioner: Option[Partitioner] = left.partitioner
+
+  def getPartitions: Array[Partition] = {
+    Array.tabulate[Partition](left.getNumPartitions)(i =>
+      OrderedLeftJoinDistinctRDD2Partition(i,
+        left.partitions(i),
+        OrderedDependency2.getDependencies(left.orderedPartitioner, right.orderedPartitioner)(i)
+          .map(right.partitions)
+          .toArray))
+  }
+
+  override def getPreferredLocations(split: Partition): Seq[String] = left.preferredLocations(split)
+
+  override def compute(split: Partition, context: TaskContext): Iterator[RegionValue] = {
+    val partition = split.asInstanceOf[OrderedLeftJoinDistinctRDD2Partition]
+
+    val leftIt = left.iterator(partition.leftPartition, context)
+    val rightIt = partition.rightPartitions.iterator.flatMap { p =>
+      right.iterator(p, context)
+    }
+
+    new Iterator[RegionValue] {
+      val rvb = new RegionValueBuilder()
+
+      var rrv: RegionValue =
+        if (rightIt.hasNext)
+          rightIt.next()
+        else
+          null
+
+      def advanceRight(lrv: RegionValue) {
+        while (rrv != null && fkOrd.compare(lrv, rrv) > 0) {
+          if (rightIt.hasNext)
+            rrv = rightIt.next()
+          else
+            null
+        }
+      }
+
+      def hasNext: Boolean = leftIt.hasNext
+
+      def next(): RegionValue = {
+        val lrv = leftIt.next()
+        advanceRight(lrv)
+        // merge into lrv
+        merge(rvb, lrv,
+          // FIXME duplicate comparison
+          if (rrv != null && fkOrd.compare(lrv, rrv) == 0)
+            rrv
+          else
+            null)
+        lrv
+      }
+    }
+  }
 }
 
 object OrderedPartitioner2 {
@@ -710,6 +885,18 @@ class OrderedPartitioner2(
   def region: MemoryBuffer = rangeBounds.region
 
   def loadElement(i: Int): Long = rangeBoundsType.loadElement(rangeBounds.region, rangeBounds.aoff, rangeBounds.length, i)
+
+  // FIXME test
+  def getPartitionPK(pk: Any): Int = {
+    val part = BinarySearch.binarySearch(numPartitions,
+      // elem.compare(key)
+      i =>
+        if (i == numPartitions - 1)
+          -1 // key.compare(inf)
+        else
+          ordering.compare(pk, rangeBounds(i)))
+    part
+  }
 
   // return the smallest partition for which key <= max
   // key: fullKeyType

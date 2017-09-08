@@ -830,7 +830,37 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
       } else
         insertVA(other.vaSignature, Parser.parseAnnotationRoot(annotationExpr, Annotation.VARIANT_HEAD))
 
-    annotateVariants(other.variantsAndAnnotations, finalType, inserter, product = false)
+    val newMatrixType = matrixType.copy(metadata = matrixType.metadata.copy(vaSignature = finalType))
+    val newRowType = newMatrixType.rowType
+
+    // FIXME va2
+    // type: Struct { pk, v, va, gs, va2 }
+    val joinRDD = rdd2.orderedLeftJoinDistinct(other.variantsAndAnnotations2)
+
+    val joinType = joinRDD.rowType
+    val joinTTBc = BroadcastTypeTree(sparkContext, joinType)
+
+    copy2(vaSignature = finalType,
+      rdd2 = OrderedRDD2("pk", "v", newRowType, rdd2.orderedPartitioner,
+        joinRDD.mapPartitions { it =>
+          val rvb = new RegionValueBuilder()
+          it.map { rv =>
+            val ur = new UnsafeRow(joinTTBc, rv.region, rv.offset)
+
+            rvb.set(rv.region)
+            rvb.start(newRowType)
+            rvb.startStruct() // row
+            rvb.addField(joinType, rv, 0) // pk
+            rvb.addField(joinType, rv, 1) // v
+            rvb.addAnnotation(finalType, inserter(ur.get(2), ur.get(4))) // va
+            rvb.addField(joinType, rv, 3) // gs
+            rvb.endStruct() // row
+            rv.offset = rvb.end()
+            rv
+          }
+        }))
+
+    // annotateVariants(other.variantsAndAnnotations, finalType, inserter, product = false)
   }
 
   def count(): (Long, Long) = (nSamples, countVariants())
@@ -1885,6 +1915,29 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
 
   def variantsAndAnnotations: OrderedRDD[RPK, RK, Annotation] =
     rdd.mapValuesWithKey { case (v, (va, gs)) => va }
+
+  def variantsAndAnnotations2: OrderedRDD2 = {
+    val rowType = matrixType.rowType
+    val newRowType = TStruct(
+      "pk" -> matrixType.partitionKeyType,
+      "v" -> matrixType.vType,
+      "va2" -> matrixType.vaType) // FIXME
+
+    OrderedRDD2("pk", "v", newRowType, rdd2.orderedPartitioner,
+      rdd2.mapPartitions { it =>
+        val rvb = new RegionValueBuilder()
+        it.map { rv =>
+          rvb.set(rv.region)
+          rvb.start(newRowType)
+          rvb.startStruct() // row
+          rvb.addField(rowType, rv, 0) // pk
+          rvb.addField(rowType, rv, 1) // v
+          rvb.addField(rowType, rv, 2) // va
+          rvb.endStruct()
+          rv
+        }
+      })
+  }
 
   def variantEC: EvalContext = {
     val aggregationST = Map(

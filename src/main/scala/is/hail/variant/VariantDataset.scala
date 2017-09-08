@@ -376,7 +376,7 @@ class VariantDatasetFunctions(private val vds: VariantDataset) extends AnyVal {
           var i = 0
           while (i < localNSamples) {
             if (gst.isElementDefined(region, gsAOff, i)) {
-              rvb.startStruct()
+              rvb.startStruct() // g
               val gOff = gst.elementOffset(gsAOff, localNSamples, i)
 
               // gt

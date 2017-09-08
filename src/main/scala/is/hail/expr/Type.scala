@@ -1546,6 +1546,15 @@ final case class TStruct(fields: IndexedSeq[Field]) extends Type {
     }
   }
 
+  def ++(that: TStruct): TStruct = {
+    val overlapping = fields.map(_.name).toSet.intersect(
+      that.fields.map(_.name).toSet)
+    if (overlapping.nonEmpty)
+      fatal(s"overlapping fields in struct concatenation: ${ overlapping.mkString(", ") }")
+
+    TStruct(fields.map(f => (f.name, f.typ)) ++ that.fields.map(f => (f.name, f.typ)): _*)
+  }
+
   def filter(f: (Field) => Boolean): (TStruct, (Annotation) => Annotation) = {
     val included = fields.map(f)
 
