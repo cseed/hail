@@ -126,7 +126,6 @@ class UnsafeIndexedSeq(var region: MemoryBuffer,
 }
 
 object UnsafeRow {
-
   def apply(ttBc: Broadcast[TypeTree], r: Row): UnsafeRow = {
     val region = MemoryBuffer()
     val rvb = new RegionValueBuilder(region)
@@ -190,15 +189,16 @@ object UnsafeRow {
       readString(region, offset + ft.byteOffsets(1)))
   }
 
+  private val tArrayAltAllele = TArray(TAltAllele)
+
   def readArrayAltAllele(region: MemoryBuffer, offset: Long): Array[AltAllele] = {
-    val elemType = TAltAllele
-    val t = TArray(elemType)
+    val t = tArrayAltAllele
 
     val aoff = region.loadAddress(offset)
 
     val length = region.loadInt(aoff)
     val elemOffset = t.elementsOffset(length)
-    val elemSize = UnsafeUtils.arrayElementSize(elemType)
+    val elemSize = t.elementByteSize
 
     val a = new Array[AltAllele](length)
     var i = 0
@@ -209,15 +209,16 @@ object UnsafeRow {
     a
   }
 
+  private val tArrayInt32 = TArray(TInt32)
+
   def readArrayInt(region: MemoryBuffer, offset: Long): Array[Int] = {
-    val elemType = TInt32
-    val t = TArray(elemType)
+    val t = tArrayInt32
 
     val aoff = region.loadInt(offset)
 
     val length = region.loadInt(aoff)
     val elemOffset = t.elementsOffset(length)
-    val elemSize = UnsafeUtils.arrayElementSize(elemType)
+    val elemSize = t.elementByteSize
 
     val a = new Array[Int](length)
     var i = 0
