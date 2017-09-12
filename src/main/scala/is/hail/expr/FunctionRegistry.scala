@@ -745,7 +745,8 @@ object FunctionRegistry {
   }, "the difference between the two smallest PL entries.")
   registerFieldCode("pl", { (x: Code[Genotype]) =>
     CM.ret(arrayToWrappedArray(Code.invokeStatic[Genotype, Genotype, Array[Int]]("unboxedPL", x)))
-  }, """
+  },
+    """
      phred-scaled normalized genotype likelihood values. The conversion between
      ``g.pl`` (Phred-scaled likelihoods) and ``g.gp`` (linear-scaled
      probabilities) assumes a uniform prior.

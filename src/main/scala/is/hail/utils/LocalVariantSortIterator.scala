@@ -1,5 +1,7 @@
 package is.hail.utils
 
+import is.hail.annotations.RegionValue
+import is.hail.sparkextras.OrderedRDD2Type
 import is.hail.variant.Variant
 
 import scala.collection.mutable

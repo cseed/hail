@@ -1,7 +1,6 @@
 package is.hail.annotations
 
 import java.io.{InputStream, OutputStream}
-
 import is.hail.expr._
 import is.hail.utils.{SerializableHadoopConfiguration, _}
 import is.hail.variant.LZ4Utils
@@ -265,6 +264,7 @@ class LZ4InputBuffer(in: InputStream) extends InputBuffer {
     val f = Memory.loadFloat(buf, off)
     off += 4
     f
+
   }
 
   def readDouble(): Double = {

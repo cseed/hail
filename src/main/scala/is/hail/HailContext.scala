@@ -9,6 +9,7 @@ import is.hail.io.gen.GenLoader
 import is.hail.io.plink.{FamFileConfig, PlinkLoader}
 import is.hail.io.vcf._
 import is.hail.keytable.KeyTable
+import is.hail.sparkextras.OrderedRDD2
 import is.hail.stats.{BaldingNicholsModel, Distribution, UniformDist}
 import is.hail.utils.{log, _}
 import is.hail.variant.{GenericDataset, GenomeReference, Genotype, Locus, VSMFileMetadata, VSMSubgen, Variant, VariantDataset, VariantSampleMatrix}
@@ -162,7 +163,7 @@ object HailContext {
     val hc = new HailContext(sparkContext, sqlContext, tmpDir, branchingFactor)
     sparkContext.uiWebUrl.foreach(ui => info(s"SparkUI: $ui"))
 
-    info(s"Running Hail version ${hc.version}")
+    info(s"Running Hail version ${ hc.version }")
     hc
   }
 }

@@ -79,6 +79,7 @@ class VSMSuite extends SparkSuite {
           "thing1" -> TString),
         "thing2" -> TString,
         "dummy" -> TString))
+
     val s4va1 = Annotation(Annotation("yes"), "yes", null)
     val s4va2 = Annotation(Annotation("yes"), "no", "dummy")
 

@@ -1666,10 +1666,10 @@ class VariantDataset(HistoryMixin):
                       subset=bool,
                       keep=bool,
                       filter_altered_genotypes=bool,
-                      max_shift=integral,
+                      left_aligned=bool,
                       keep_star=bool)
     def filter_alleles(self, expr, annotation='va = va', subset=True, keep=True,
-                       filter_altered_genotypes=False, max_shift=100, keep_star=False):
+                       filter_altered_genotypes=False, left_aligned=False, keep_star=False):
         """Filter a user-defined set of alternate alleles for each variant.
         If all alternate alleles of a variant are filtered, the
         variant itself is filtered.  The expr expression is
@@ -1800,10 +1800,9 @@ class VariantDataset(HistoryMixin):
 
         :param bool filter_altered_genotypes: If true, genotypes that contain filtered-out alleles are set to missing.
 
-        :param int max_shift: maximum number of base pairs by which
-            a split variant can move.  Affects memory usage, and will
-            cause Hail to throw an error if a variant that moves further
-            is encountered.
+        :param bool left_aligned: If True, variants are assumed to be
+          left aligned and have unique loci.  This avoids a shuffle.
+          If the assumption is violated, an error is generated.
 
         :param bool keepStar: If true, keep variants where the only allele left is a ``*`` allele.
 
@@ -1811,7 +1810,7 @@ class VariantDataset(HistoryMixin):
         :rtype: :py:class:`.VariantDataset`
         """
 
-        jvds = self._jvdf.filterAlleles(expr, annotation, filter_altered_genotypes, keep, subset, max_shift,
+        jvds = self._jvdf.filterAlleles(expr, annotation, filter_altered_genotypes, keep, subset, left_aligned,
                                         keep_star)
         return VariantDataset(self.hc, jvds)
 
@@ -3274,10 +3273,9 @@ class VariantDataset(HistoryMixin):
 
     @handle_py4j
     @record_method
-    @typecheck_method(max_shift=integral)
-    def min_rep(self, max_shift=100):
-        """
-        Gives minimal, left-aligned representation of alleles. Note that this can change the variant position.
+    @typecheck_method(left_aligned=bool)
+    def min_rep(self, left_aligned=False):
+        """Gives minimal, left-aligned representation of alleles. Note that this can change the variant position.
 
         .. include:: _templates/req_tvariant.rst
 
@@ -3289,15 +3287,15 @@ class VariantDataset(HistoryMixin):
         2. Trimming of a bi-allelic site leading to a change in position
         `1:10000:AATAA,AAGAA` => `1:10002:T:G`
 
-        :param int max_shift: maximum number of base pairs by which
-          a split variant can move.  Affects memory usage, and will
-          cause Hail to throw an error if a variant that moves further
-          is encountered.
+        :param bool left_aligned: If True, variants are assumed to be
+          left aligned and have unique loci.  This avoids a shuffle.
+          If the assumption is violated, an error is generated.
 
         :rtype: :class:`.VariantDataset`
+
         """
 
-        jvds = self._jvkdf.minRep(max_shift)
+        jvds = self._jvkdf.minRep(left_aligned)
         return VariantDataset(self.hc, jvds)
 
     @handle_py4j
@@ -4886,13 +4884,16 @@ class VariantDataset(HistoryMixin):
           smallest PL values.  Intended to be used in conjunction with
           ``import_vcf(store_gq=True)``.  This option will be obviated
           in the future by generic genotype schemas.  Experimental.
+
         :param bool keep_star_alleles: Do not filter out * alleles.
+
         :param bool left_aligned: If True, variants are assumed to be
           left aligned and have unique loci.  This avoids a shuffle.
           If the assumption is violated, an error is generated.
 
         :return: A biallelic variant dataset.
         :rtype: :py:class:`.VariantDataset`
+
         """
 
         jvds = self._jvkdf.splitMulti(propagate_gq, keep_star_alleles, left_aligned)

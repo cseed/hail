@@ -184,4 +184,16 @@ class ConcordanceSuite extends SparkSuite {
       true
     }.check()
   }
+
+  @Test def regression1() {
+    val sample2 = hc.importVCF("src/test/resources/sample2.vcf")
+      .persist()
+      .splitMulti()
+
+    val (glob, con1, con2) = sample2.concordance(sample2)
+    val f = tmpDir.createTempFile(extension = "kt")
+
+    con1.write(f, overwrite = true)
+    con2.write(f, overwrite = true)
+  }
 }

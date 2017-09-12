@@ -1583,7 +1583,7 @@ final case class TStruct(fields: IndexedSeq[Field]) extends Type {
     }
   }
 
-  def updateKey(key: String, i: Int, sig: Type): Type = {
+  def updateKey(key: String, i: Int, sig: Type): TStruct = {
     assert(fieldIdx.contains(key))
 
     val newFields = Array.fill[Field](fields.length)(null)

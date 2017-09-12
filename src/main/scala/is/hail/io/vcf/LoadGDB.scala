@@ -119,8 +119,6 @@ object LoadGDB {
       "va" -> variantAnnotationSignatures,
       "gs" -> TArray(genotypeSignature))
 
-    val localRowType = rowType
-
     val region = MemoryBuffer()
     val rvb = new RegionValueBuilder(region)
 
@@ -132,11 +130,11 @@ object LoadGDB {
         rvb.start(rowType.fundamentalType)
         reader.readRecord(vc, rvb, infoSignature, genotypeSignature, dropSamples, canonicalFlags)
 
-        val ur = new UnsafeRow(localRowType, region.copy(), rvb.end())
+        val ur = new UnsafeRow(rowType, region.copy(), rvb.end())
 
-        val v = ur.getAs[Variant](0)
-        val va = ur.get(1)
-        val gs: Iterable[Annotation] = ur.getAs[IndexedSeq[Annotation]](2)
+        val v = ur.getAs[Variant](1)
+        val va = ur.get(2)
+        val gs: Iterable[Annotation] = ur.getAs[IndexedSeq[Annotation]](3)
 
         (v, (va, gs))
       }

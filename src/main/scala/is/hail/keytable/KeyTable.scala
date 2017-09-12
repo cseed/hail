@@ -81,7 +81,6 @@ object KeyTable {
     }
 
     val schema = Parser.parseType(metadata.schema).asInstanceOf[TStruct]
-
     KeyTable(hc,
       new ReadRowsRDD(hc.sc, path, schema, metadata.n_partitions)
         .map { rv =>

@@ -1,9 +1,10 @@
 package is.hail.variant
 
-import is.hail.annotations.{Annotation, Querier, RegionValue, UnsafeRow}
+import is.hail.annotations._
 import is.hail.expr.{TArray, TCall, TGenotype, TInt32, TString, TStruct, Type}
 import is.hail.io.vcf.ExportVCF
 import is.hail.methods.{SplitMulti, VEP}
+import is.hail.sparkextras.OrderedRDD2
 import is.hail.utils._
 
 import scala.collection.JavaConverters._
@@ -23,12 +24,98 @@ class VariantKeyDatasetFunctions[T >: Null](private val vsm: VariantSampleMatrix
     ExportVCF(vsm, path, append, parallel)
   }
 
-  def minRep(maxShift: Int = 100): VariantSampleMatrix[Locus, Variant, T] = {
-    require(maxShift > 0, s"invalid value for maxShift: $maxShift. Parameter must be a positive integer.")
-    val minrepped = vsm.rdd.map { case (v, (va, gs)) =>
-      (v.minRep, (va, gs))
-    }
-    vsm.copy(rdd = minrepped.smartShuffleAndSort(vsm.rdd.orderedPartitioner, maxShift))
+  def minRep(leftAligned: Boolean = false): VariantSampleMatrix[Locus, Variant, T] = {
+    val localRowType = vsm.rowType
+    val newRDD2: OrderedRDD2 =
+      if (leftAligned) {
+        OrderedRDD2(
+          vsm.matrixType.orderedRDD2Type,
+          vsm.rdd2.orderedPartitioner,
+          vsm.rdd2.mapPartitionsPreservesPartitioning { it =>
+            var prevLocus: Locus = null
+            val rvb = new RegionValueBuilder()
+            val rv2 = RegionValue()
+
+            it.map { rv =>
+              val ur = new UnsafeRow(localRowType, rv.region, rv.offset)
+              val v = ur.getAs[Variant](1)
+              val minv = v.minRep
+
+              val rv3 = if (minv == v)
+                rv
+              else {
+                if (minv.locus != v.locus || (prevLocus != null && prevLocus == v.locus))
+                  fatal(s"found non-left aligned variant $v")
+
+                rvb.set(rv.region)
+                rvb.start(localRowType)
+                rvb.startStruct()
+                rvb.addAnnotation(localRowType.fieldType(0), minv.locus)
+                rvb.addAnnotation(localRowType.fieldType(1), minv)
+                rvb.addField(localRowType, rv, 2)
+                rvb.addField(localRowType, rv, 3)
+                rvb.endStruct()
+                rv2.set(rv.region, rvb.end())
+                rv2
+              }
+              prevLocus = v.locus
+              rv3
+            }
+          })
+      } else {
+        val leftAlignedVariants = OrderedRDD2(
+          vsm.matrixType.orderedRDD2Type,
+          vsm.rdd2.orderedPartitioner,
+          vsm.rdd2.mapPartitionsPreservesPartitioning { it =>
+            var prevLocus: Locus = null
+
+            it.filter { rv =>
+              val ur = new UnsafeRow(localRowType, rv.region, rv.offset)
+              val v = ur.getAs[Variant](1)
+              val minv = v.minRep
+
+              val p = minv.locus == v.locus && (prevLocus == null || prevLocus != v.locus)
+              prevLocus = v.locus
+              p
+            }
+          })
+
+        val movedVariants = OrderedRDD2.shuffle(
+          vsm.matrixType.orderedRDD2Type,
+          vsm.rdd2.orderedPartitioner,
+          vsm.rdd2.mapPartitionsPreservesPartitioning { it =>
+            var prevLocus: Locus = null
+            val rvb = new RegionValueBuilder()
+            val rv2 = RegionValue()
+
+            it.flatMap { rv =>
+              val ur = new UnsafeRow(localRowType, rv.region, rv.offset)
+              val v = ur.getAs[Variant](1)
+              val minv = v.minRep
+
+              val r = if (minv.locus == v.locus && (prevLocus == null || prevLocus != v.locus))
+                None
+              else {
+                rvb.set(rv.region)
+                rvb.start(localRowType)
+                rvb.startStruct()
+                rvb.addAnnotation(localRowType.fieldType(0), minv.locus)
+                rvb.addAnnotation(localRowType.fieldType(1), minv)
+                rvb.addField(localRowType, rv, 2)
+                rvb.addField(localRowType, rv, 3)
+                rvb.endStruct()
+                rv2.set(rv.region, rvb.end())
+                Some(rv2)
+              }
+              prevLocus = v.locus
+              r
+            }
+          })
+
+        leftAlignedVariants.partitionSortedUnion(movedVariants)
+      }
+
+    vsm.copy2(rdd2 = newRDD2)
   }
 
   /**

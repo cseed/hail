@@ -1,6 +1,6 @@
 package is.hail.methods
 
-import is.hail.annotations.Annotation
+import is.hail.annotations.{Annotation, UnsafeRow}
 import is.hail.expr.{TStruct, _}
 import is.hail.utils._
 import is.hail.variant.{AltAlleleType, GenericDataset, Genotype, HTSGenotypeView, Variant}
@@ -158,17 +158,18 @@ class SampleQCCombiner extends Serializable {
 object SampleQC {
   def results(vds: GenericDataset): Array[SampleQCCombiner] = {
     val depth = treeAggDepth(vds.hc, vds.nPartitions)
-    val rowType = vds.rowType
+    val localRowType = vds.rowType
     val nSamples = vds.nSamples
     if (vds.rdd.partitions.nonEmpty)
-      vds.unsafeRowRDD
+      vds.rdd2
           .mapPartitions { it =>
-            val view = HTSGenotypeView(rowType)
+            val view = HTSGenotypeView(localRowType)
             val acc = Array.fill[SampleQCCombiner](nSamples)(new SampleQCCombiner)
 
-            it.foreach { r =>
-              view.setRegion(r.region, r.offset)
-              val v = r.getAs[Variant](1)
+            it.foreach { rv =>
+              val ur = new UnsafeRow(localRowType, rv.region, rv.offset)
+              view.setRegion(rv.region, rv.offset)
+              val v = ur.getAs[Variant](1)
               val ais = SampleQCCombiner.alleleIndices(v)
               val acs = Array.fill(v.asInstanceOf[Variant].nAlleles)(0)
 

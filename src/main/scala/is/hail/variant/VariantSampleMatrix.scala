@@ -930,9 +930,42 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
           "va" -> (0, vaSignature),
           "vds" -> (1, other.vaSignature)))
         Annotation.buildInserter(annotationExpr, vaSignature, ec, Annotation.VARIANT_HEAD)
-      } else insertVA(other.vaSignature, Parser.parseAnnotationRoot(annotationExpr, Annotation.VARIANT_HEAD))
+      } else
+        insertVA(other.vaSignature, Parser.parseAnnotationRoot(annotationExpr, Annotation.VARIANT_HEAD))
 
-    annotateVariants(other.variantsAndAnnotations, finalType, inserter, product = false)
+    val newMatrixType = matrixType.copy(vaType = finalType)
+    val newRowType = newMatrixType.rowType
+
+    // FIXME va2
+    // type: Struct { pk, v, va, gs, va2 }
+    val joinRDD = rdd2.orderedLeftJoinDistinct(other.variantsAndAnnotations2)
+
+    val joinType = joinRDD.typ.rowType
+
+    copy2(vaSignature = finalType,
+      rdd2 = OrderedRDD2(newMatrixType.orderedRDD2Type, rdd2.orderedPartitioner,
+        joinRDD.mapPartitions { it =>
+          val rvb = new RegionValueBuilder()
+          val rv2 = RegionValue()
+
+          it.map { rv =>
+            val ur = new UnsafeRow(joinType, rv.region, rv.offset)
+
+            rvb.set(rv.region)
+            rvb.start(newRowType)
+            rvb.startStruct() // row
+            rvb.addField(joinType, rv, 0) // pk
+            rvb.addField(joinType, rv, 1) // v
+            rvb.addAnnotation(finalType, inserter(ur.get(2), ur.get(4))) // va
+            rvb.addField(joinType, rv, 3) // gs
+            rvb.endStruct() // row
+
+            rv2.set(rv.region, rvb.end())
+            rv2
+          }
+        }))
+
+    // annotateVariants(other.variantsAndAnnotations, finalType, inserter, product = false)
   }
 
   def count(): (Long, Long) = (nSamples, countVariants())
@@ -1091,7 +1124,7 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
     *
     * @param filterExpr filter expression
     * @param keep       keep variants where filterExpr evaluates to true
-    * @return
+    * @returnvaraiv
     */
   def filterVariantsExpr(filterExpr: String, keep: Boolean = true): VariantSampleMatrix[RPK, RK, T] = {
     var filterAST = Parser.expr.parse(filterExpr)
@@ -1476,7 +1509,6 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
   }
 
   def querySA(code: String): (Type, Querier) = {
-
     val st = Map(Annotation.SAMPLE_HEAD -> (0, saSignature))
     val ec = EvalContext(st)
     val a = ec.a
@@ -1544,7 +1576,6 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
   }
 
   def queryVariants(exprs: Array[String]): Array[(Annotation, Type)] = {
-
     val aggregationST = Map(
       "global" -> (0, globalSignature),
       "v" -> (1, vSignature),
@@ -1923,6 +1954,34 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
   def variantsAndAnnotations: OrderedRDD[RPK, RK, Annotation] =
     rdd.mapValuesWithKey { case (v, (va, gs)) => va }
 
+  def variantsAndAnnotations2: OrderedRDD2 = {
+    val rowType = matrixType.rowType
+    val newRowType = TStruct(
+      "pk" -> matrixType.locusType,
+      "v" -> matrixType.vType,
+      "va2" -> matrixType.vaType) // FIXME
+
+    OrderedRDD2(new OrderedRDD2Type(Array("pk"), Array("pk", "v"), newRowType),
+      rdd2.orderedPartitioner,
+      rdd2.mapPartitions { it =>
+        val rv2b = new RegionValueBuilder()
+        val rv2 = RegionValue()
+        it.map { rv =>
+          rv2b.set(rv.region)
+          rv2b.start(newRowType)
+          rv2b.startStruct() // row
+          rv2b.addField(rowType, rv, 0) // pk
+          rv2b.addField(rowType, rv, 1) // v
+          rv2b.addField(rowType, rv, 2) // va
+          rv2b.endStruct()
+
+          rv2.set(rv.region, rv2b.end())
+
+          rv2
+        }
+      })
+  }
+
   def variantEC: EvalContext = {
     val aggregationST = Map(
       "global" -> (0, globalSignature),
@@ -2071,19 +2130,66 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
       "g" -> (4, genotypeSignature),
       "global" -> (5, globalSignature))
 
-
     val ec = EvalContext(symTab)
     ec.set(5, globalAnnotation)
     val f: () => java.lang.Boolean = Parser.parseTypedExpr[java.lang.Boolean](filterExpr, ec)
 
     val localKeep = keep
-    mapValuesWithAll(genotypeSignature, { (v: RK, va: Annotation, s: Annotation, sa: Annotation, g: T) =>
-      ec.setAll(v, va, s, sa, g)
-      if (Filter.boxedKeepThis(f(), localKeep))
-        g
-      else
-        null
-    })
+
+    val localRowType = rowType
+    val localNSamples = nSamples
+    val localSampleIdsBc = sampleIdsBc
+    val localSampleAnnotationsBc = sampleAnnotationsBc
+    copy2(
+      rdd2 = rdd2.mapPartitionsPreservesPartitioning { it =>
+        val rvb = new RegionValueBuilder()
+        val rv2 = RegionValue()
+        it.map { rv =>
+          val ur = new UnsafeRow(localRowType, rv.region, rv.offset)
+
+          val v = ur.get(1)
+          val va = ur.get(2)
+          val gs = ur.getAs[IndexedSeq[Annotation]](3)
+
+          rvb.set(rv.region)
+          rvb.start(localRowType)
+          rvb.startStruct()
+          rvb.addField(localRowType, rv, 0) // pk
+          rvb.addField(localRowType, rv, 1) // v
+          rvb.addField(localRowType, rv, 2) // va
+          rvb.startArray(localNSamples)
+
+          val gsType = localRowType.fieldType(3).asInstanceOf[TArray]
+          val gType = gsType.elementType
+          val gsAOff = localRowType.loadField(rv, 3)
+          assert(gsType.loadLength(rv.region, gsAOff) == localNSamples)
+
+          var i = 0
+          while (i < localNSamples) {
+            if (gsType.isElementDefined(rv.region, gsAOff, i)) {
+              val s = localSampleIdsBc.value(i)
+              val sa = localSampleAnnotationsBc.value(i)
+              val g = gs(i)
+              ec.setAll(v, va, s, sa, g)
+
+              val p = Filter.boxedKeepThis(f(), localKeep)
+              if (p) {
+                val gOff = gsType.loadElement(rv.region, gsAOff, localNSamples, i)
+                rvb.addRegionValue(gType, rv.region, gOff)
+              } else
+                rvb.setMissing()
+            } else
+              rvb.setMissing()
+
+            i += 1
+          }
+          rvb.endArray()
+          rvb.endStruct()
+
+          rv2.set(rv.region, rvb.end())
+          rv2
+        }
+      })
   }
 
   def makeVariantConcrete(): VariantSampleMatrix[Locus, Variant, T] = {

@@ -270,13 +270,14 @@ sealed abstract class AST(pos: Position, subexprs: Array[AST] = Array.empty) {
     val localA = ec.a
     localA += null
 
-    val f = (this.compileAggregator() { (me: Code[AnyRef]) => for (
-      vs <- CM.initialValueArray();
-      k = Code.checkcast[AnyRef => Unit](vs.invoke[Int, AnyRef]("apply", idx))
-    // This method returns `Void` which is only inhabited by `null`, we treat
-    // these calls as non-stack-modifying functions so we must include a pop
-    // to reset the stack.
-    ) yield Code(k.invoke[AnyRef, AnyRef]("apply", me), Code._pop[Unit])
+    val f = (this.compileAggregator() { (me: Code[AnyRef]) =>
+      for (
+        vs <- CM.initialValueArray();
+        k = Code.checkcast[AnyRef => Unit](vs.invoke[Int, AnyRef]("apply", idx))
+      // This method returns `Void` which is only inhabited by `null`, we treat
+      // these calls as non-stack-modifying functions so we must include a pop
+      // to reset the stack.
+      ) yield Code(k.invoke[AnyRef, AnyRef]("apply", me), Code._pop[Unit])
     }).map(x => Code(x, Code._null[AnyRef])).runWithDelayedValues(typedNames, ec)
 
     { (k: (Any => Unit)) =>
@@ -343,8 +344,8 @@ case class Select(posn: Position, lhs: AST, rhs: String) extends AST(posn, lhs) 
           case FunctionRegistry.NotFound(name, typ) =>
             ParserUtils.error(localPos,
               s"""`$t' has neither a field nor a method named `$name'
-               |  Hint: sum, min, max, etc. have no parentheses when called on an Array:
-               |    counts.sum""".stripMargin)
+                 |  Hint: sum, min, max, etc. have no parentheses when called on an Array:
+                 |    counts.sum""".stripMargin)
           case otherwise => fatal(otherwise.message)
         }
   }
@@ -437,6 +438,7 @@ case class Apply(posn: Position, fn: String, args: Array[AST]) extends AST(posn,
           parseError(s"Cannot compare arguments of type $lt and $rt")
         else
           TBoolean
+
       case (_, _) => FunctionRegistry.lookupFunReturnType(fn, args.map(_.`type`).toSeq)
         .valueOr(x => parseError(x.message))
     }
@@ -537,10 +539,10 @@ case class Apply(posn: Position, fn: String, args: Array[AST]) extends AST(posn,
                  |  Expected struct field identifier in the second position, but found a `${ other.getClass.getSimpleName }' expression""".stripMargin)
         }
         val mangle = m match {
-              case Const(_, v, TBoolean) => v.asInstanceOf[Boolean]
-              case other =>
-                parseError(
-                  s"""invalid arguments for method `$fn'
+          case Const(_, v, TBoolean) => v.asInstanceOf[Boolean]
+          case other =>
+            parseError(
+              s"""invalid arguments for method `$fn'
                  |  Expected boolean argument in the third position, but found a `${ other.getClass.getSimpleName }' expression""".stripMargin)
         }
 
@@ -651,7 +653,7 @@ case class Apply(posn: Position, fn: String, args: Array[AST]) extends AST(posn,
       }
       val f = struct.ungroup(identifier, mangle)._2
       AST.evalComposeCodeM[AnyRef](s)(CM.invokePrimitive1(f.asInstanceOf[(AnyRef) => AnyRef]))
-      
+
     case ("index", Array(structArray, k)) =>
       val key = (k: @unchecked) match {
         case SymRef(_, id) => id

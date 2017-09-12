@@ -1,19 +1,19 @@
 package is.hail.methods
 
-import is.hail.annotations.{Annotation, Inserter}
+import is.hail.annotations._
 import is.hail.expr.{EvalContext, Parser, TArray, TInt32, TVariant}
-import is.hail.sparkextras.OrderedRDD
+import is.hail.sparkextras.{OrderedRDD, OrderedRDD2}
 import is.hail.utils._
-import is.hail.variant.{GTPair, GenomeReference, Genotype, Variant, VariantDataset}
+import is.hail.variant.{GTPair, GenomeReference, Genotype, Locus, Variant, VariantDataset}
+import org.apache.spark.rdd.RDD
 
-import scala.collection.mutable
 import scala.math.min
 
 object FilterAlleles {
 
   def apply(vds: VariantDataset, filterExpr: String, annotationExpr: String = "va = va",
     filterAlteredGenotypes: Boolean = false, keep: Boolean = true,
-    subset: Boolean = true, maxShift: Int = 100, keepStar: Boolean = false): VariantDataset = {
+    subset: Boolean = true, leftAligned: Boolean = false, keepStar: Boolean = false): VariantDataset = {
 
     if (vds.wasSplit)
       warn("this VDS was already split; this module was designed to handle multi-allelics, perhaps you should use filtervariants instead.")
@@ -28,14 +28,19 @@ object FilterAlleles {
       "v" -> (0, TVariant(GenomeReference.GRCh37)),
       "va" -> (1, vds.vaSignature),
       "aIndices" -> (2, TArray(TInt32))))
+
     val (paths, types, f) = Parser.parseAnnotationExprs(annotationExpr, annotationEC, Some(Annotation.VARIANT_HEAD))
-    val inserterBuilder = mutable.ArrayBuilder.make[Inserter]
-    val finalType = (paths, types).zipped.foldLeft(vds.vaSignature) { case (vas, (path, signature)) =>
+    val inserterBuilder = new ArrayBuilder[Inserter]()
+    val newVAType = (paths, types).zipped.foldLeft(vds.vaSignature) { case (vas, (path, signature)) =>
       val (newVas, i) = vas.insert(signature, path)
       inserterBuilder += i
       newVas
     }
     val inserters = inserterBuilder.result()
+
+    val localNSamples = vds.nSamples
+
+    val newMatrixType = vds.matrixType.copy(vaType = newVAType)
 
     def filterAllelesInVariant(v: Variant, va: Annotation): Option[(Variant, IndexedSeq[Int], Array[Int])] = {
       var alive = 0
@@ -75,107 +80,224 @@ object FilterAlleles {
       f().zip(inserters).foldLeft(va) { case (va, (v, inserter)) => inserter(va, v) }
     }
 
-    def updateGenotypes(gs: Iterable[Genotype], oldToNew: Array[Int], newCount: Int): Iterable[Genotype] = {
+    def updateGenotypes(rvb: RegionValueBuilder, gs: IndexedSeq[Genotype], oldToNew: Array[Int], newCount: Int) {
       def downcodeGtPair(gt: GTPair): GTPair =
         GTPair.fromNonNormalized(oldToNew(gt.j), oldToNew(gt.k))
 
-      def downcodeGt(gt: Int): Int =
+      def downcodeGT(gt: Int): Int =
         Genotype.gtIndex(downcodeGtPair(Genotype.gtPair(gt)))
 
-      def downcodeAd(ad: Array[Int]): Array[Int] = {
+      def downcodeAD(ad: Array[Int]): Array[Int] = {
         coalesce(ad)(newCount, (_, alleleIndex) => oldToNew(alleleIndex), 0) { (oldDepth, depth) =>
           oldDepth + depth
         }
       }
 
-      def downcodePx(px: Array[Int]): Array[Int] = {
-        coalesce(px)(triangle(newCount), (_, gt) => downcodeGt(gt), Int.MaxValue) { (oldNll, nll) =>
+      def downcodePX(px: Array[Int]): Array[Int] = {
+        coalesce(px)(triangle(newCount), (_, gt) => downcodeGT(gt), Int.MaxValue) { (oldNll, nll) =>
           min(oldNll, nll)
         }
       }
 
-      def downcodeGenotype(g: Genotype): Genotype = {
-        val px = Genotype.px(g).map(downcodePx)
-        g.copy(gt = Genotype.gt(g).map(downcodeGt),
-          ad = Genotype.ad(g).map(downcodeAd),
-          gq = px.map(Genotype.gqFromPL),
-          px = px
-        )
+      def downcodeGenotype(g: Genotype) {
+        val newPX = Genotype.px(g).map(downcodePX)
+
+        var newGT = Genotype.gt(g).map(downcodeGT)
+        if (filterAlteredGenotypes && newGT != Genotype.gt(g))
+          newGT = None
+        rvb.startStruct()
+        newGT match {
+          case Some(gtx) => rvb.addInt(gtx)
+          case None => rvb.setMissing()
+        }
+
+        val newAD = Genotype.ad(g).map(downcodeAD)
+        newAD match {
+          case Some(adx) =>
+            rvb.startArray(adx.length)
+            adx.foreach { adxi => rvb.addInt(adxi) }
+            rvb.endArray()
+          case None => rvb.setMissing()
+        }
+
+        Genotype.dp(g) match {
+          case Some(dpx) => rvb.addInt(dpx)
+          case None => rvb.setMissing()
+        }
+
+        val newGQ = newPX.map(Genotype.gqFromPL)
+        newGQ match {
+          case Some(gqx) => rvb.addInt(gqx)
+          case None => rvb.setMissing()
+        }
+
+        newPX match {
+          case Some(pxx) =>
+            rvb.startArray(pxx.length)
+            pxx.foreach { pxxi => rvb.addInt(pxxi) }
+            rvb.endArray()
+          case None => rvb.setMissing()
+        }
+
+        rvb.endStruct()
       }
 
-      def subsetPx(px: Array[Int]): Array[Int] = {
+      def subsetPX(px: Array[Int]): Array[Int] = {
         val (newPx, minP) = px.zipWithIndex
-          .filter({
+          .filter {
             case (p, i) =>
               val gTPair = Genotype.gtPair(i)
               (gTPair.j == 0 || oldToNew(gTPair.j) != 0) && (gTPair.k == 0 || oldToNew(gTPair.k) != 0)
-          })
-          .foldLeft((Array.fill(triangle(newCount))(0), Int.MaxValue))({
+          }
+          .foldLeft((Array.fill(triangle(newCount))(0), Int.MaxValue)) {
             case ((newPx, minP), (p, i)) =>
-              newPx(downcodeGt(i)) = p
+              newPx(downcodeGT(i)) = p
               (newPx, min(p, minP))
-          })
+          }
 
         newPx.map(_ - minP)
       }
 
-      def subsetGenotype(g: Genotype): Genotype = {
+      def subsetGenotype(g: Genotype) {
+        val newPX = Genotype.px(g).map(subsetPX)
+
+        var newGT = newPX.map(_.zipWithIndex.min._2)
+        if (filterAlteredGenotypes && newGT != Genotype.gt(g))
+          newGT = None
+
+        rvb.startStruct()
+        newGT match {
+          case Some(gtx) => rvb.addInt(gtx)
+          case None => rvb.setMissing()
+        }
+
+        val newAD = Genotype.ad(g).map(_.zipWithIndex.filter({ case (d, i) => i == 0 || oldToNew(i) != 0 }).map(_._1))
+        newAD match {
+          case Some(adx) =>
+            rvb.startArray(adx.length)
+            adx.foreach { adxi => rvb.addInt(adxi) }
+            rvb.endArray()
+          case None => rvb.setMissing()
+        }
+
+        Genotype.dp(g) match {
+          case Some(dpx) => rvb.addInt(dpx)
+          case None => rvb.setMissing()
+        }
+
+        val newGQ = newPX.map(Genotype.gqFromPL)
+        newGQ match {
+          case Some(gqx) => rvb.addInt(gqx)
+          case None => rvb.setMissing()
+        }
+
+        newPX match {
+          case Some(pxx) =>
+            rvb.startArray(pxx.length)
+            pxx.foreach { pxxi => rvb.addInt(pxxi) }
+            rvb.endArray()
+          case None => rvb.setMissing()
+        }
+
+        rvb.endStruct()
+      }
+
+      rvb.startArray(localNSamples)
+      gs.foreach { g =>
         if (g == null)
-          null
+          rvb.setMissing()
         else {
-          val px = Genotype.px(g).map(subsetPx)
-          g.copy(
-            gt = px.map(_.zipWithIndex.min._2),
-            ad = Genotype.ad(g).map(_.zipWithIndex.filter({ case (d, i) => i == 0 || oldToNew(i) != 0 }).map(_._1)),
-            gq = px.map(Genotype.gqFromPL),
-            px = px)
+          if (subset)
+            subsetGenotype(g)
+          else
+            downcodeGenotype(g)
         }
       }
-
-      gs.map({
-        g =>
-          val newG = if (subset) subsetGenotype(g) else downcodeGenotype(g)
-          if (filterAlteredGenotypes && Genotype.gt(newG) != Genotype.gt(g))
-            newG.copy(gt = None)
-          else
-            newG
-      })
+      rvb.endArray()
     }
 
-    def updateOrFilterRow(v: Variant, va: Annotation, gs: Iterable[Genotype],
-      f: (Variant) => Boolean): Option[(Variant, (Annotation, Iterable[Genotype]))] =
-      filterAllelesInVariant(v, va)
-        .filter { case (v, _, _) => f(v) }
-        .map { case (newV, newToOld, oldToNew) =>
-          val newVa = updateAnnotation(v, va, newToOld)
-          if (newV == v)
-            (v, (newVa, gs))
-          else {
-            val newGs = updateGenotypes(gs, oldToNew, newToOld.length)
-            (newV, (newVa, newGs))
-          }
-        }.filter { case (v, (va, gs)) => keepStar || !(v.isBiallelic && v.altAllele.isStar) }
+    def filter(rdd: RDD[RegionValue],
+      filterLeftAligned: Boolean, filterMoving: Boolean, verifyLeftAligned: Boolean): RDD[RegionValue] = {
 
+      val localRowType = vds.matrixType.rowType
+      val newRowType = newMatrixType.rowType
 
-    val partitionerBc = vds.sparkContext.broadcast(vds.rdd.orderedPartitioner)
+      rdd.mapPartitions { it =>
+        var prevLocus: Locus = null
 
-    val shuffledVariants = vds.rdd.mapPartitionsWithIndex { case (i, it) =>
-      it.flatMap { case (v, (va, gs)) =>
-        updateOrFilterRow(v, va, gs,
-          f = (v: Variant) => partitionerBc.value.getPartition(v) != i)
+        it.flatMap { rv =>
+          val rvb = new RegionValueBuilder()
+          val rv2 = RegionValue()
+
+          val ur = new UnsafeRow(localRowType, rv.region, rv.offset)
+
+          val v = ur.getAs[Variant](1)
+          val va = ur.get(2)
+          val gs = ur.getAs[IndexedSeq[Genotype]](3)
+
+          filterAllelesInVariant(v, va)
+            .filter { case (newV, _, _) =>
+              val moving = (prevLocus != null && prevLocus == v.locus) || (newV.locus != v.locus)
+
+              if (moving && verifyLeftAligned)
+                fatal(s"found non-left aligend variant $v")
+
+              var keep = true
+              if (moving) {
+                if (filterMoving)
+                  keep = false
+              } else {
+                if (filterLeftAligned)
+                  keep = false
+              }
+
+              if (!keepStar && newV.isBiallelic && newV.altAllele.isStar)
+                keep = false
+
+              keep
+            }
+            .map { case (newV, newToOld, oldToNew) =>
+              rvb.set(rv.region)
+              rvb.start(newRowType)
+              rvb.startStruct()
+              rvb.addAnnotation(newRowType.fieldType(0), newV.locus)
+              rvb.addAnnotation(newRowType.fieldType(1), newV)
+
+              val newVA = updateAnnotation(v, va, newToOld)
+              rvb.addAnnotation(newVAType, newVA)
+
+              if (newV == v)
+                rvb.addAnnotation(newRowType.fieldType(3), gs)
+              else
+                updateGenotypes(rvb, gs, oldToNew, newToOld.length)
+              rvb.endStruct()
+
+              prevLocus = newV.locus
+
+              rv2.set(rv.region, rvb.end())
+              rv2
+            }
+        }
       }
-    }.orderedRepartitionBy(vds.rdd.orderedPartitioner)
-
-    val localMaxShift = maxShift
-    val staticVariants = vds.rdd.mapPartitionsWithIndex { case (i, it) =>
-      LocalVariantSortIterator(it.flatMap { case (v, (va, gs)) =>
-        updateOrFilterRow(v, va, gs,
-          f = (v: Variant) => partitionerBc.value.getPartition(v) == i)
-      }, localMaxShift)
     }
 
-    val newRDD = OrderedRDD.partitionedSortedUnion(staticVariants, shuffledVariants, vds.rdd.orderedPartitioner)
+    val newRDD2: OrderedRDD2 =
+      if (leftAligned) {
+        OrderedRDD2(newMatrixType.orderedRDD2Type,
+          vds.rdd2.orderedPartitioner,
+          filter(vds.rdd2, filterLeftAligned = false, filterMoving = false, verifyLeftAligned = true))
+      } else {
+        val leftAlignedVariants = OrderedRDD2(newMatrixType.orderedRDD2Type,
+          vds.rdd2.orderedPartitioner,
+          filter(vds.rdd2, filterLeftAligned = false, filterMoving = true, verifyLeftAligned = false))
 
-    vds.copy(rdd = newRDD, vaSignature = finalType)
+        val movingVariants = OrderedRDD2.shuffle(newMatrixType.orderedRDD2Type,
+          vds.rdd2.orderedPartitioner,
+          filter(vds.rdd2, filterLeftAligned = true, filterMoving = false, verifyLeftAligned = false))
+
+        leftAlignedVariants.partitionSortedUnion(movingVariants)
+      }
+
+    vds.copy2(rdd2 = newRDD2, vaSignature = newVAType)
   }
 }

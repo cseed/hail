@@ -687,6 +687,7 @@ class RegionValueBuilder(var region: MemoryBuffer) {
 
   def addBinary(bytes: Array[Byte]) {
     assert(currentType() == TBinary)
+    val off = currentOffset()
 
     region.align(TBinary.contentAlignment)
     val boff = region.offset

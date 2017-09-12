@@ -158,7 +158,6 @@ g = let
   def concordance(other: VariantDataset): (IndexedSeq[IndexedSeq[Long]], KeyTable, KeyTable) = {
     require(vds.wasSplit)
     require(other.wasSplit)
-
     CalculateConcordance(vds, other)
   }
 
@@ -335,19 +334,9 @@ g = let
       }))
   }
 
-  /**
-    *
-    * @param filterExpr             Filter expression involving v (variant), va (variant annotations), and aIndex (allele index)
-    * @param annotationExpr         Annotation modifying expression involving v (new variant), va (old variant annotations),
-    *                               and aIndices (maps from new to old indices)
-    * @param filterAlteredGenotypes any call that contains a filtered allele is set to missing instead
-    * @param keep                   Keep variants matching condition
-    * @param subset                 subsets the PL and AD. Genotype and GQ are set based on the resulting PLs.  Downcodes by default.
-    * @param maxShift               Maximum possible position change during minimum representation calculation
-    */
   def filterAlleles(filterExpr: String, annotationExpr: String = "va = va", filterAlteredGenotypes: Boolean = false,
-    keep: Boolean = true, subset: Boolean = true, maxShift: Int = 100, keepStar: Boolean = false): VariantDataset = {
-    FilterAlleles(vds, filterExpr, annotationExpr, filterAlteredGenotypes, keep, subset, maxShift, keepStar)
+    keep: Boolean = true, subset: Boolean = true, leftAligned: Boolean = false, keepStar: Boolean = false): VariantDataset = {
+    FilterAlleles(vds, filterExpr, annotationExpr, filterAlteredGenotypes = filterAlteredGenotypes, keep = keep, subset = subset, leftAligned = leftAligned, keepStar = keepStar)
   }
 
   def grm(): KinshipMatrix = {
@@ -357,12 +346,61 @@ g = let
   }
 
   def hardCalls(): VariantDataset = {
-    vds.mapValues(TGenotype, { g =>
-      if (g == null)
-        g
-      else
-        Genotype(g._unboxedGT)
-    })
+    val localNSamples = vds.nSamples
+
+    val rowType = vds.matrixType.rowType
+    val gst = TArray(TGenotype)
+    val gt = TGenotype.representation
+
+    vds.copy2(
+      rdd2 = vds.rdd2.mapPartitionsPreservesPartitioning { it =>
+        val rvb = new RegionValueBuilder()
+        val rv2 = RegionValue()
+
+        it.map { rv =>
+          val region = rv.region
+
+          rvb.set(region)
+          rvb.start(rowType)
+          rvb.startStruct()
+          rvb.addField(rowType, rv, 0) // pk
+          rvb.addField(rowType, rv, 1) // v
+          rvb.addField(rowType, rv, 2) // va
+
+          // gs
+          rvb.startArray(localNSamples)
+          val gsAOff = rowType.loadField(region, rv.offset, 3)
+          var i = 0
+          while (i < localNSamples) {
+            if (gst.isElementDefined(region, gsAOff, i)) {
+              rvb.startStruct() // g
+              val gOff = gst.elementOffset(gsAOff, localNSamples, i)
+
+              // gt
+              if (gt.isFieldDefined(region, gOff, 0)) {
+                rvb.addInt(region.loadInt(gt.loadField(region, gOff, 0)))
+              } else
+                rvb.setMissing()
+
+              rvb.setMissing() // ad
+              rvb.setMissing() // dp
+              rvb.setMissing() // gq
+              rvb.setMissing() // pl
+
+              rvb.endStruct()
+            } else
+              rvb.setMissing()
+
+            i += 1
+          }
+          rvb.endArray() // gs
+          rvb.endStruct()
+
+          rv2.set(region, rvb.end())
+          rv2
+        }
+      }
+    )
   }
 
   /**
