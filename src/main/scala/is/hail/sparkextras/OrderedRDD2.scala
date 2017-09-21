@@ -816,8 +816,8 @@ class OrderedLeftJoinDistinctRDD2(left: OrderedRDD2, right: OrderedRDD2,
 
       def advanceRight(lrv: RegionValue) {
         while (rrv != null && fkOrd.compare(lrv, rrv) > 0) {
-          if (rightIt.hasNext)
-            rrv = rightIt.next()
+          rrv = if (rightIt.hasNext)
+            rightIt.next()
           else
             null
         }
