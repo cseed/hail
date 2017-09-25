@@ -5,10 +5,238 @@ import java.util
 
 import is.hail.expr._
 import is.hail.utils.{SerializableHadoopConfiguration, _}
-import is.hail.variant.LZ4Utils
+import is.hail.variant.{Contig, GenomeReference, LZ4Utils}
 import org.apache.commons.lang3.StringUtils
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{Partition, SparkContext, TaskContext}
+
+class EncodedBuffer(@transient var mem: Array[Byte] = null,
+  @transient var off: Long = 0) extends Serializable {
+  def set(newMem: Array[Byte]) {
+    mem = newMem
+    off = 0
+  }
+
+  def loadBit(byteOff: Long, bitOff: Int): Boolean = {
+    assert(byteOff + (bitOff >> 3) + 1 <= mem.length)
+    Memory.loadBit(mem, byteOff, bitOff)
+  }
+
+  def readByte(): Byte = {
+    assert(off + 1 <= mem.length)
+    val b = Memory.loadByte(mem, off)
+    off += 1
+    b
+  }
+
+  def readFloat(): Float = {
+    assert(off + 4 <= mem.length)
+    val d = Memory.loadFloat(mem, off)
+    off += 4
+    d
+  }
+
+  def readDouble(): Double = {
+    assert(off + 8 <= mem.length)
+    val d = Memory.loadDouble(mem, off)
+    off += 8
+    d
+  }
+
+  def readBoolean(): Boolean = readByte() != 0
+
+  def readInt(): Int = {
+    var b: Byte = readByte()
+    var x: Int = b & 0x7f
+    var shift: Int = 7
+    while ((b & 0x80) != 0) {
+      b = readByte()
+      x |= ((b & 0x7f) << shift)
+      shift += 7
+    }
+
+    x
+  }
+
+  def readLong(): Long = {
+    var b: Byte = readByte()
+    var x: Long = b & 0x7fL
+    var shift: Int = 7
+    while ((b & 0x80) != 0) {
+      b = readByte()
+      x |= ((b & 0x7fL) << shift)
+      shift += 7
+    }
+
+    x
+  }
+
+  def readString(): String = {
+    val len = readInt()
+    val a = new Array[Byte](len)
+    System.arraycopy(mem, off.toInt, a, 0, len)
+    off += len
+    new String(a)
+  }
+
+  def skip(d: Long) {
+    off += d
+  }
+}
+
+class EncodedOrdering(t: Type) extends Ordering[Array[Byte]] with Serializable {
+  val tArrayString: TArray = TArray(TString)
+
+  val l: EncodedBuffer = new EncodedBuffer()
+  val r: EncodedBuffer = new EncodedBuffer()
+
+  def compareBinary(): Int = {
+    val llen = l.readInt()
+    val rlen = r.readInt()
+
+    val minlen = math.min(llen, rlen)
+    var i = 0
+    while (i < minlen) {
+      val c = java.lang.Byte.compare(l.readByte(), r.readByte())
+      if (c != 0)
+        return c
+      i += 1
+    }
+
+    java.lang.Integer.compare(llen, rlen)
+  }
+
+  def compareStruct(t: TStruct): Int = {
+    val loff = l.off
+    var roff = r.off
+
+    val nMissingBytes = (t.size + 7) / 8
+    l.skip(nMissingBytes)
+    r.skip(nMissingBytes)
+
+    var i = 0
+    while (i < t.size) {
+      val ldefined = !l.loadBit(loff, i)
+      var c = java.lang.Boolean.compare(ldefined, !r.loadBit(roff, i))
+      if (c != 0)
+        return -c // missingGreatest = true
+
+      if (ldefined) {
+        c = compare(t.fieldType(i))
+        if (c != 0)
+          return c
+      }
+
+      i += 1
+    }
+
+    0
+  }
+
+  def compareArray(t: TContainer): Int = {
+    val llen = l.readInt()
+    val rlen = r.readInt()
+
+    val loff = l.off
+    val roff = r.off
+
+    l.skip((llen + 7) / 8)
+    r.skip((rlen + 7) / 8)
+
+    val minlen = math.min(llen, rlen)
+    var i = 0
+    while (i < minlen) {
+      val ldefined = !l.loadBit(loff, i)
+      var c = java.lang.Boolean.compare(ldefined, !r.loadBit(roff, i))
+      if (c != 0)
+        return -c // missingGreatest = true
+
+      if (ldefined) {
+        c = compare(t.elementType)
+        if (c != 0)
+          return c
+      }
+
+      i += 1
+    }
+
+    java.lang.Integer.compare(llen, rlen)
+  }
+
+  def compareContig(): Int = {
+    Contig.compare(l.readString(), r.readString())
+  }
+
+  def compareLocus(): Int = {
+    // missing bits
+    l.skip(1)
+    r.skip(1)
+
+    var c = compareContig()
+    if (c != 0)
+      return c
+
+    compare(TInt32)
+  }
+
+  def compareInterval(): Int = {
+    // missing bits
+    l.skip(1)
+    r.skip(1)
+
+    var c = compareLocus()
+    if (c != 0)
+      return c
+
+    compareLocus()
+  }
+
+  def compareVariant(): Int = {
+    // missing bits
+    l.skip(1)
+    r.skip(1)
+
+    var c = compareContig()
+    if (c != 0)
+      return c
+
+    c = compare(TInt32)
+    if (c != 0)
+      return c
+
+    c = compare(TString)
+    if (c != 0)
+      return c
+
+    compareArray(tArrayString)
+  }
+
+  def compare(t: Type): Int = t match {
+    case TInt32 => java.lang.Integer.compare(l.readInt(), r.readInt())
+    case TInt64 => java.lang.Long.compare(l.readLong(), r.readLong())
+    case TFloat32 => java.lang.Float.compare(l.readFloat(), r.readFloat())
+    case TFloat64 => java.lang.Double.compare(l.readDouble(), r.readDouble())
+    case TBoolean => java.lang.Boolean.compare(l.readBoolean(), r.readBoolean())
+
+    case TBinary | TString => compareBinary()
+    case t: TStruct => compareStruct(t)
+    case t: TContainer => compareArray(t)
+
+    case _: TVariant => compareVariant()
+    case _: TLocus => compareLocus()
+    case _: TInterval => compareInterval()
+
+    case TAltAllele => compare(TAltAllele.representation)
+    case TCall => compare(TCall.representation)
+    case TGenotype => compare(TGenotype.representation)
+  }
+
+  def compare(lmem: Array[Byte], rmem: Array[Byte]): Int = {
+    l.set(lmem)
+    r.set(rmem)
+    compare(t)
+  }
+}
 
 final class Decoder() {
   var inMem: Array[Byte] = _

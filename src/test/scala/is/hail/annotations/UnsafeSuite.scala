@@ -356,4 +356,50 @@ class UnsafeSuite extends SparkSuite {
       true
     }
   }
+
+  @Test def testEncodedOrdering() {
+    val region = MemoryBuffer()
+    val rvb = new RegionValueBuilder(region)
+    val enc = new Encoder()
+
+    val region2 = MemoryBuffer()
+    val rvb2 = new RegionValueBuilder(region2)
+    val enc2 = new Encoder()
+
+    val g = Type.genStruct
+      .flatMap(t => Gen.zip(Gen.const(t), Gen.zip(t.genValue, t.genValue)))
+      .filter { case (t, (a1, a2)) => a1 != null && a2 != null }
+      .resize(10)
+    val p = Prop.forAll(g) { case (t, (a1, a2)) =>
+
+      t.typeCheck(a1)
+      t.typeCheck(a2)
+
+      val ord = t.ordering(missingGreatest = true)
+      val encOrd = new EncodedOrdering(t)
+
+      region.clear()
+      rvb.start(t)
+      rvb.addRow(t, a1.asInstanceOf[Row])
+      val offset = rvb.end()
+
+      enc.clear()
+      enc.writeRegionValue(t, region, offset)
+
+      region2.clear()
+      rvb2.start(t)
+      rvb2.addRow(t, a2.asInstanceOf[Row])
+      val offset2 = rvb2.end()
+
+      enc2.clear()
+      enc2.writeRegionValue(t, region2, offset2)
+
+      val c1 = ord.compare(a1, a2)
+      val c2 = encOrd.compare(enc.outMem, enc2.outMem)
+      assert(math.signum(c1) == math.signum(c2))
+
+      true
+    }
+    p.check()
+  }
 }

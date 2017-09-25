@@ -23,6 +23,11 @@ public final class Memory {
         return unsafe.getByte(mem, Unsafe.ARRAY_BYTE_BASE_OFFSET + off);
     }
 
+    public static boolean loadBit(byte[] mem, long byteOff, long bitOff) {
+        long b = byteOff + (bitOff >> 3);
+        return (loadByte(mem, b) & (1 << (bitOff & 7))) != 0;
+    }
+
     public static float loadFloat(byte[] mem, long off) {
         return unsafe.getFloat(mem, Unsafe.ARRAY_BYTE_BASE_OFFSET + off);
     }
@@ -76,7 +81,7 @@ public final class Memory {
     }
 
     public static void storeBoolean(long addr, boolean b) {
-        unsafe.putByte(addr, (byte)(b ? 1 : 0));
+        unsafe.putByte(addr, (byte) (b ? 1 : 0));
     }
 
     public static void storeByte(long addr, byte b) {

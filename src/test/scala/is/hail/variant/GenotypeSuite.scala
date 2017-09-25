@@ -25,7 +25,7 @@ object GenotypeSuite {
 
   object Spec extends Properties("Genotype") {
 
-    property("readWrite") = forAll[(Variant, Genotype)](Genotype.genVariantGenotype) { case (v, g) =>
+    property("readWrite") = forAll[(Variant, Genotype)](Genotype.genVariantGenotype.filter(_._2 != null)) { case (v, g) =>
       readWriteEqual(v.nAlleles, g)
     }
 

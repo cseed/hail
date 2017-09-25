@@ -719,26 +719,31 @@ abstract class TContainer extends Type {
         val length1 = loadLength(r1, o1)
         val length2 = loadLength(r2, o2)
 
-        var i = 0
-        while (i < math.min(length1, length2)) {
-          val leftDefined = isElementDefined(r1, o1, i)
-          val rightDefined = isElementDefined(r2, o2, i)
+        val minlen = math.min(length1, length2)
 
-          if (leftDefined && rightDefined) {
+        var i = 0
+        while (i < minlen) {
+          val defined1 = isElementDefined(r1, o1, i)
+          val defined2 = isElementDefined(r2, o2, i)
+          var c = java.lang.Boolean.compare(defined1, defined2)
+          if (c != 0) {
+            if (missingGreatest)
+              return -c
+            else
+              return c
+          }
+
+          if (defined1) {
             val eOff1 = loadElement(r1, o1, length1, i)
             val eOff2 = loadElement(r2, o2, length2, i)
-            val c = eltOrd.compare(r1, eOff1, r2, eOff2)
+            c = eltOrd.compare(r1, eOff1, r2, eOff2)
             if (c != 0)
               return c
-          } else if (leftDefined != rightDefined) {
-            val c = if (leftDefined) -1 else 1
-            if (missingGreatest)
-              return c
-            else
-              return -c
           }
+
           i += 1
         }
+
         Integer.compare(length1, length2)
       }
     }
