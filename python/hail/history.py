@@ -60,8 +60,13 @@ def record_classmethod(func, cls, *args, **kwargs):
 
 def write_history(path_arg_name, is_dir=False):
     def _write(f, obj, *args, **kwargs):
+
         parsed_args = parse_args(f, args, kwargs)
         argnames = inspect.getcallargs(f, obj, *args, **kwargs)
+
+        h2 = (obj._history
+              .add_method(f.__name__, parsed_args))
+        
         result = f(obj, *args, **kwargs)
 
         output_path = argnames[path_arg_name]
@@ -70,8 +75,7 @@ def write_history(path_arg_name, is_dir=False):
         else:
             output_path += ".history.txt"
 
-        (obj._history
-         .add_method(f.__name__, parsed_args)
+        (h2
          .write(output_path))
 
         return result
@@ -103,6 +107,8 @@ class History(object):
         self.expr = expr
         self.statements = statements
 
+        print('history:\n' + self.simple_formatted())
+
     def set_varid(self, id):
         return History(id, self.statements + ['{} = ({})'.format(id, self.expr)])
 
@@ -133,6 +139,17 @@ class History(object):
     def write(self, file):
         with hadoop_write(file) as f:
             f.write(self.formatted() + "\n")
+
+    def simple_formatted(self):
+        history = "from hail import *\n\n"
+        for stmt in self.statements:
+            history += (stmt + "\n\n")
+        history += ("(" + self.expr + ")")
+        try:
+            import autopep8
+            return autopep8.fix_code(history)
+        except ImportError:
+            return history
 
     def formatted(self):
         now = datetime.datetime.now()
