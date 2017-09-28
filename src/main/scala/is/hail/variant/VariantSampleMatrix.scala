@@ -884,12 +884,30 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
 
   def deleteVA(path: List[String]): (Type, Deleter) = vaSignature.delete(path)
 
-  def dropSamples(): VariantSampleMatrix[RPK, RK, T] =
-    copy(sampleIds = IndexedSeq.empty[Annotation],
+  def dropSamples(): VariantSampleMatrix[RPK, RK, T] = {
+    val localRowType = rowType
+    copy2(sampleIds = IndexedSeq.empty[Annotation],
       sampleAnnotations = IndexedSeq.empty[Annotation],
-      rdd = rdd.mapValues { case (va, gs) => (va, Iterable.empty[T]) })
+      rdd2 = rdd2.mapPartitionsPreservesPartitioning { it =>
+        val rvb = new RegionValueBuilder()
+        it.map { rv =>
+          rvb.set(rv.region)
+          rvb.start(localRowType)
+          rvb.startStruct()
+          rvb.addField(localRowType, rv, 0) // pk
+          rvb.addField(localRowType, rv, 1) // v
+          rvb.addField(localRowType, rv, 2) // va
+          rvb.startArray(0)
+          rvb.endArray()
+          rvb.endStruct()
 
-  def dropVariants(): VariantSampleMatrix[RPK, RK, T] = copy(rdd = OrderedRDD.empty(sparkContext))
+          rv.setOffset(rvb.end())
+          rv
+        }
+      })
+  }
+
+  def dropVariants(): VariantSampleMatrix[RPK, RK, T] = copy2(rdd2 = OrderedRDD2.empty(sparkContext, matrixType.orderedRDD2Type))
 
   def expand(): RDD[(RK, Annotation, T)] =
     mapWithKeys[(RK, Annotation, T)]((v, s, g) => (v, s, g))
