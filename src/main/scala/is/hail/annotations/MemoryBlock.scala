@@ -224,8 +224,6 @@ final class MemoryBuffer(var mem: Long, var length: Long, var offset: Long = 0) 
     new MemoryBuffer(newMem, offset, offset)
   }
 
-  def result(): MemoryBuffer = copy()
-
   override def finalize() {
     Memory.free(mem)
   }
@@ -432,10 +430,12 @@ object RegionValue {
   def apply(): RegionValue = new RegionValue(null, 0)
 
   def apply(region: MemoryBuffer): RegionValue = new RegionValue(region, 0)
+
+  def apply(region: MemoryBuffer, offset: Long) = new RegionValue(region, offset)
 }
 
-final case class RegionValue(var region: MemoryBuffer,
-  var offset: Long) {
+final class RegionValue(var region: MemoryBuffer,
+  var offset: Long) extends Serializable {
   def set(newRegion: MemoryBuffer, newOffset: Long) {
     region = newRegion
     offset = newOffset

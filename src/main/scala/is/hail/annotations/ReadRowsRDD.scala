@@ -430,7 +430,7 @@ class ReadRowsRDD(sc: SparkContext,
       private var decompLen = ReadRowsRDD.readInt(in)
 
       private val region = MemoryBuffer()
-      private val rv = RegionValue(region, 0)
+      private val rv = RegionValue(region)
 
       private val dec = new Decoder()
 
@@ -464,7 +464,7 @@ class ReadRowsRDD(sc: SparkContext,
 
         dec.set(decomp, 0)
         region.clear()
-        rv.offset = dec.readRegionValue(localT.fundamentalType, region)
+        rv.setOffset(dec.readRegionValue(localT.fundamentalType, region))
 
         // println("read rv", rv.pretty(t))
 

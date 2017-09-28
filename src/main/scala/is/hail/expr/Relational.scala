@@ -176,7 +176,7 @@ object MatrixValue {
         rdd.mapPartitions { it =>
           val region = MemoryBuffer()
           val rvb = new RegionValueBuilder(region)
-          val rv = RegionValue(region, 0)
+          val rv = RegionValue(region)
 
           it.map { case (v, (va, gs)) =>
             region.clear()
@@ -195,7 +195,7 @@ object MatrixValue {
             rvb.endArray()
             rvb.endStruct()
 
-            rv.offset = rvb.end()
+            rv.setOffset(rvb.end())
             rv
           }
         }))

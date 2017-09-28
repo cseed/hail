@@ -80,7 +80,7 @@ class WritableRegionValue(val t: Type,
           i += 1
         }
         rvb.endStruct()
-        value.offset = rvb.end()
+        value.setOffset(rvb.end())
     }
   }
 
@@ -90,7 +90,7 @@ class WritableRegionValue(val t: Type,
     region.clear()
     rvb.start(t)
     rvb.addRegionValue(t, fromRegion, fromOffset)
-    value.offset = rvb.end()
+    value.setOffset(rvb.end())
   }
 }
 
@@ -558,7 +558,7 @@ object OrderedRDD2 {
   }
 
   def leftJoin(left: OrderedRDD2Type, right: OrderedRDD2Type): (
-    TStruct, UnsafeOrdering, (RegionValueBuilder, RegionValue, RegionValue) => Unit) = {
+    TStruct, UnsafeOrdering, (RegionValueBuilder, RegionValue, RegionValue, RegionValue) => Unit) = {
     if (left.kType != right.kType)
       fatal(
         s"""Incompatible join keys.  Keys must have same length and types, in order:
@@ -572,7 +572,7 @@ object OrderedRDD2 {
     val lrKOrd = OrderedRDD2Type.selectUnsafeOrdering(left.rowType, left.kRowFieldIdx,
       right.rowType, right.kRowFieldIdx)
 
-    val merge = { (rvb: RegionValueBuilder, lrv: RegionValue, rrv: RegionValue) =>
+    val merge = { (rvb: RegionValueBuilder, jrv: RegionValue, lrv: RegionValue, rrv: RegionValue) =>
       rvb.set(lrv.region)
       rvb.start(joinType)
       rvb.startStruct() // row
@@ -599,7 +599,7 @@ object OrderedRDD2 {
       rvb.endStruct()
 
       // leave result in lrv
-      lrv.offset = rvb.end()
+      jrv.set(lrv.region, rvb.end())
     }
 
     (joinType, lrKOrd, merge)
@@ -649,36 +649,37 @@ class OrderedRDD2 private(
   def persist2(storageLevel: StorageLevel): OrderedRDD2 = {
     val localRowType = typ.rowType
 
-    // copy region values
-    val unsharedRDD = rdd.mapPartitions { it =>
+    // copy, persist region values
+    val persistedRDD = rdd.mapPartitions { it =>
       val region = MemoryBuffer()
       val rvb = new RegionValueBuilder(region)
       it.map { rv =>
         region.clear()
+        rvb.start(localRowType)
         rvb.addRegionValue(localRowType, rv)
-        RegionValue(region.copy(), rvb.end())
+        val off = rvb.end()
+        RegionValue(region.copy(), off)
       }
     }
+      .persist(storageLevel)
 
-    val unpersistedRDD = this
+    val self = this
 
-    val persistedRDD = new OrderedRDD2(typ,
+    new OrderedRDD2(typ,
       orderedPartitioner,
-      unsharedRDD) {
+      persistedRDD) {
       override def persist2(newStorageLevel: StorageLevel): OrderedRDD2 = {
         if (newStorageLevel == storageLevel)
           this
         else
-          unpersistedRDD.persist2(newStorageLevel)
+          self.persist2(newStorageLevel)
       }
 
       override def unpersist2(): OrderedRDD2 = {
-        unpersist()
-        unpersistedRDD
+        rdd.unpersist()
+        self
       }
     }
-    persistedRDD.persist(storageLevel)
-    persistedRDD
   }
 
   def orderedLeftJoinDistinct(right: OrderedRDD2): OrderedRDD2 = {
@@ -715,7 +716,7 @@ case class OrderedLeftJoinDistinctRDD2Partition(index: Int, leftPartition: Parti
 
 class OrderedLeftJoinDistinctRDD2(left: OrderedRDD2, right: OrderedRDD2,
   lrKOrd: UnsafeOrdering,
-  merge: (RegionValueBuilder, RegionValue, RegionValue) => Unit)
+  merge: (RegionValueBuilder, RegionValue, RegionValue, RegionValue) => Unit)
   extends RDD[RegionValue](left.sparkContext,
     Seq[Dependency[_]](new OneToOneDependency(left),
       new OrderedDependency2(left, right))) {
@@ -743,6 +744,7 @@ class OrderedLeftJoinDistinctRDD2(left: OrderedRDD2, right: OrderedRDD2,
 
     new Iterator[RegionValue] {
       val rvb = new RegionValueBuilder()
+      val jrv = RegionValue()
 
       var rrv: RegionValue =
         if (rightIt.hasNext)
@@ -765,13 +767,13 @@ class OrderedLeftJoinDistinctRDD2(left: OrderedRDD2, right: OrderedRDD2,
         val lrv = leftIt.next()
         advanceRight(lrv)
         // merge into lrv
-        merge(rvb, lrv,
+        merge(rvb, jrv, lrv,
           // FIXME duplicate comparison
           if (rrv != null && lrKOrd.compare(lrv, rrv) == 0)
             rrv
           else
             null)
-        lrv
+        jrv
       }
     }
   }

@@ -619,6 +619,7 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
         rdd2.orderedPartitioner,
         rdd2.mapPartitions { it =>
           val rvb = new RegionValueBuilder()
+          val rv2 = RegionValue()
 
           it.map { rv =>
             val ur = new UnsafeRow(localRowType, rv.region, rv.offset)
@@ -644,9 +645,8 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
             rvb.addAnnotation(newRowType.fieldType(3), gs)
             rvb.endStruct()
 
-            rv.offset = rvb.end()
-
-            rv
+            rv2.set(rv.region, rvb.end())
+            rv2
           }
         }))
   }
@@ -849,6 +849,8 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
       rdd2 = OrderedRDD2(newMatrixType.orderedRDD2Type, rdd2.orderedPartitioner,
         joinRDD.mapPartitions { it =>
           val rvb = new RegionValueBuilder()
+          val rv2 = RegionValue()
+
           it.map { rv =>
             val ur = new UnsafeRow(joinType, rv.region, rv.offset)
 
@@ -860,8 +862,9 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
             rvb.addAnnotation(finalType, inserter(ur.get(2), ur.get(4))) // va
             rvb.addField(joinType, rv, 3) // gs
             rvb.endStruct() // row
-            rv.offset = rvb.end()
-            rv
+
+            rv2.set(rv.region, rvb.end())
+            rv2
           }
         }))
 
@@ -890,6 +893,7 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
       sampleAnnotations = IndexedSeq.empty[Annotation],
       rdd2 = rdd2.mapPartitionsPreservesPartitioning { it =>
         val rvb = new RegionValueBuilder()
+        val rv2 = RegionValue()
         it.map { rv =>
           rvb.set(rv.region)
           rvb.start(localRowType)
@@ -900,9 +904,8 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
           rvb.startArray(0)
           rvb.endArray()
           rvb.endStruct()
-
-          rv.setOffset(rvb.end())
-          rv
+          rv2.set(rv.region, rvb.end())
+          rv2
         }
       })
   }
@@ -1429,6 +1432,7 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
         rdd2.orderedPartitioner,
         rdd2.mapPartitions { it =>
           val rvb = new RegionValueBuilder()
+          val rv2 = RegionValue()
 
           it.map { rv =>
             val ur = new UnsafeRow(localRowType, rv.region, rv.offset)
@@ -1449,9 +1453,8 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
             rvb.addAnnotation(newRowType.fieldType(3), gs)
             rvb.endStruct()
 
-            rv.offset = rvb.end()
-
-            rv
+            rv2.set(rv.region, rvb.end())
+            rv2
           }
         }))
     /*
@@ -1930,7 +1933,7 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
       Array("s"))
   }
 
-  def storageLevel: String = rdd2.getStorageLevel.toReadableString()
+  def storageLevel: String = rdd2.rdd.getStorageLevel.toReadableString()
 
   def setVaAttributes(path: String, kv: Map[String, String]): VariantSampleMatrix[RPK, RK, T] = {
     setVaAttributes(Parser.parseAnnotationRoot(path, Annotation.VARIANT_HEAD), kv)
@@ -2146,6 +2149,7 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
     copy2(
       rdd2 = rdd2.mapPartitionsPreservesPartitioning { it =>
         val rvb = new RegionValueBuilder()
+        val rv2 = RegionValue()
         it.map { rv =>
           val ur = new UnsafeRow(localRowType, rv.region, rv.offset)
 
@@ -2187,9 +2191,9 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
           }
           rvb.endArray()
           rvb.endStruct()
-          rv.setOffset(rvb.end())
 
-          rv
+          rv2.set(rv.region, rvb.end())
+          rv2
         }
       })
   }

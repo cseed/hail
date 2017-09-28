@@ -352,11 +352,12 @@ class VariantDatasetFunctions(private val vds: VariantDataset) extends AnyVal {
     vds.copy2(
       rdd2 = vds.rdd2.mapPartitionsPreservesPartitioning { it =>
         val rvb = new RegionValueBuilder()
+        val rv2 = RegionValue()
 
         it.map { rv =>
           val region = rv.region
 
-          rvb.set(rv.region)
+          rvb.set(region)
           rvb.start(rowType)
           rvb.startStruct()
           rvb.addField(rowType, rv, 0) // pk
@@ -398,9 +399,8 @@ class VariantDatasetFunctions(private val vds: VariantDataset) extends AnyVal {
           rvb.endArray() // gs
           rvb.endStruct()
 
-          rv.offset = rvb.end()
-
-          rv
+          rv2.set(region, rvb.end())
+          rv2
         }
       }
     )

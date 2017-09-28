@@ -195,7 +195,7 @@ case class KeyTable(hc: HailContext, rdd: RDD[Row],
         region.clear()
         rvb.start(localSignature)
         rvb.addRow(localSignature, r)
-        rv.offset = rvb.end()
+        rv.setOffset(rvb.end())
         rv
       }
     }
