@@ -78,7 +78,7 @@ object VariantSampleMatrix {
           s"""corrupt or outdated VDS: invalid metadata
              |  Recreate VDS with current version of Hail.
              |  Detailed exception:
-             |  ${e.getMessage}""".stripMargin)
+             |  ${ e.getMessage }""".stripMargin)
       }
     }
 
@@ -1100,7 +1100,7 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
     val mask = sampleIdsAndAnnotations.map { case (s, sa) => p(s, sa) }.toArray
     filterSamplesMask(mask)
   }
-  
+
   /**
     * Filter samples using the Hail expression language.
     *
@@ -1680,7 +1680,7 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
         case (None, Some(j)) => notInDataset += s
       }
     }
-    
+
     if (missingSamples.nonEmpty)
       fatal(s"Found ${ missingSamples.size } ${ plural(missingSamples.size, "sample ID") } in dataset that are not in new ordering:\n  " +
         s"@1", missingSamples.truncatable("\n  "))
@@ -2142,14 +2142,59 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
     val f: () => java.lang.Boolean = Parser.parseTypedExpr[java.lang.Boolean](filterExpr, ec)
 
     val localKeep = keep
-    mapValuesWithAll(genotypeSignature, { (v: RK, va: Annotation, s: Annotation, sa: Annotation, g: T) =>
-      ec.setAll(v, va, s, sa, g)
-      val p = Filter.boxedKeepThis(f(), localKeep)
-      if (Filter.boxedKeepThis(f(), localKeep))
-        g
-      else
-        null
-    })
+    val localRowType = rowType
+    val localNSamples = nSamples
+    val localSampleIdsBc = sampleIdsBc
+    val localSampleAnnotationsBc = sampleAnnotationsBc
+    copy2(
+      rdd2 = rdd2.mapPartitionsPreservesPartitioning { it =>
+        val rvb = new RegionValueBuilder()
+        it.map { rv =>
+          val ur = new UnsafeRow(localRowType, rv.region, rv.offset)
+
+          val v = ur.get(1)
+          val va = ur.get(2)
+          val gs = ur.getAs[IndexedSeq[Annotation]](3)
+
+          rvb.set(rv.region)
+          rvb.start(localRowType)
+          rvb.startStruct()
+          rvb.addField(localRowType, rv, 0) // pk
+          rvb.addField(localRowType, rv, 1) // v
+          rvb.addField(localRowType, rv, 2) // va
+          rvb.startArray(localNSamples)
+
+          val gsType = localRowType.fieldType(3).asInstanceOf[TArray]
+          val gType = gsType.elementType
+          val gsAOff = localRowType.loadField(rv, 3)
+          assert(gsType.loadLength(rv.region, gsAOff) == localNSamples)
+
+          var i = 0
+          while (i < localNSamples) {
+            if (gsType.isElementDefined(rv.region, gsAOff, i)) {
+              val s = localSampleIdsBc.value(i)
+              val sa = localSampleAnnotationsBc.value(i)
+              val g = gs(i)
+              ec.setAll(v, va, s, sa, g)
+
+              val p = Filter.boxedKeepThis(f(), localKeep)
+              if (p) {
+                val gOff = gsType.loadElement(rv.region, gsAOff, localNSamples, i)
+                rvb.addRegionValue(gType, rv.region, gOff)
+              } else
+                rvb.setMissing()
+            } else
+              rvb.setMissing()
+
+            i += 1
+          }
+          rvb.endArray()
+          rvb.endStruct()
+          rv.setOffset(rvb.end())
+
+          rv
+        }
+      })
   }
 
   def makeVariantConcrete(): VariantSampleMatrix[Locus, Variant, T] = {
