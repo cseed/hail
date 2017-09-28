@@ -1930,7 +1930,7 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
       Array("s"))
   }
 
-  def storageLevel: String = rdd.getStorageLevel.toReadableString()
+  def storageLevel: String = rdd2.getStorageLevel.toReadableString()
 
   def setVaAttributes(path: String, kv: Map[String, String]): VariantSampleMatrix[RPK, RK, T] = {
     setVaAttributes(Parser.parseAnnotationRoot(path, Annotation.VARIANT_HEAD), kv)
@@ -2109,15 +2109,12 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
         fatal(s"unknown StorageLevel `$storageLevel'")
     }
 
-    rdd.persist(level)
-    this
+    copy2(rdd2 = rdd2.persist2(level))
   }
 
   def cache(): VariantSampleMatrix[RPK, RK, T] = persist("MEMORY_ONLY")
 
-  def unpersist() {
-    rdd.unpersist()
-  }
+  def unpersist(): VariantSampleMatrix[RPK, RK, T] = copy2(rdd2 = rdd2.unpersist2())
 
   def naiveCoalesce(maxPartitions: Int): VariantSampleMatrix[RPK, RK, T] =
     copy(rdd = rdd.naiveCoalesce(maxPartitions))

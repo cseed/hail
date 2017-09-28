@@ -6,6 +6,7 @@ import is.hail.utils._
 import org.apache.spark._
 import org.apache.spark.rdd.{RDD, ShuffledRDD}
 import org.apache.spark.sql.Row
+import org.apache.spark.storage.StorageLevel
 import org.json4s.MappingException
 import org.json4s.JsonAST._
 
@@ -643,6 +644,43 @@ class OrderedRDD2 private(
       orderedPartitioner,
       rdd.sample(withReplacement, fraction, seed))
 
+  def unpersist2(): OrderedRDD2 = throw new IllegalArgumentException("not persisted")
+
+  def persist2(storageLevel: StorageLevel): OrderedRDD2 = {
+    val localRowType = typ.rowType
+
+    // copy region values
+    val unsharedRDD = rdd.mapPartitions { it =>
+      val region = MemoryBuffer()
+      val rvb = new RegionValueBuilder(region)
+      it.map { rv =>
+        region.clear()
+        rvb.addRegionValue(localRowType, rv)
+        RegionValue(region.copy(), rvb.end())
+      }
+    }
+
+    val unpersistedRDD = this
+
+    val persistedRDD = new OrderedRDD2(typ,
+      orderedPartitioner,
+      unsharedRDD) {
+      override def persist2(newStorageLevel: StorageLevel): OrderedRDD2 = {
+        if (newStorageLevel == storageLevel)
+          this
+        else
+          unpersistedRDD.persist2(newStorageLevel)
+      }
+
+      override def unpersist2(): OrderedRDD2 = {
+        unpersist()
+        unpersistedRDD
+      }
+    }
+    persistedRDD.persist(storageLevel)
+    persistedRDD
+  }
+
   def orderedLeftJoinDistinct(right: OrderedRDD2): OrderedRDD2 = {
     val (joinType, lrKOrd, merge) = OrderedRDD2.leftJoin(typ, right.typ)
 
@@ -781,7 +819,7 @@ object OrderedPartitioner2 {
           rangeBoundsType,
           JSONAnnotationImpex.importAnnotation(ex.rangeBounds, TArray(legacyPKType))
             .asInstanceOf[IndexedSeq[Annotation]]
-          .map { a => Row(a) })
+            .map { a => Row(a) })
 
         new OrderedPartitioner2(ex.numPartitions, partitionKey, kType, rangeBounds)
     }
