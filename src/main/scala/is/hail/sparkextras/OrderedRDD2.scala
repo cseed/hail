@@ -5,6 +5,8 @@ import is.hail.expr.{JSONAnnotationImpex, Parser, TArray, TStruct, Type}
 import is.hail.utils._
 import org.apache.spark._
 import org.apache.spark.rdd.{RDD, ShuffledRDD}
+import org.apache.spark.sql.Row
+import org.json4s.MappingException
 import org.json4s.JsonAST._
 
 import scala.collection.mutable
@@ -378,7 +380,8 @@ object OrderedRDD2 {
 
       val unsafeRangeBounds = UnsafeIndexedSeq(TArray(typ.pkType), rangeBounds)
       val partitioner = new OrderedPartitioner2(adjustedPartitions.length,
-        typ,
+        typ.partitionKey,
+        typ.kType,
         unsafeRangeBounds)
 
       val reorderedPartitionsRDD = rdd.reorderPartitions(pkis.map(_.partitionIndex))
@@ -404,7 +407,7 @@ object OrderedRDD2 {
         .filter(_.numPartitions >= rdd.partitions.length)
         .getOrElse {
           val ranges = calculateKeyRanges(typ, pkis, rdd.getNumPartitions)
-          new OrderedPartitioner2(ranges.length + 1, typ, ranges)
+          new OrderedPartitioner2(ranges.length + 1, typ.partitionKey, typ.kType, ranges)
         }
       (SHUFFLE, shuffle(typ, p, rdd))
     }
@@ -738,37 +741,71 @@ class OrderedLeftJoinDistinctRDD2(left: OrderedRDD2, right: OrderedRDD2,
 
 object OrderedPartitioner2 {
   def empty(typ: OrderedRDD2Type): OrderedPartitioner2 = {
-    new OrderedPartitioner2(0, typ, UnsafeIndexedSeq.empty(TArray(typ.pkType)))
+    new OrderedPartitioner2(0, typ.partitionKey, typ.kType, UnsafeIndexedSeq.empty(TArray(typ.pkType)))
   }
 
   def apply(sc: SparkContext, jv: JValue): OrderedPartitioner2 = {
-    case class Extract(numPartitions: Int,
-      typ: JValue,
-      rangeBounds: JValue)
-    val ex = jv.extract[Extract]
-    val typ = OrderedRDD2Type(ex.typ)
-    val rangeBoundsType = TArray(typ.pkType)
-    new OrderedPartitioner2(ex.numPartitions,
-      typ,
-      UnsafeIndexedSeq(
-        rangeBoundsType,
-        JSONAnnotationImpex.importAnnotation(ex.rangeBounds, rangeBoundsType).asInstanceOf[IndexedSeq[Annotation]]))
+    try {
+      case class Extract(numPartitions: Int,
+        partitionKey: Array[String],
+        kType: String,
+        rangeBounds: JValue)
+      val ex = jv.extract[Extract]
+
+      val partitionKey = ex.partitionKey
+      val kType = Parser.parseType(ex.kType).asInstanceOf[TStruct]
+      val (pkType, _) = kType.select(partitionKey)
+
+      val rangeBoundsType = TArray(pkType)
+      new OrderedPartitioner2(ex.numPartitions,
+        ex.partitionKey,
+        kType,
+        UnsafeIndexedSeq(
+          rangeBoundsType,
+          JSONAnnotationImpex.importAnnotation(ex.rangeBounds, rangeBoundsType).asInstanceOf[IndexedSeq[Annotation]]))
+    } catch {
+      case _: MappingException =>
+        case class LegacyExtract(numPartitions: Int,
+          fullKeyType: String,
+          rangeBounds: JValue)
+        val ex = jv.extract[LegacyExtract]
+
+        val partitionKey = Array("pk")
+        val kType = Parser.parseType(ex.fullKeyType).asInstanceOf[TStruct]
+        val (pkType, _) = kType.select(partitionKey)
+
+        val rangeBoundsType = TArray(pkType)
+
+        val legacyPKType = kType.fieldType(0)
+        val rangeBounds = UnsafeIndexedSeq(
+          rangeBoundsType,
+          JSONAnnotationImpex.importAnnotation(ex.rangeBounds, TArray(legacyPKType))
+            .asInstanceOf[IndexedSeq[Annotation]]
+          .map { a => Row(a) })
+
+        new OrderedPartitioner2(ex.numPartitions, partitionKey, kType, rangeBounds)
+    }
   }
 }
 
 class OrderedPartitioner2(
   val numPartitions: Int,
-  val typ: OrderedRDD2Type,
+  val partitionKey: Array[String], val kType: TStruct,
   // rangeBounds is partition max, sorted ascending
   // rangeBounds: Array[pkType]
   val rangeBounds: UnsafeIndexedSeq) extends Partitioner {
   require((numPartitions == 0 && rangeBounds.isEmpty) || numPartitions == rangeBounds.length + 1,
     s"nPartitions = $numPartitions, ranges = ${ rangeBounds.length }")
 
-  val rangeBoundsType = TArray(typ.pkType)
+  val (pkType, _) = kType.select(partitionKey)
+
+  val pkKFieldIdx: Array[Int] = partitionKey.map(n => kType.fieldIdx(n))
+  val pkKOrd: UnsafeOrdering = OrderedRDD2Type.selectUnsafeOrdering(pkType, (0 until pkType.size).toArray, kType, pkKFieldIdx)
+
+  val rangeBoundsType = TArray(pkType)
   assert(rangeBoundsType.typeCheck(rangeBounds))
 
-  val ordering: Ordering[Annotation] = typ.pkType.ordering(missingGreatest = true)
+  val ordering: Ordering[Annotation] = pkType.ordering(missingGreatest = true)
   require(rangeBounds.isEmpty || rangeBounds.zip(rangeBounds.tail).forall { case (left, right) => ordering.compare(left, right) < 0 })
 
   def region: MemoryBuffer = rangeBounds.region
@@ -778,7 +815,7 @@ class OrderedPartitioner2(
   // return the smallest partition for which key <= max
   // pk: Annotation[pkType]
   def getPartitionPK(pk: Any): Int = {
-    assert(typ.pkType.typeCheck(pk))
+    assert(pkType.typeCheck(pk))
 
     val part = BinarySearch.binarySearch(numPartitions,
       // key.compare(elem)
@@ -801,13 +838,14 @@ class OrderedPartitioner2(
         if (i == numPartitions - 1)
           -1 // key.compare(inf)
         else
-          -typ.pkKOrd.compare(rangeBounds.region, loadElement(i), keyrv))
+          -pkKOrd.compare(rangeBounds.region, loadElement(i), keyrv))
     part
   }
 
   def toJSON: JValue =
     JObject(List(
       "numPartitions" -> JInt(numPartitions),
-      "typ" -> typ.toJSON,
+      "partitionKey" -> JArray(partitionKey.map(n => JString(n)).toList),
+      "kType" -> JString(kType.toPrettyString(compact = true)),
       "rangeBounds" -> JSONAnnotationImpex.exportAnnotation(rangeBounds, rangeBoundsType)))
 }

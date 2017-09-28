@@ -169,7 +169,8 @@ object MatrixValue {
     new MatrixValue(typ, localValue,
       OrderedRDD2(typ.orderedRDD2Type,
         new OrderedPartitioner2(rdd.orderedPartitioner.numPartitions,
-          typ.orderedRDD2Type,
+          typ.orderedRDD2Type.partitionKey,
+          typ.orderedRDD2Type.kType,
           UnsafeIndexedSeq(rangeBoundsType,
             rdd.orderedPartitioner.rangeBounds.map(b => Row(b)))),
         rdd.mapPartitions { it =>

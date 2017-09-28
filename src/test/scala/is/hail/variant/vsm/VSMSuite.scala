@@ -176,7 +176,7 @@ class VSMSuite extends SparkSuite {
 
     p.check()
   }
-  
+
   @Test def testFilterSamples() {
     val vds = hc.importVCF("src/test/resources/sample.vcf.gz", force = true)
     val vdsAsMap = vds.mapWithKeys((v, s, g) => ((v, s), g)).collectAsMap()
@@ -337,7 +337,7 @@ class VSMSuite extends SparkSuite {
 
     vds.write(out, overwrite = true)
   }
-  
+
   @Test def testInvalidMetadata() {
     TestUtils.interceptFatal("""invalid metadata""") {
       hc.readVDS("src/test/resources/0.1-1fd5cc7.vds").count()
@@ -439,7 +439,7 @@ class VSMSuite extends SparkSuite {
     }
 
     assert(getGenotypes(filteredVds).fullOuterJoin(getGenotypes(reorderedVds)).forall { case ((v, s), (g1, g2)) =>
-        g1 == g2
+      g1 == g2
     })
 
     assert(reorderedVds.sampleIds sameElements newOrder)
@@ -448,5 +448,10 @@ class VSMSuite extends SparkSuite {
 
     intercept[HailException](vds.reorderSamples(newOrder))
     intercept[HailException](vds.reorderSamples(vds.sampleIds.toArray ++ Array[Annotation]("foo", "bar")))
+  }
+
+  @Test def testLegacy() {
+    assert(hc.readVDS("src/test/resources/sample2.ordrdd2.vds")
+      .same(hc.importVCF("src/test/resources/sample2.vcf")))
   }
 }
