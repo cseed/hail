@@ -630,7 +630,7 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
             val gs = ur.getAs[IndexedSeq[T]](3)
 
             ec.setAll(localGlobalAnnotation, v, va)
-            aggregateOption.foreach(f => f(v, va, gs))
+            aggregateOption.foreach(f => f(rv))
             val newVA = f().zip(inserters)
               .foldLeft(va) { case (va, (v, inserter)) =>
                 inserter(va, v)
@@ -1056,11 +1056,18 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
 
     hadoopConf.delete(path, recursive = true)
 
-    rdd
+    val localRowType = rowType
+    rdd2
       .mapPartitions { it =>
         val sb = new StringBuilder()
-        it.map { case (v, (va, gs)) =>
-          variantAggregations.foreach { f => f(v, va, gs) }
+        it.map { rv =>
+          val ur = new UnsafeRow(localRowType, rv.region, rv.offset)
+
+          val v = ur.get(1)
+          val va = ur.get(2)
+          val gs = ur.getAs[IndexedSeq[Annotation]](3)
+
+          variantAggregations.foreach { f => f(rv) }
           ec.setAll(localGlobalAnnotations, v, va)
           sb.clear()
           f().foreachBetween(x => sb.append(x))(sb += '\t')

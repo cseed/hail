@@ -155,5 +155,25 @@ object Annotation {
 
     (finalType, insF)
   }
+
+  def copy(t: Type, a: Annotation): Annotation = {
+    t match {
+      case t: TStruct =>
+        val region = MemoryBuffer()
+        val rvb = new RegionValueBuilder()
+        rvb.start(t)
+        rvb.addAnnotation(t, rvb)
+        new UnsafeRow(t, region, rvb.end())
+
+      case t: TArray =>
+        val region = MemoryBuffer()
+        val rvb = new RegionValueBuilder()
+        rvb.start(t)
+        rvb.addAnnotation(t, a)
+        new UnsafeIndexedSeq(t, region, rvb.end())
+
+      case _ => a
+    }
+  }
 }
 

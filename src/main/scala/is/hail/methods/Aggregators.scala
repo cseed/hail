@@ -3,7 +3,7 @@ package is.hail.methods
 import java.io.{ObjectInputStream, ObjectOutputStream}
 
 import is.hail.HailContext
-import is.hail.annotations.{Annotation, UnsafeRow}
+import is.hail.annotations.{Annotation, RegionValue, UnsafeRow}
 import is.hail.expr._
 import is.hail.stats._
 import is.hail.utils._
@@ -17,24 +17,31 @@ import scala.reflect.ClassTag
 
 object Aggregators {
 
-  def buildVariantAggregations[RPK, RK, T >: Null](vsm: VariantSampleMatrix[RPK, RK, T], ec: EvalContext): Option[(Annotation, Annotation, Iterable[Annotation]) => Unit] =
-    buildVariantAggregations(vsm.sparkContext, vsm.value.localValue, ec)
+  def buildVariantAggregations[RPK, RK, T >: Null](vsm: VariantSampleMatrix[RPK, RK, T], ec: EvalContext): Option[(RegionValue) => Unit] =
+    buildVariantAggregations(vsm.sparkContext, vsm.value, ec)
 
   def buildVariantAggregations(sc: SparkContext,
-    localValue: VSMLocalValue,
-    ec: EvalContext): Option[(Annotation, Annotation, Iterable[Annotation]) => Unit] = {
+    value: MatrixValue,
+    ec: EvalContext): Option[(RegionValue) => Unit] = {
 
     val aggregations = ec.aggregations
     if (aggregations.isEmpty)
       return None
 
     val localA = ec.a
-    val localNSamples = localValue.nSamples
-    val localSamplesBc = sc.broadcast(localValue.sampleIds)
-    val localAnnotationsBc = sc.broadcast(localValue.sampleAnnotations)
-    val localGlobalAnnotations = localValue.globalAnnotation
+    val localNSamples = value.nSamples
+    val localSamplesBc = sc.broadcast(value.sampleIds)
+    val localAnnotationsBc = sc.broadcast(value.sampleAnnotations)
+    val localGlobalAnnotations = value.globalAnnotation
+    val localRowType = value.typ.rowType
 
-    Some({ (v: Annotation, va: Annotation, gs: Iterable[Annotation]) =>
+    Some({ (rv: RegionValue) =>
+      val ur = new UnsafeRow(localRowType, rv.region, rv.offset)
+
+      val v = ur.get(1)
+      val va = ur.get(2)
+      val gs = ur.getAs[IndexedSeq[Annotation]](3)
+
       val aggs = aggregations.map { case (_, _, agg0) => agg0.copy() }
       localA(0) = localGlobalAnnotations
       localA(1) = v
@@ -86,7 +93,15 @@ object Aggregators {
       baseArray.update(i, j, aggregations(j)._3.copy())
     }
 
-    val result = value.rdd[Annotation, Annotation, Annotation].treeAggregate(baseArray)({ case (arr, (v, (va, gs))) =>
+    val localRowType = value.typ.rowType
+
+    val result = value.rdd2.treeAggregate(baseArray)({ case (arr, rv) =>
+      val ur = new UnsafeRow(localRowType, rv.region, rv.offset)
+
+      val v = ur.get(1)
+      val va = ur.get(2)
+      val gs = ur.getAs[IndexedSeq[Annotation]](3)
+
       localA(0) = localGlobalAnnotations
       localA(4) = v
       localA(5) = va

@@ -128,29 +128,6 @@ class UnsafeIndexedSeq(
 }
 
 object UnsafeRow {
-  def apply(t: TStruct, r: Row): UnsafeRow = {
-    val region = MemoryBuffer()
-    val rvb = new RegionValueBuilder(region)
-    rvb.start(t)
-    rvb.addAnnotation(t, r)
-    new UnsafeRow(t, region, rvb.end())
-  }
-
-  def apply(t: TStruct, args: Annotation*): UnsafeRow = {
-    val region = MemoryBuffer()
-    val rvb = new RegionValueBuilder(region)
-    assert(t.size == args.length)
-    rvb.start(t)
-    rvb.startStruct()
-    var i = 0
-    while (i < args.length) {
-      rvb.addAnnotation(t.fields(i).typ, args(i))
-      i += 1
-    }
-    rvb.endStruct()
-    new UnsafeRow(t, region, rvb.end())
-  }
-
   def readBinary(region: MemoryBuffer, boff: Long): Array[Byte] = {
     val binLength = TBinary.loadLength(region, boff)
     region.loadBytes(TBinary.bytesOffset(boff), binLength)

@@ -5,6 +5,7 @@ import is.hail.expr.{EvalContext, Parser, TAggregable, TString, TStruct, Type, _
 import is.hail.io.plink.ExportBedBimFam
 import is.hail.keytable.KeyTable
 import is.hail.methods._
+import is.hail.sparkextras.OrderedRDD2
 import is.hail.stats.ComputeRRM
 import is.hail.utils._
 import is.hail.variant.Variant.orderedKey
@@ -70,32 +71,78 @@ class VariantDatasetFunctions(private val vds: VariantDataset) extends AnyVal {
     val finalType = if (newType.isInstanceOf[TStruct])
       paths.foldLeft(newType.asInstanceOf[TStruct]) {
         case (res, path) => res.setFieldAttributes(path, Map("Number" -> "A"))
-      }
-    else newType
+      } else
+      newType
 
     val inserters = inserterBuilder.result()
 
     val aggregateOption = Aggregators.buildVariantAggregations(vds, ec)
 
-    vds.mapAnnotations(finalType, { case (v, va, gs) =>
-      val annotations = SplitMulti.split(v, va, gs,
-        propagateGQ = propagateGQ,
-        keepStar = true,
-        insertSplitAnnots = { (va, index, wasSplit) =>
-          insertSplit(insertIndex(va, index), wasSplit)
-        },
-        f = _ => true)
-        .map { case (v, (va, gs)) =>
-          ec.setAll(localGlobalAnnotation, v, va)
-          aggregateOption.foreach(f => f(v, va, gs))
-          f()
-        }.toArray
+    val nSamples = vds.nSamples
+    val rowType = vds.rowType
 
-      inserters.zipWithIndex.foldLeft(va) {
-        case (va, (inserter, i)) =>
-          inserter(va, annotations.map(_ (i)).toArray[Any]: IndexedSeq[Any])
-      }
-    })
+    val insertMatrixType = vds.matrixType.copy(metadata = vds.matrixType.metadata.copy(vaSignature = vas3))
+    val insertRowType = insertMatrixType.rowType
+
+    val newMatrixType = vds.matrixType.copy(metadata = vds.matrixType.metadata.copy(vaSignature = finalType))
+    val newRowType = newMatrixType.rowType
+
+    val newRDD2 = OrderedRDD2(
+      newMatrixType.orderedRDD2Type,
+      vds.rdd2.orderedPartitioner,
+      vds.rdd2.mapPartitions { it =>
+        val splitrvb = new RegionValueBuilder()
+        val splitRegion = MemoryBuffer()
+        val splitrv = RegionValue()
+
+        val rv2b = new RegionValueBuilder()
+        val rv2 = RegionValue()
+
+        it.map { rv =>
+          val annotations = SplitMulti.split(nSamples, rowType, rv,
+            insertRowType, splitrvb, splitRegion, splitrv,
+            propagateGQ = propagateGQ,
+            keepStar = true,
+            insertSplitAnnots = { (va, index, wasSplit) =>
+              insertSplit(insertIndex(va, index), wasSplit)
+            },
+            sortAlleles = false)
+            .map { insertrv =>
+              val insertur = new UnsafeRow(insertRowType, insertrv.region, insertrv.offset)
+              val v = insertur.get(1)
+              val va = insertur.get(2)
+              ec.setAll(localGlobalAnnotation, v, va)
+              aggregateOption.foreach(f => f(insertrv))
+              (f(), types).zipped.map { case (a, t) =>
+                Annotation.copy(t, a)
+              }
+            }
+            .toArray
+
+          rv2b.set(rv.region)
+          rv2b.start(newRowType)
+          rv2b.startStruct()
+
+          rv2b.addField(rowType, rv, 0) // pk
+          rv2b.addField(rowType, rv, 1) // v
+
+          val ur = new UnsafeRow(rowType, rv.region, rv.offset)
+          val va = ur.get(2)
+          val newVA = inserters.zipWithIndex.foldLeft(va) {
+            case (va, (inserter, i)) =>
+              inserter(va, annotations.map(_ (i)): IndexedSeq[Any])
+          }
+          rv2b.addAnnotation(finalType, newVA)
+
+          rv2b.addField(rowType, rv, 3) // gs
+          rv2b.endStruct()
+
+          rv2.set(rv.region, rv2b.end())
+          rv2
+        }
+      })
+
+    vds.copy2(rdd2 = newRDD2, vaSignature = finalType)
   }
 
   def concordance(other: VariantDataset): (IndexedSeq[IndexedSeq[Long]], KeyTable, KeyTable) = {

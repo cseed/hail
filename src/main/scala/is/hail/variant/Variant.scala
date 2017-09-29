@@ -253,17 +253,20 @@ case class VariantSubgen(
       start <- Gen.choose(1, length);
       nAlleles <- nAllelesGen;
       ref <- refGen;
-      altAlleles <- Gen.distinctBuildableOfN[Array, String](
-        nAlleles - 1,
-        altGen)
-        .filter(!_.contains(ref))) yield
-      Variant(contig, start, ref, altAlleles.map(alt => AltAllele(ref, alt)))
+      altAlleles <- Gen.distinctBuildableOfN[Array, String](nAlleles - 1, altGen)
+        .filter(!_.contains(ref))
+        .filter { aa =>
+          aa.forall(alt =>
+            Variant(contig, start, ref, alt).minRep.start == start)
+        } if altAlleles.length > 0) yield
+      Variant(contig, start, ref, altAlleles)
 }
 
 case class Variant(contig: String,
   start: Int,
   ref: String,
   altAlleles: IndexedSeq[AltAllele]) {
+  require(altAlleles.forall(_.ref == ref))
 
   /* The position is 1-based. Telomeres are indicated by using positions 0 or N+1, where N is the length of the
        corresponding chromosome or contig. See the VCF spec, v4.2, section 1.4.1. */

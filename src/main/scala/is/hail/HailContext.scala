@@ -9,6 +9,7 @@ import is.hail.io.gen.GenLoader
 import is.hail.io.plink.{FamFileConfig, PlinkLoader}
 import is.hail.io.vcf._
 import is.hail.keytable.KeyTable
+import is.hail.sparkextras.OrderedRDD2
 import is.hail.stats.{BaldingNicholsModel, Distribution, UniformDist}
 import is.hail.utils.{log, _}
 import is.hail.variant.{GenericDataset, GenomeReference, Genotype, Locus, VSMFileMetadata, VSMSubgen, Variant, VariantDataset, VariantSampleMatrix}
@@ -413,18 +414,7 @@ class HailContext private(val sc: SparkContext,
 
     checkDatasetSchemasCompatible(vsms, inputs)
 
-    // I can't figure out how to write this with existentials -cs
-    if (vsms(0).genotypeSignature == TGenotype) {
-      val gdses = vsms.asInstanceOf[Array[VariantSampleMatrix[Annotation, Annotation, Annotation]]]
-      implicit val kOk = gdses(0).kOk
-      gdses(0).copy(
-        rdd = sc.union(gdses.map(_.rdd)).toOrderedRDD)
-    } else {
-      val vdses = vsms.asInstanceOf[Array[VariantDataset]]
-      implicit val kOk = vdses(0).kOk
-      vdses(0).copy(
-        rdd = sc.union(vdses.map(_.rdd)).toOrderedRDD)
-    }
+    vsms(0).copy2(rdd2 = OrderedRDD2(vsms(0).rdd2.typ, sc.union(vsms.map(_.rdd2)), None, None))
   }
 
   def readVDS(file: String, dropSamples: Boolean = false, dropVariants: Boolean = false): VariantDataset =

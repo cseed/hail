@@ -1,10 +1,10 @@
 package is.hail.methods
 
-import is.hail.annotations.Annotation
+import is.hail.annotations._
 import is.hail.expr._
-import is.hail.sparkextras.OrderedRDD
+import is.hail.sparkextras.{OrderedRDD, OrderedRDD2}
 import is.hail.utils._
-import is.hail.variant.{Genotype, GenotypeBuilder, Variant, VariantDataset}
+import is.hail.variant.{Genotype, GenotypeBuilder, HTSGenotypeView, TGenotypeView, Variant, VariantDataset}
 
 object SplitMulti {
 
@@ -14,109 +14,216 @@ object SplitMulti {
       (if (p.k == i) 1 else 0)
   }
 
-  def split(v: Variant,
-    va: Annotation,
-    it: Iterable[Genotype],
+  def split(nSamples: Int, rowType: TStruct, rv: RegionValue,
+    newRowType: TStruct, rvb: RegionValueBuilder, splitRegion: MemoryBuffer, splitrv: RegionValue,
     propagateGQ: Boolean,
     keepStar: Boolean,
     insertSplitAnnots: (Annotation, Int, Boolean) => Annotation,
-    f: (Variant) => Boolean): Iterator[(Variant, (Annotation, Iterable[Genotype]))] = {
+    sortAlleles: Boolean): Iterator[RegionValue] = {
+    val ur = new UnsafeRow(rowType, rv.region, rv.offset)
+
+    val v = ur.getAs[Variant](1)
+    val va = ur.get(2)
 
     if (v.isBiallelic) {
       val minrep = v.minRep
-      if (f(minrep))
-        return Iterator((minrep, (insertSplitAnnots(va, 1, false), it)))
-      else
-        return Iterator()
+      assert(minrep.start == v.start)
+
+      rvb.set(rv.region)
+      rvb.start(newRowType)
+      rvb.startStruct()
+      rvb.addAnnotation(newRowType.fieldType(0), minrep.locus) // pk
+      rvb.addAnnotation(newRowType.fieldType(1), minrep) // pk
+
+      val newVA = insertSplitAnnots(va, 1, false)
+      rvb.addAnnotation(newRowType.fieldType(2), newVA)
+
+      rvb.addField(rowType, rv, 3) // gs
+      rvb.endStruct()
+      splitrv.set(rv.region, rvb.end())
+
+      return Iterator(splitrv)
     }
 
-    val splitVariants = v.altAlleles.iterator.zipWithIndex
+    var splitVariants = v.altAlleles.iterator.zipWithIndex
       .filter(keepStar || !_._1.isStar)
       .map { case (aa, aai) => (Variant(v.contig, v.start, v.ref, Array(aa)).minRep, aai + 1) }
-      .filter { case (sv, _) => f(sv) }
       .toArray
 
     if (splitVariants.isEmpty)
       return Iterator()
 
-    val splitGenotypeBuilders = splitVariants.map { case (sv, _) => new GenotypeBuilder(sv.nAlleles) }
-    val splitGenotypeStreamBuilders = splitVariants.map { case (sv, _) => new ArrayBuilder[Genotype]() }
+    if (sortAlleles)
+      splitVariants = splitVariants.sortBy { case (svj, i) => svj }
 
-    for (g <- it) {
-      val gadsum = Genotype.ad(g).map(gadx => (gadx, gadx.sum))
+    val nAlleles = v.nAlleles
+    val nGenotypes = v.nGenotypes
 
-      // svj corresponds to the ith allele of v
-      for (((svj, i), j) <- splitVariants.iterator.zipWithIndex) {
-        val gb = splitGenotypeBuilders(j)
-        gb.clear()
+    splitVariants.iterator.zipWithIndex
+      .map { case ((svj, i), j) =>
+        assert(svj.start == v.start)
 
-        if (g == null)
-          gb.setMissing()
-        else if (!g._isLinearScale) {
-          Genotype.gt(g).foreach { ggtx =>
-            val gtx = splitGT(ggtx, i)
-            gb.setGT(gtx)
+        splitRegion.clear()
+        rvb.set(splitRegion)
+        rvb.start(newRowType)
+        rvb.startStruct()
+        rvb.addAnnotation(newRowType.fieldType(0), svj.locus)
+        rvb.addAnnotation(newRowType.fieldType(1), svj)
 
-            val p = Genotype.gtPair(ggtx)
-            if (gtx != p.nNonRefAlleles)
-              gb.setFakeRef()
-          }
+        val newVA = insertSplitAnnots(va, i, true)
+        rvb.addAnnotation(newRowType.fieldType(2), newVA)
 
-          gadsum.foreach { case (gadx, sum) =>
-            // what bcftools does
-            // Array(gadx(0), gadx(i))
-            gb.setAD(Array(sum - gadx(i), gadx(i)))
-          }
+        val g = HTSGenotypeView(rowType).asInstanceOf[TGenotypeView]
+        g.setRegion(rv.region, rv.offset)
 
-          Genotype.dp(g).foreach { dpx => gb.setDP(dpx) }
+        val px = new Array[Int](3)
+        rvb.startArray(nSamples)
 
-          if (propagateGQ)
-            Genotype.gq(g).foreach { gqx => gb.setGQ(gqx) }
+        var k = 0
+        while (k < nSamples) {
+          g.setGenotype(k)
+          if (g.gIsDefined) {
+            rvb.startStruct() // g
+            if (!g.isLinearScale) {
+              var fakeRef: Boolean = false
 
-          Genotype.pl(g).foreach { gplx =>
-            val plx = gplx.iterator.zipWithIndex
-              .map { case (p, k) => (splitGT(k, i), p) }
-              .reduceByKeyToArray(3, Int.MaxValue)(_ min _)
-            gb.setPX(plx)
+              if (g.hasGT) {
+                val gt = g.getGT
+                val sgt = splitGT(gt, i)
+                rvb.addInt(sgt)
 
-            if (!propagateGQ) {
-              val gq = Genotype.gqFromPL(plx)
-              gb.setGQ(gq)
+                val p = Genotype.gtPair(gt)
+                if (sgt != p.nNonRefAlleles)
+                  fakeRef = true
+              } else
+                rvb.setMissing()
+
+              if (g.hasAD) {
+                var sum = 0
+                var l = 0
+                while (l < nAlleles) {
+                  sum += g.getAD(l)
+                  l += 1
+                }
+
+                rvb.startArray(2)
+                rvb.addInt(sum - g.getAD(i))
+                rvb.addInt(g.getAD(i))
+                rvb.endArray()
+              } else
+                rvb.setMissing()
+
+              if (g.hasDP)
+                rvb.addInt(g.getDP)
+              else
+                rvb.setMissing()
+
+              if (g.hasPL) {
+                px(0) = Int.MaxValue
+                px(1) = Int.MaxValue
+                px(2) = Int.MaxValue
+
+                var l = 0
+                while (l < nGenotypes) {
+                  val sgt = splitGT(l, i)
+                  val pll = g.getPL(l)
+                  if (pll < px(sgt))
+                    px(sgt) = pll
+                  l += 1
+                }
+              }
+
+              if (propagateGQ) {
+                if (g.hasGQ)
+                  rvb.addInt(g.getGQ)
+                else
+                  rvb.setMissing()
+              } else {
+                if (g.hasPL) {
+                  val gq = Genotype.gqFromPL(px)
+                  rvb.addInt(gq)
+                } else
+                  rvb.setMissing()
+              }
+
+              if (g.hasPL) {
+                rvb.startArray(3)
+                rvb.addInt(px(0))
+                rvb.addInt(px(1))
+                rvb.addInt(px(2))
+                rvb.endArray()
+              } else
+                rvb.setMissing()
+
+              rvb.addBoolean(fakeRef)
+              rvb.addBoolean(false) // !isLinearScale
+            } else {
+              if (g.hasPX) {
+                px(0) = 0
+                px(1) = 0
+                px(2) = 0
+
+                var l = 0
+                while (l < nGenotypes) {
+                  val sgt = splitGT(l, i)
+                  val pxl = g.getPX(l)
+                  px(sgt) += pxl
+                  l += 1
+                }
+
+                // FIXME allocates
+                val newpx = Genotype.weightsToLinear(px)
+                val newgt = Genotype.unboxedGTFromLinear(newpx)
+
+                if (newgt != -1)
+                  rvb.addInt(newgt)
+                else
+                  rvb.setMissing()
+
+                rvb.setMissing() // ad
+                rvb.setMissing() // dp
+                rvb.setMissing() // gq
+
+                rvb.startArray(3)
+                rvb.addInt(newpx(0))
+                rvb.addInt(newpx(1))
+                rvb.addInt(newpx(2))
+                rvb.endArray()
+
+                if (g.hasGT) {
+                  val gt = g.getGT
+                  val p = Genotype.gtPair(gt)
+                  if (newgt != p.nNonRefAlleles && newgt != -1)
+                    rvb.addBoolean(true)
+                  else
+                    rvb.addBoolean(false)
+                } else
+                  rvb.addBoolean(false)
+
+                rvb.addBoolean(true)
+              } else {
+                // all fields missing
+                rvb.setMissing() // gt
+                rvb.setMissing() // ad
+                rvb.setMissing() // dp
+                rvb.setMissing() // gq
+                rvb.setMissing() // pl
+                rvb.setMissing() // fakeRef
+                rvb.addBoolean(true) // isLinearScale
+              }
             }
-          }
-        } else {
-          val newpx = Genotype.px(g).map { gpx =>
-            val splitpx = gpx.iterator.zipWithIndex
-              .map { case (p, k) => (splitGT(k, i), p) }
-              .reduceByKeyToArray(3, 0)(_ + _)
 
-            val px = Genotype.weightsToLinear(splitpx)
-            gb.setPX(px)
-            px
-          }
+            rvb.endStruct()
+          } else
+            rvb.setMissing()
 
-          val newgt = newpx
-            .flatMap { px => Genotype.gtFromLinear(px) }
-            .getOrElse(-1)
-
-          if (newgt != -1)
-            gb.setGT(newgt)
-
-          Genotype.gt(g).foreach { gtx =>
-            val p = Genotype.gtPair(gtx)
-            if (newgt != p.nNonRefAlleles && newgt != -1)
-              gb.setFakeRef()
-          }
+          k += 1
         }
+        rvb.endArray() // gs
 
-        splitGenotypeStreamBuilders(j) += gb.result()
-      }
-    }
-
-    splitVariants.iterator
-      .zip(splitGenotypeStreamBuilders.iterator)
-      .map { case ((v, ind), gsb) =>
-        (v, (insertSplitAnnots(va, ind, true), gsb.result()))
+        rvb.endStruct()
+        splitrv.set(splitRegion, rvb.end())
+        splitrv
       }
   }
 
@@ -147,11 +254,27 @@ object SplitMulti {
       newSignature
     }.getOrElse(vas3)
 
-    val partitionerBc = vds.sparkContext.broadcast(vds.rdd.orderedPartitioner)
+    val partitionerBc = vds.sparkContext.broadcast(vds.rdd2.orderedPartitioner)
 
-    val shuffledVariants = vds.rdd.mapPartitionsWithIndex { case (i, it) =>
-      it.flatMap { case (v, (va, gs)) =>
-        split(v, va, gs,
+    val localNSamples = vds.nSamples
+    val localRowType = vds.rowType
+
+    val newMatrixType = vds.matrixType.copy(metadata = vds.matrixType.metadata.copy(vaSignature = vas4))
+    val newRowType = newMatrixType.rowType
+
+    /*
+    FIXME what if variants move?
+
+    val shuffledVariants = OrderedRDD2.shuffle(newMatrixType.orderedRDD2Type,
+      vds.rdd2.orderedPartitioner,
+      vds.rdd2.mapPartitionsWithIndex { case (i, it) =>
+      val rvb = new RegionValueBuilder()
+      val splitRegion = MemoryBuffer()
+      val splitrv = RegionValue()
+
+      it.flatMap { rv =>
+        split(localNSamples, localRowType, rv,
+          newRowType, rvb, splitRegion, splitrv,
           propagateGQ = propagateGQ,
           keepStar = keepStar,
           insertSplitAnnots = { (va, index, wasSplit) =>
@@ -159,12 +282,17 @@ object SplitMulti {
           },
           f = (v: Variant) => partitionerBc.value.getPartition(v) != i)
       }
-    }.orderedRepartitionBy(vds.rdd.orderedPartitioner)
+    })
 
     val localMaxShift = maxShift
-    val staticVariants = vds.rdd.mapPartitionsWithIndex { case (i, it) =>
-      LocalVariantSortIterator(it.flatMap { case (v, (va, gs)) =>
-        split(v, va, gs,
+    val staticVariants = vds.rdd2.mapPartitionsWithIndex { case (i, it) =>
+      LocalKeySortIterator2(it.flatMap { rv =>
+        val rvb = new RegionValueBuilder()
+        val splitRegion = MemoryBuffer()
+        val splitrv = RegionValue()
+
+        split(localNSamples, localRowType, rv,
+          newRowType, rvb, splitRegion, splitrv,
           propagateGQ = propagateGQ,
           keepStar = keepStar,
           insertSplitAnnots = { (va, index, wasSplit) =>
@@ -174,8 +302,29 @@ object SplitMulti {
       }, localMaxShift)
     }
 
-    val newRDD = OrderedRDD.partitionedSortedUnion(staticVariants, shuffledVariants, vds.rdd.orderedPartitioner)
+    val newRDD = OrderedRDD.partitionedSortedUnion(staticVariants, shuffledVariants, vds.rdd2.orderedPartitioner) */
 
-    vds.copy(rdd = newRDD, vaSignature = vas4, wasSplit = true)
+    // verifies sorted, partitioned
+    val newRDD2 = OrderedRDD2(
+      newMatrixType.orderedRDD2Type,
+      vds.rdd2.orderedPartitioner,
+      vds.rdd2.mapPartitions { it =>
+        val rvb = new RegionValueBuilder()
+        val splitRegion = MemoryBuffer()
+        val splitrv = RegionValue()
+
+        it.flatMap { rv =>
+          split(localNSamples, localRowType, rv,
+            newRowType, rvb, splitRegion, splitrv,
+            propagateGQ = propagateGQ,
+            keepStar = keepStar,
+            insertSplitAnnots = { (va, index, wasSplit) =>
+              insertSplit(insertIndex(va, index), wasSplit)
+            },
+            sortAlleles = true)
+        }
+      })
+
+    vds.copy2(rdd2 = newRDD2, vaSignature = vas4, wasSplit = true)
   }
 }
