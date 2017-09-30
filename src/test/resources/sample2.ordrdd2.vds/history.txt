@@ -1,0 +1,8 @@
+# 2017-09-30T17:34:17.784241
+# version: devel-02f0857
+
+from hail import *
+
+(HailContext(min_block_size=0)
+.import_vcf(min_partitions=10, path='src/test/resources/sample2.vcf')
+.write(output='src/test/resources/sample2.ordrdd2.vds'))
