@@ -13,7 +13,7 @@ object FilterAlleles {
 
   def apply(vds: VariantDataset, filterExpr: String, annotationExpr: String = "va = va",
     filterAlteredGenotypes: Boolean = false, keep: Boolean = true,
-    subset: Boolean = true, maxShift: Int = 100, keepStar: Boolean = false): VariantDataset = {
+    subset: Boolean = true, minrepped: Boolean = false, keepStar: Boolean = false): VariantDataset = {
 
     if (vds.wasSplit)
       warn("this VDS was already split; this module was designed to handle multi-allelics, perhaps you should use filtervariants instead.")
@@ -105,16 +105,16 @@ object FilterAlleles {
 
       def subsetPx(px: Array[Int]): Array[Int] = {
         val (newPx, minP) = px.zipWithIndex
-          .filter({
+          .filter {
             case (p, i) =>
               val gTPair = Genotype.gtPair(i)
               (gTPair.j == 0 || oldToNew(gTPair.j) != 0) && (gTPair.k == 0 || oldToNew(gTPair.k) != 0)
-          })
-          .foldLeft((Array.fill(triangle(newCount))(0), Int.MaxValue))({
+          }
+          .foldLeft((Array.fill(triangle(newCount))(0), Int.MaxValue)) {
             case ((newPx, minP), (p, i)) =>
               newPx(downcodeGt(i)) = p
               (newPx, min(p, minP))
-          })
+          }
 
         newPx.map(_ - minP)
       }
@@ -132,14 +132,13 @@ object FilterAlleles {
         }
       }
 
-      gs.map({
-        g =>
+      gs.map { g =>
           val newG = if (subset) subsetGenotype(g) else downcodeGenotype(g)
           if (filterAlteredGenotypes && Genotype.gt(newG) != Genotype.gt(g))
             newG.copy(gt = None)
           else
             newG
-      })
+      }
     }
 
     def updateOrFilterRow(v: Variant, va: Annotation, gs: Iterable[Genotype],
@@ -166,7 +165,8 @@ object FilterAlleles {
       }
     }.orderedRepartitionBy(vds.rdd.orderedPartitioner)
 
-    val localMaxShift = maxShift
+    // FIXME use minrepped
+    val localMaxShift = 100
     val staticVariants = vds.rdd.mapPartitionsWithIndex { case (i, it) =>
       LocalVariantSortIterator(it.flatMap { case (v, (va, gs)) =>
         updateOrFilterRow(v, va, gs,

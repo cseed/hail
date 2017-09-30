@@ -1,8 +1,11 @@
 package is.hail.sparkextras
 
+import java.util
+
 import is.hail.annotations._
 import is.hail.expr.{JSONAnnotationImpex, Parser, TArray, TStruct, Type}
 import is.hail.utils._
+import org.apache.commons.lang3.builder.HashCodeBuilder
 import org.apache.spark._
 import org.apache.spark.rdd.{RDD, ShuffledRDD}
 import org.apache.spark.sql.Row
@@ -242,6 +245,26 @@ class OrderedRDD2Type(
       "partitionKey" -> JArray(partitionKey.map(JString).toList),
       "key" -> JArray(key.map(JString).toList),
       "rowType" -> JString(rowType.toString)))
+
+  override def equals(that: Any): Boolean = that match {
+    case that: OrderedRDD2Type =>
+      (partitionKey sameElements that.partitionKey) &&
+        (key sameElements that.key) &&
+        rowType == that.rowType
+    case _ => false
+  }
+
+  override def hashCode: Int = {
+    val b = new HashCodeBuilder(43, 19)
+    b.append(partitionKey.length)
+    partitionKey.foreach(b.append)
+
+    b.append(key.length)
+    key.foreach(b.append)
+
+    b.append(rowType)
+    b.toHashCode
+  }
 }
 
 object OrderedRDD2 {
@@ -688,6 +711,36 @@ class OrderedRDD2 private(
     OrderedRDD2(new OrderedRDD2Type(typ.partitionKey, typ.key, joinType),
       orderedPartitioner,
       new OrderedLeftJoinDistinctRDD2(this, right, lrKOrd, merge))
+  }
+
+  def partitionSortedUnion(rdd2: OrderedRDD2): OrderedRDD2 = {
+    assert(typ == rdd2.typ)
+    assert(orderedPartitioner == rdd2.orderedPartitioner)
+
+    val localTyp = typ
+    OrderedRDD2(typ, orderedPartitioner,
+      rdd.zipPartitions(rdd2.rdd) { case (it, it2) =>
+        new Iterator[RegionValue] {
+          private val bit = it.buffered
+          private val bit2 = it2.buffered
+
+          def hasNext: Boolean = bit.hasNext || bit2.hasNext
+
+          def next(): RegionValue = {
+            if (!bit.hasNext)
+              bit2.next()
+            else if (!bit2.hasNext)
+              bit.next()
+            else {
+              val c = typ.kInRowOrd.compare(bit.head, bit2.head)
+              if (c < 0)
+                bit.next()
+              else
+                bit2.next()
+            }
+          }
+        }
+      })
   }
 }
 

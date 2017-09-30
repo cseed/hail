@@ -1832,10 +1832,10 @@ class VariantDataset(HistoryMixin):
                       subset=bool,
                       keep=bool,
                       filter_altered_genotypes=bool,
-                      max_shift=integral,
+                      minrepped=bool,
                       keep_star=bool)
     def filter_alleles(self, expr, annotation='va = va', subset=True, keep=True,
-                       filter_altered_genotypes=False, max_shift=100, keep_star=False):
+                       filter_altered_genotypes=False, minrepped=False, keep_star=False):
         """Filter a user-defined set of alternate alleles for each variant.
         If all alternate alleles of a variant are filtered, the
         variant itself is filtered.  The expr expression is
@@ -1977,7 +1977,7 @@ class VariantDataset(HistoryMixin):
         :rtype: :py:class:`.VariantDataset`
         """
 
-        jvds = self._jvdf.filterAlleles(expr, annotation, filter_altered_genotypes, keep, subset, max_shift,
+        jvds = self._jvdf.filterAlleles(expr, annotation, filter_altered_genotypes, keep, subset, minrepped,
                                         keep_star)
         return VariantDataset(self.hc, jvds)
 
@@ -5154,8 +5154,8 @@ class VariantDataset(HistoryMixin):
     @record_method
     @typecheck_method(propagate_gq=bool,
                       keep_star_alleles=bool,
-                      max_shift=integral)
-    def split_multi(self, propagate_gq=False, keep_star_alleles=False, max_shift=100):
+                      minrepped=bool)
+    def split_multi(self, propagate_gq=False, keep_star_alleles=False, minrepped=False):
         """Split multiallelic variants.
 
         .. include:: _templates/req_tvariant_tgenotype.rst
@@ -5273,16 +5273,16 @@ class VariantDataset(HistoryMixin):
           ``import_vcf(store_gq=True)``.  This option will be obviated
           in the future by generic genotype schemas.  Experimental.
         :param bool keep_star_alleles: Do not filter out * alleles.
-        :param int max_shift: maximum number of base pairs by which
-          a split variant can move.  Affects memory usage, and will
-          cause Hail to throw an error if a variant that moves further
-          is encountered.
+        :param bool minrepped: If the dataset is minrepped, variants
+          cannot change order and a shuffle is avoided.  Trust but
+          verify.
 
         :return: A biallelic variant dataset.
         :rtype: :py:class:`.VariantDataset`
+
         """
 
-        jvds = self._jvdf.splitMulti(propagate_gq, keep_star_alleles, max_shift)
+        jvds = self._jvdf.splitMulti(propagate_gq, keep_star_alleles, minrepped)
         return VariantDataset(self.hc, jvds)
 
     @handle_py4j

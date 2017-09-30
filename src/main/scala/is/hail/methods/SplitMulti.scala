@@ -4,7 +4,8 @@ import is.hail.annotations._
 import is.hail.expr._
 import is.hail.sparkextras.{OrderedRDD, OrderedRDD2}
 import is.hail.utils._
-import is.hail.variant.{Genotype, GenotypeBuilder, HTSGenotypeView, TGenotypeView, Variant, VariantDataset}
+import is.hail.variant.{Genotype, GenotypeBuilder, HTSGenotypeView, Locus, TGenotypeView, Variant, VariantDataset}
+import org.apache.spark.rdd.RDD
 
 object SplitMulti {
 
@@ -14,20 +15,53 @@ object SplitMulti {
       (if (p.k == i) 1 else 0)
   }
 
-  def split(nSamples: Int, rowType: TStruct, rv: RegionValue,
+  def split(prevLocus: Locus, nSamples: Int, rowType: TStruct, rv: RegionValue,
     newRowType: TStruct, rvb: RegionValueBuilder, splitRegion: MemoryBuffer, splitrv: RegionValue,
     propagateGQ: Boolean,
     keepStar: Boolean,
     insertSplitAnnots: (Annotation, Int, Boolean) => Annotation,
-    sortAlleles: Boolean): Iterator[RegionValue] = {
+    sortAlleles: Boolean,
+    filterMinrepped: Boolean, filterMoving: Boolean, verifyMinrepped: Boolean): Iterator[RegionValue] = {
+    require(!(filterMoving && verifyMinrepped))
+
     val ur = new UnsafeRow(rowType, rv.region, rv.offset)
 
     val v = ur.getAs[Variant](1)
+
+    var minrepped = true
+    if (prevLocus != null && prevLocus == v.locus)
+      minrepped = false
+    var splitVariants = v.altAlleles.iterator.zipWithIndex
+      .filter(keepStar || !_._1.isStar)
+      .map { case (aa, aai) =>
+        val splitv = Variant(v.contig, v.start, v.ref, Array(aa))
+        val minsplitv = splitv.minRep
+
+        if (splitv != minsplitv)
+          minrepped = false
+
+        (minsplitv, aai + 1)
+      }
+      .toArray
+
+    if (splitVariants.isEmpty)
+      return Iterator()
+
+    if (minrepped) {
+      if (filterMinrepped)
+        return Iterator()
+    } else {
+      if (filterMoving)
+        return Iterator()
+      else if (verifyMinrepped)
+        fatal("found non-minrepped variant: $v")
+    }
+
     val va = ur.get(2)
 
     if (v.isBiallelic) {
-      val minrep = v.minRep
-      assert(minrep.start == v.start)
+      val (minrep, _) = splitVariants(0)
+      assert(v.minRep == minrep)
 
       rvb.set(rv.region)
       rvb.start(newRowType)
@@ -45,14 +79,6 @@ object SplitMulti {
       return Iterator(splitrv)
     }
 
-    var splitVariants = v.altAlleles.iterator.zipWithIndex
-      .filter(keepStar || !_._1.isStar)
-      .map { case (aa, aai) => (Variant(v.contig, v.start, v.ref, Array(aa)).minRep, aai + 1) }
-      .toArray
-
-    if (splitVariants.isEmpty)
-      return Iterator()
-
     if (sortAlleles)
       splitVariants = splitVariants.sortBy { case (svj, i) => svj }
 
@@ -61,8 +87,6 @@ object SplitMulti {
 
     splitVariants.iterator.zipWithIndex
       .map { case ((svj, i), j) =>
-        assert(svj.start == v.start)
-
         splitRegion.clear()
         rvb.set(splitRegion)
         rvb.start(newRowType)
@@ -227,13 +251,47 @@ object SplitMulti {
       }
   }
 
+  def split(vds: VariantDataset,
+    newMatrixType: MatrixType, insertSplitAnnots: (Annotation, Int, Boolean) => Annotation,
+    propagateGQ: Boolean, keepStar: Boolean, sortAlleles: Boolean,
+    filterMinrepped: Boolean, filterMoving: Boolean, verifyMinrepped: Boolean): RDD[RegionValue] = {
+
+    val localNSamples = vds.nSamples
+    val localRowType = vds.rowType
+
+    val newRowType = newMatrixType.rowType
+
+    vds.rdd2.mapPartitions { it =>
+      var prevLocus: Locus = null
+      val rvb = new RegionValueBuilder()
+      val splitRegion = MemoryBuffer()
+      val splitrv = RegionValue()
+
+      it.flatMap { rv =>
+        val splitit = split(prevLocus, localNSamples, localRowType, rv,
+          newRowType, rvb, splitRegion, splitrv,
+          propagateGQ = propagateGQ,
+          keepStar = keepStar,
+          insertSplitAnnots = insertSplitAnnots,
+          sortAlleles = sortAlleles,
+          filterMinrepped = filterMinrepped, filterMoving = filterMoving, verifyMinrepped = verifyMinrepped)
+
+        val ur = new UnsafeRow(localRowType, rv.region, rv.offset)
+        prevLocus = ur.getAs[Locus](0)
+
+        splitit
+      }
+    }
+  }
+
   def splitNumber(str: String): String =
     if (str == "A" || str == "R" || str == "G")
       "."
-    else str
+    else
+      str
 
   def apply(vds: VariantDataset, propagateGQ: Boolean = false, keepStar: Boolean = false,
-    maxShift: Int = 100): VariantDataset = {
+    minrepped: Boolean = false): VariantDataset = {
 
     if (vds.wasSplit) {
       warn("called redundant split on an already split VDS")
@@ -254,76 +312,36 @@ object SplitMulti {
       newSignature
     }.getOrElse(vas3)
 
-    val partitionerBc = vds.sparkContext.broadcast(vds.rdd2.orderedPartitioner)
-
-    val localNSamples = vds.nSamples
-    val localRowType = vds.rowType
-
     val newMatrixType = vds.matrixType.copy(metadata = vds.matrixType.metadata.copy(vaSignature = vas4))
-    val newRowType = newMatrixType.rowType
 
-    /*
-    FIXME what if variants move?
+    val insertSplitAnnots: (Annotation, Int, Boolean) => Annotation =
+      (va, index, wasSplit) => insertSplit(insertIndex(va, index), wasSplit)
 
-    val shuffledVariants = OrderedRDD2.shuffle(newMatrixType.orderedRDD2Type,
-      vds.rdd2.orderedPartitioner,
-      vds.rdd2.mapPartitionsWithIndex { case (i, it) =>
-      val rvb = new RegionValueBuilder()
-      val splitRegion = MemoryBuffer()
-      val splitrv = RegionValue()
+    val newRDD2: OrderedRDD2 =
+      if (minrepped) {
+        OrderedRDD2(
+          newMatrixType.orderedRDD2Type,
+          vds.rdd2.orderedPartitioner,
+          split(vds, newMatrixType, insertSplitAnnots,
+            propagateGQ = propagateGQ, keepStar = keepStar,
+            sortAlleles = true, filterMinrepped = false, filterMoving = false, verifyMinrepped = true))
+      } else {
+        val minrepped = OrderedRDD2(
+          newMatrixType.orderedRDD2Type,
+          vds.rdd2.orderedPartitioner,
+          split(vds, newMatrixType, insertSplitAnnots,
+            propagateGQ = propagateGQ, keepStar = keepStar,
+            sortAlleles = true, filterMinrepped = false, filterMoving = true, verifyMinrepped = false))
 
-      it.flatMap { rv =>
-        split(localNSamples, localRowType, rv,
-          newRowType, rvb, splitRegion, splitrv,
-          propagateGQ = propagateGQ,
-          keepStar = keepStar,
-          insertSplitAnnots = { (va, index, wasSplit) =>
-            insertSplit(insertIndex(va, index), wasSplit)
-          },
-          f = (v: Variant) => partitionerBc.value.getPartition(v) != i)
+        val moved = OrderedRDD2.shuffle(
+          newMatrixType.orderedRDD2Type,
+          vds.rdd2.orderedPartitioner,
+          split(vds, newMatrixType, insertSplitAnnots,
+            propagateGQ = propagateGQ, keepStar = keepStar,
+            sortAlleles = false, filterMinrepped = true, filterMoving = false, verifyMinrepped = false))
+
+        minrepped.partitionSortedUnion(moved)
       }
-    })
-
-    val localMaxShift = maxShift
-    val staticVariants = vds.rdd2.mapPartitionsWithIndex { case (i, it) =>
-      LocalKeySortIterator2(it.flatMap { rv =>
-        val rvb = new RegionValueBuilder()
-        val splitRegion = MemoryBuffer()
-        val splitrv = RegionValue()
-
-        split(localNSamples, localRowType, rv,
-          newRowType, rvb, splitRegion, splitrv,
-          propagateGQ = propagateGQ,
-          keepStar = keepStar,
-          insertSplitAnnots = { (va, index, wasSplit) =>
-            insertSplit(insertIndex(va, index), wasSplit)
-          },
-          f = (v: Variant) => partitionerBc.value.getPartition(v) == i)
-      }, localMaxShift)
-    }
-
-    val newRDD = OrderedRDD.partitionedSortedUnion(staticVariants, shuffledVariants, vds.rdd2.orderedPartitioner) */
-
-    // verifies sorted, partitioned
-    val newRDD2 = OrderedRDD2(
-      newMatrixType.orderedRDD2Type,
-      vds.rdd2.orderedPartitioner,
-      vds.rdd2.mapPartitions { it =>
-        val rvb = new RegionValueBuilder()
-        val splitRegion = MemoryBuffer()
-        val splitrv = RegionValue()
-
-        it.flatMap { rv =>
-          split(localNSamples, localRowType, rv,
-            newRowType, rvb, splitRegion, splitrv,
-            propagateGQ = propagateGQ,
-            keepStar = keepStar,
-            insertSplitAnnots = { (va, index, wasSplit) =>
-              insertSplit(insertIndex(va, index), wasSplit)
-            },
-            sortAlleles = true)
-        }
-      })
 
     vds.copy2(rdd2 = newRDD2, vaSignature = vas4, wasSplit = true)
   }

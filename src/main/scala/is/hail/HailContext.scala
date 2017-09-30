@@ -162,7 +162,7 @@ object HailContext {
     val hc = new HailContext(sparkContext, sqlContext, tmpDir, branchingFactor)
     sparkContext.uiWebUrl.foreach(ui => info(s"SparkUI: $ui"))
 
-    info(s"Running Hail version ${hc.version}")
+    info(s"Running Hail version ${ hc.version }")
     hc
   }
 }

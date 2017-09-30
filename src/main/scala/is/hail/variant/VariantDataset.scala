@@ -99,14 +99,14 @@ class VariantDatasetFunctions(private val vds: VariantDataset) extends AnyVal {
         val rv2 = RegionValue()
 
         it.map { rv =>
-          val annotations = SplitMulti.split(nSamples, rowType, rv,
+          val annotations = SplitMulti.split(null, nSamples, rowType, rv,
             insertRowType, splitrvb, splitRegion, splitrv,
             propagateGQ = propagateGQ,
             keepStar = true,
             insertSplitAnnots = { (va, index, wasSplit) =>
               insertSplit(insertIndex(va, index), wasSplit)
             },
-            sortAlleles = false)
+            sortAlleles = false, filterMinrepped = false, filterMoving = false, verifyMinrepped = false)
             .map { insertrv =>
               val insertur = new UnsafeRow(insertRowType, insertrv.region, insertrv.offset)
               val v = insertur.get(1)
@@ -339,8 +339,8 @@ class VariantDatasetFunctions(private val vds: VariantDataset) extends AnyVal {
     * @param maxShift Maximum possible position change during minimum representation calculation
     */
   def filterAlleles(filterExpr: String, annotationExpr: String = "va = va", filterAlteredGenotypes: Boolean = false,
-    keep: Boolean = true, subset: Boolean = true, maxShift: Int = 100, keepStar: Boolean = false): VariantDataset = {
-    FilterAlleles(vds, filterExpr, annotationExpr, filterAlteredGenotypes, keep, subset, maxShift, keepStar)
+    keep: Boolean = true, subset: Boolean = true, minrepped: Boolean = false, keepStar: Boolean = false): VariantDataset = {
+    FilterAlleles(vds, filterExpr, annotationExpr, filterAlteredGenotypes = filterAlteredGenotypes, keep = keep, subset = subset, minrepped = minrepped, keepStar = keepStar)
   }
 
   /**
@@ -622,16 +622,9 @@ class VariantDatasetFunctions(private val vds: VariantDataset) extends AnyVal {
     KinshipMatrix(vds.hc, vds.sSignature, rrm, vds.sampleIds.toArray, m)
   }
 
-
-  /**
-    *
-    * @param propagateGQ Propagate GQ instead of computing from PL
-    * @param keepStar Do not filter * alleles
-    * @param maxShift Maximum possible position change during minimum representation calculation
-    */
   def splitMulti(propagateGQ: Boolean = false, keepStar: Boolean = false,
-    maxShift: Int = 100): VariantDataset = {
-    SplitMulti(vds, propagateGQ, keepStar, maxShift)
+    minrepped: Boolean = false): VariantDataset = {
+    SplitMulti(vds, propagateGQ = propagateGQ, keepStar = keepStar, minrepped = minrepped)
   }
 
   def skat(variantKeys: String, singleKey: Boolean, y: String, covariates: Array[String] = Array.empty[String],

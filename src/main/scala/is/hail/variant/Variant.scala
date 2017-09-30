@@ -253,13 +253,11 @@ case class VariantSubgen(
       start <- Gen.choose(1, length);
       nAlleles <- nAllelesGen;
       ref <- refGen;
-      altAlleles <- Gen.distinctBuildableOfN[Array, String](nAlleles - 1, altGen)
-        .filter(!_.contains(ref))
-        .filter { aa =>
-          aa.forall(alt =>
-            Variant(contig, start, ref, alt).minRep.start == start)
-        } if altAlleles.length > 0) yield
-      Variant(contig, start, ref, altAlleles)
+      altAlleles <- Gen.distinctBuildableOfN[Array, String](
+        nAlleles - 1,
+        altGen)
+        .filter(!_.contains(ref))) yield
+      Variant(contig, start, ref, altAlleles.map(alt => AltAllele(ref, alt)))
 }
 
 case class Variant(contig: String,
