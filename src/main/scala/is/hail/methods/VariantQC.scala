@@ -1,8 +1,8 @@
 package is.hail.methods
 
-import is.hail.annotations.{Annotation, UnsafeRow}
+import is.hail.annotations._
 import is.hail.expr.{TStruct, _}
-import is.hail.sparkextras.OrderedRDD
+import is.hail.sparkextras.{OrderedRDD, OrderedRDD2}
 import is.hail.stats.LeveneHaldane
 import is.hail.utils._
 import is.hail.variant.{GenericDataset, Genotype, HTSGenotypeView, Variant, VariantDataset}
@@ -103,9 +103,16 @@ object VariantQC {
   def apply(vds: GenericDataset, root: String): GenericDataset = {
     val (newVAS, insertQC) = vds.vaSignature.insert(VariantQC.signature,
       Parser.parseAnnotationRoot(root, Annotation.VARIANT_HEAD))
+
+    val newMatrixType = vds.matrixType.copy(vaType = newVAS)
+    val newRowType = newMatrixType.rowType
+
     val localNSamples = vds.nSamples
     val localRowType = vds.rowType
-    val rdd = vds.rdd2.mapPartitions { it =>
+    val rdd2 = vds.rdd2.mapPartitions { it =>
+      val rvb = new RegionValueBuilder()
+      val rv2 = RegionValue()
+
       val view = HTSGenotypeView(localRowType)
       it.map { rv =>
         view.setRegion(rv.region, rv.offset)
@@ -126,11 +133,24 @@ object VariantQC {
           i += 1
         }
 
-        val ur = new UnsafeRow(localRowType, rv.region.copy(), rv.offset)
-        (ur.get(1): Annotation) -> (insertQC(ur.get(2), comb.result()) -> ur.getAs[Iterable[Annotation]](3))
+        val ur = new UnsafeRow(localRowType, rv.region, rv.offset)
+
+        rvb.set(rv.region)
+        rvb.start(newRowType)
+        rvb.startStruct()
+        rvb.addField(localRowType, rv, 0)
+        rvb.addField(localRowType, rv, 1)
+        rvb.addAnnotation(newVAS, insertQC(ur.get(2), comb.result()))
+        rvb.addField(localRowType, rv, 3)
+        rvb.endStruct()
+
+        rv2.set(rv.region, rvb.end())
+        rv2
       }
     }
-    val ord = OrderedRDD.apply(rdd, vds.rdd.orderedPartitioner)(vds.rdd.kOk, classTag[(Annotation, Iterable[Annotation])])
-    vds.copy[Annotation, Annotation, Annotation](rdd = ord, vaSignature = newVAS)
+    vds.copy2(rdd2 = OrderedRDD2(
+      newMatrixType.orderedRDD2Type,
+      vds.rdd2.orderedPartitioner,
+      rdd2), vaSignature = newVAS)
   }
 }

@@ -90,6 +90,16 @@ case class MatrixType(
       "va" -> (2, vaType),
       "gs" -> (3, TAggregable(genotypeType, aggregationST))))
   }
+
+  def copy(globalType: Type = globalType,
+    sType: Type = sType, saType: Type = saType,
+    vType: Type = vType, vaType: Type = vaType,
+    genotypeType: Type = genotypeType): MatrixType =
+    MatrixType(metadata = metadata.copy(
+      globalSignature = globalType,
+      sSignature = sType, saSignature = saType,
+      vSignature = vType, vaSignature = vaType,
+      genotypeSignature = genotypeType))
 }
 
 object NewAST {

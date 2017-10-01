@@ -40,7 +40,7 @@ object FilterAlleles {
 
     val localNSamples = vds.nSamples
 
-    val newMatrixType = vds.matrixType.copy(metadata = vds.matrixType.metadata.copy(vaSignature = newVAType))
+    val newMatrixType = vds.matrixType.copy(vaType = newVAType)
 
     def filterAllelesInVariant(v: Variant, va: Annotation): Option[(Variant, IndexedSeq[Int], Array[Int])] = {
       var alive = 0

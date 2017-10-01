@@ -312,7 +312,7 @@ object SplitMulti {
       newSignature
     }.getOrElse(vas3)
 
-    val newMatrixType = vds.matrixType.copy(metadata = vds.matrixType.metadata.copy(vaSignature = vas4))
+    val newMatrixType = vds.matrixType.copy(vaType = vas4)
 
     val insertSplitAnnots: (Annotation, Int, Boolean) => Annotation =
       (va, index, wasSplit) => insertSplit(insertIndex(va, index), wasSplit)

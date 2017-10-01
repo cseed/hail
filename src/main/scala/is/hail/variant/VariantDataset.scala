@@ -81,10 +81,10 @@ class VariantDatasetFunctions(private val vds: VariantDataset) extends AnyVal {
     val nSamples = vds.nSamples
     val rowType = vds.rowType
 
-    val insertMatrixType = vds.matrixType.copy(metadata = vds.matrixType.metadata.copy(vaSignature = vas3))
+    val insertMatrixType = vds.matrixType.copy(vaType = vas3)
     val insertRowType = insertMatrixType.rowType
 
-    val newMatrixType = vds.matrixType.copy(metadata = vds.matrixType.metadata.copy(vaSignature = finalType))
+    val newMatrixType = vds.matrixType.copy(vaType = finalType)
     val newRowType = newMatrixType.rowType
 
     val newRDD2 = OrderedRDD2(

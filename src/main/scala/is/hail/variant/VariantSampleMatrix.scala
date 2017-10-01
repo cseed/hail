@@ -611,7 +611,7 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
 
     val localRowType = matrixType.rowType
 
-    val newMatrixType = matrixType.copy(metadata = metadata.copy(vaSignature = finalType))
+    val newMatrixType = matrixType.copy(vaType = finalType)
     val newRowType = newMatrixType.rowType
 
     copy2(vaSignature = finalType,
@@ -836,7 +836,7 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
       } else
         insertVA(other.vaSignature, Parser.parseAnnotationRoot(annotationExpr, Annotation.VARIANT_HEAD))
 
-    val newMatrixType = matrixType.copy(metadata = matrixType.metadata.copy(vaSignature = finalType))
+    val newMatrixType = matrixType.copy(vaType = finalType)
     val newRowType = newMatrixType.rowType
 
     // FIXME va2
@@ -1429,7 +1429,7 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
   }
 
   def mapAnnotations(newVASignature: Type, f: (RK, Annotation, Iterable[T]) => Annotation): VariantSampleMatrix[RPK, RK, T] = {
-    val newMatrixType = matrixType.copy(metadata = matrixType.metadata.copy(vaSignature = newVASignature))
+    val newMatrixType = matrixType.copy(vaType = newVASignature)
     val newRowType = newMatrixType.rowType
 
     val localRowType = matrixType.rowType
