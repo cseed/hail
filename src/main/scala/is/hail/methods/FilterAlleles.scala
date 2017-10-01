@@ -260,8 +260,6 @@ object FilterAlleles {
               if (!keepStar && newV.isBiallelic && newV.altAllele.isStar)
                 keep = false
 
-              println(moving, filterMoving, filterMinrepped, keep)
-
               keep
             }
             .map { case (newV, newToOld, oldToNew) =>

@@ -493,7 +493,7 @@ case class FilterVariants(
     val f: () => java.lang.Boolean = Parser.evalTypedExpr[java.lang.Boolean](pred, ec)
 
     val aggregatorOption = Aggregators.buildVariantAggregations(
-      prev.rdd2.sparkContext, prev, ec)
+      prev.rdd2.sparkContext, prev.typ, prev.localValue, ec)
 
     val localPrevRowType = prev.typ.rowType
     val p = (rv: RegionValue) => {

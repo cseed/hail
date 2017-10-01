@@ -76,7 +76,10 @@ class VariantDatasetFunctions(private val vds: VariantDataset) extends AnyVal {
 
     val inserters = inserterBuilder.result()
 
-    val aggregateOption = Aggregators.buildVariantAggregations(vds, ec)
+    val splitMatrixType = vds.matrixType.copy(vaType = vas3)
+    val splitRowType = splitMatrixType.rowType
+
+    val aggregateOption = Aggregators.buildVariantAggregations(vds.sparkContext, splitMatrixType, vds.value.localValue, ec)
 
     val nSamples = vds.nSamples
     val rowType = vds.rowType

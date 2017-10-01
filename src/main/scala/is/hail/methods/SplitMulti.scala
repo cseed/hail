@@ -37,7 +37,7 @@ object SplitMulti {
         val splitv = Variant(v.contig, v.start, v.ref, Array(aa))
         val minsplitv = splitv.minRep
 
-        if (splitv != minsplitv)
+        if (splitv.locus != minsplitv.locus)
           minrepped = false
 
         (minsplitv, aai + 1)
@@ -106,6 +106,7 @@ object SplitMulti {
         var k = 0
         while (k < nSamples) {
           g.setGenotype(k)
+
           if (g.gIsDefined) {
             rvb.startStruct() // g
             if (!g.isLinearScale) {
@@ -268,6 +269,8 @@ object SplitMulti {
       val splitrv = RegionValue()
 
       it.flatMap { rv =>
+        val ur = new UnsafeRow(localRowType, rv.region, rv.offset)
+
         val splitit = split(prevLocus, localNSamples, localRowType, rv,
           newRowType, rvb, splitRegion, splitrv,
           propagateGQ = propagateGQ,
@@ -276,7 +279,6 @@ object SplitMulti {
           sortAlleles = sortAlleles,
           filterMinrepped = filterMinrepped, filterMoving = filterMoving, verifyMinrepped = verifyMinrepped)
 
-        val ur = new UnsafeRow(localRowType, rv.region, rv.offset)
         prevLocus = ur.getAs[Locus](0)
 
         splitit

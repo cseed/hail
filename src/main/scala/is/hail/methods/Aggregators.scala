@@ -18,10 +18,11 @@ import scala.reflect.ClassTag
 object Aggregators {
 
   def buildVariantAggregations[RPK, RK, T >: Null](vsm: VariantSampleMatrix[RPK, RK, T], ec: EvalContext): Option[(RegionValue) => Unit] =
-    buildVariantAggregations(vsm.sparkContext, vsm.value, ec)
+    buildVariantAggregations(vsm.sparkContext, vsm.matrixType, vsm.value.localValue, ec)
 
   def buildVariantAggregations(sc: SparkContext,
-    value: MatrixValue,
+    typ: MatrixType,
+    localValue: VSMLocalValue,
     ec: EvalContext): Option[(RegionValue) => Unit] = {
 
     val aggregations = ec.aggregations
@@ -29,11 +30,11 @@ object Aggregators {
       return None
 
     val localA = ec.a
-    val localNSamples = value.nSamples
-    val localSamplesBc = sc.broadcast(value.sampleIds)
-    val localAnnotationsBc = sc.broadcast(value.sampleAnnotations)
-    val localGlobalAnnotations = value.globalAnnotation
-    val localRowType = value.typ.rowType
+    val localNSamples = localValue.nSamples
+    val localSamplesBc = sc.broadcast(localValue.sampleIds)
+    val localAnnotationsBc = sc.broadcast(localValue.sampleAnnotations)
+    val localGlobalAnnotations = localValue.globalAnnotation
+    val localRowType = typ.rowType
 
     Some({ (rv: RegionValue) =>
       val ur = new UnsafeRow(localRowType, rv.region, rv.offset)
