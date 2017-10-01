@@ -7,7 +7,6 @@ import is.hail.utils._
 import org.apache.spark.{SparkContext, _}
 
 import scala.collection.mutable
-import scala.collection.mutable.ArrayBuffer
 import scala.language.existentials
 import scala.reflect.ClassTag
 import scala.util.hashing._
@@ -263,7 +262,7 @@ object OrderedRDD {
       // If a partition contains much more than the average number of items, we re-sample from it
       // to ensure that enough items are collected from that partition.
       val fraction = math.min(sampleSize / math.max(numItems, 1L), 1.0)
-      val candidates = ArrayBuffer.empty[(T, Float)]
+      val candidates = mutable.ArrayBuffer.empty[(T, Float)]
       val imbalancedPartitions = mutable.Set.empty[Int]
       sketched.foreach {
         case (idx, n, sample) =>
@@ -481,7 +480,7 @@ class OrderedRDD[PK, K, V] private(rdd: RDD[(K, V)], val orderedPartitioner: Ord
 
     val intervalArray = intervals.toArray
 
-    val partitionIndices = new scala.collection.mutable.ArrayBuilder.ofInt
+    val partitionIndices = new ArrayBuilder[Int]()
 
     val rangeBounds = orderedPartitioner.rangeBounds
 
