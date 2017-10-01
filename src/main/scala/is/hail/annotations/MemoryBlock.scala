@@ -795,18 +795,7 @@ class RegionValueBuilder(var region: MemoryBuffer) {
   }
 
   def addUnsafeArray(t: TArray, uis: UnsafeIndexedSeq) {
-    val toT = currentType()
-    val toOff = currentOffset()
-    assert(toT == t.fundamentalType)
-
-    if (region.eq(uis.region))
-      region.storeAddress(toOff, uis.aoff)
-    else {
-      val toAOff = fixupArray(t.fundamentalType, uis.region, uis.aoff)
-      region.storeAddress(toOff, toAOff)
-    }
-
-    advance()
+    addRegionValue(t, uis.region, uis.aoff)
   }
 
   def addAnnotation(t: Type, a: Annotation) {

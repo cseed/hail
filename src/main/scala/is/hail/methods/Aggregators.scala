@@ -364,13 +364,15 @@ class StatAggregator() extends TypedAggregator[Annotation] {
   def copy() = new StatAggregator()
 }
 
-class CounterAggregator extends TypedAggregator[Map[Annotation, Long]] {
+class CounterAggregator(t: Type) extends TypedAggregator[Map[Annotation, Long]] {
   var m = new mutable.HashMap[Any, Long]
 
   def result: Map[Annotation, Long] = m.toMap
 
   def seqOp(x: Any) {
-    m.updateValue(x, 0L, _ + 1)
+    // FIXME only need to copy on the first one
+    val cx = Annotation.copy(t, x)
+    m.updateValue(cx, 0L, _ + 1)
   }
 
   def combOp(agg2: this.type) {
@@ -379,7 +381,7 @@ class CounterAggregator extends TypedAggregator[Map[Annotation, Long]] {
     }
   }
 
-  def copy() = new CounterAggregator()
+  def copy() = new CounterAggregator(t)
 }
 
 class HistAggregator(indices: Array[Double])
@@ -401,34 +403,34 @@ class HistAggregator(indices: Array[Double])
   def copy() = new HistAggregator(indices)
 }
 
-class CollectSetAggregator extends TypedAggregator[Set[Any]] {
+class CollectSetAggregator(t: Type) extends TypedAggregator[Set[Any]] {
 
   var _state = new mutable.HashSet[Any]
 
   def result = _state.toSet
 
   def seqOp(x: Any) {
-    _state += x
+    _state += Annotation.copy(t, x)
   }
 
   def combOp(agg2: this.type) = _state ++= agg2._state
 
-  def copy() = new CollectSetAggregator()
+  def copy() = new CollectSetAggregator(t)
 }
 
-class CollectAggregator extends TypedAggregator[ArrayBuffer[Any]] {
+class CollectAggregator(t: Type) extends TypedAggregator[ArrayBuffer[Any]] {
 
   var _state = new ArrayBuffer[Any]
 
   def result = _state
 
   def seqOp(x: Any) {
-    _state += x
+    _state += Annotation.copy(t, x)
   }
 
   def combOp(agg2: this.type) = _state ++= agg2._state
 
-  def copy() = new CollectAggregator()
+  def copy() = new CollectAggregator(t)
 }
 
 class InfoScoreAggregator extends TypedAggregator[Annotation] {
@@ -665,25 +667,25 @@ class InbreedingAggregator(getAF: (Genotype) => Any) extends TypedAggregator[Ann
   def copy() = new InbreedingAggregator(getAF)
 }
 
-class TakeAggregator(n: Int) extends TypedAggregator[IndexedSeq[Any]] {
+class TakeAggregator(t: Type, n: Int) extends TypedAggregator[IndexedSeq[Any]] {
   var _state = new ArrayBuffer[Any]()
 
   def result = _state.toArray[Any]: IndexedSeq[Any]
 
   def seqOp(x: Any) = {
     if (_state.length < n)
-      _state += x
+      _state += Annotation.copy(t, x)
   }
 
   def combOp(agg2: this.type) {
     agg2._state.foreach(seqOp)
   }
 
-  def copy() = new TakeAggregator(n)
+  def copy() = new TakeAggregator(t, n)
 }
 
-class TakeByAggregator[T](var f: (Any) => Any, var n: Int)(implicit var tord: Ordering[T]) extends TypedAggregator[IndexedSeq[Any]] {
-  def this() = this(null, 0)(null)
+class TakeByAggregator[T](var t: Type, var f: (Any) => Any, var n: Int)(implicit var tord: Ordering[T]) extends TypedAggregator[IndexedSeq[Any]] {
+  def this() = this(null, null, 0)(null)
 
   def makeOrd(): Ordering[(Any, Any)] =
     if (tord != null)
@@ -704,7 +706,10 @@ class TakeByAggregator[T](var f: (Any) => Any, var n: Int)(implicit var tord: Or
 
   def result = _state.clone.dequeueAll.toArray[(Any, Any)].map(_._1).reverse: IndexedSeq[Any]
 
-  def seqOp(x: Any) = seqOp(x, f(x))
+  def seqOp(x: Any) = {
+    val cx = Annotation.copy(t, x)
+    seqOp(cx, f(cx))
+  }
 
   private def seqOp(x: Any, sortKey: Any) = {
     val p = (x, sortKey)
@@ -722,9 +727,10 @@ class TakeByAggregator[T](var f: (Any) => Any, var n: Int)(implicit var tord: Or
     agg2._state.foreach { case (x, p) => seqOp(x, p) }
   }
 
-  def copy() = new TakeByAggregator(f, n)
+  def copy() = new TakeByAggregator(t, f, n)
 
   private def writeObject(oos: ObjectOutputStream) {
+    oos.writeObject(t)
     oos.writeObject(f)
     oos.writeInt(n)
     oos.writeObject(tord)
@@ -732,6 +738,7 @@ class TakeByAggregator[T](var f: (Any) => Any, var n: Int)(implicit var tord: Or
   }
 
   private def readObject(ois: ObjectInputStream) {
+    t = ois.readObject().asInstanceOf[Type]
     f = ois.readObject().asInstanceOf[(Any) => Any]
     n = ois.readInt()
     tord = ois.readObject().asInstanceOf[Ordering[T]]

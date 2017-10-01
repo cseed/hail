@@ -69,7 +69,7 @@ class ImportVCFSuite extends SparkSuite {
     }
     assert(e.getMessage.contains("caught htsjdk.tribble.TribbleException$InternalCodecException: "))
   }
-  
+
   @Test def testHaploid() {
     val vds = hc.importVCF("src/test/resources/haploid.vcf")
     val r = vds
@@ -173,10 +173,11 @@ class ImportVCFSuite extends SparkSuite {
     val vds = hc.importVCF("src/test/resources/missingInfoArray.vcf")
 
     val variants = vds.queryVariants("variants.collect()")._1.asInstanceOf[IndexedSeq[Variant]]
-    val foo = vds.queryVariants("variants.map(v => va.info.FOO).collect()")._1.asInstanceOf[IndexedSeq[IndexedSeq[java.lang.Integer]]]
-    val bar = vds.queryVariants("variants.map(v => va.info.BAR).collect()")._1.asInstanceOf[IndexedSeq[IndexedSeq[java.lang.Double]]]
+    val (foo, _) = vds.queryVariants("variants.map(v => va.info.FOO).collect()")
+    val (bar, _) = vds.queryVariants("variants.map(v => va.info.BAR).collect()")
 
-    val vMap = (variants, foo, bar).zipped.map { case (v, f, b) => (v, (f, b)) }.toMap
+    val vMap = (variants, foo.asInstanceOf[IndexedSeq[_]], bar.asInstanceOf[IndexedSeq[_]])
+      .zipped.map { case (v, f, b) => (v, (f, b)) }.toMap
 
     assert(vMap == Map(
       Variant("X", 16050036, "A", "C") -> (IndexedSeq(1, null), IndexedSeq(2, null, null)),
@@ -188,13 +189,13 @@ class ImportVCFSuite extends SparkSuite {
     forAll(VariantSampleMatrix.gen(hc, VSMSubgen.random)) { vds =>
 
       val truth = {
-        val f = tmpDir.createTempFile(extension="vcf")
+        val f = tmpDir.createTempFile(extension = "vcf")
         vds.exportVCF(f)
         hc.importVCF(f)
       }
 
       val actual = {
-        val f = tmpDir.createTempFile(extension="vcf")
+        val f = tmpDir.createTempFile(extension = "vcf")
         truth.toVDS.exportVCF(f)
         hc.importVCF(f)
       }
@@ -211,6 +212,6 @@ class ImportVCFSuite extends SparkSuite {
     val sampleIds = vds.sampleIds
     vds.filterSamplesList(Set(sampleIds(0))).exportVCF(tmp1)
     vds.filterSamplesList(Set(sampleIds(1))).exportVCF(tmp2)
-    intercept[SparkException] (hc.importVCFs(Array(tmp1, tmp2)))
+    intercept[SparkException](hc.importVCFs(Array(tmp1, tmp2)))
   }
 }

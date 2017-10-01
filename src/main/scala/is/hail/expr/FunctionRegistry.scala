@@ -455,8 +455,8 @@ object FunctionRegistry {
   }
 
   def registerLambdaAggregatorTransformer[T, U, V](name: String, impl: (CPS[Any], (Any) => Any) => CPS[V],
-      codeImpl: (Code[AnyRef], Code[AnyRef] => CM[Code[AnyRef]]) => CMCodeCPS[AnyRef],
-      docstring: String, argNames: (String, String)*)
+    codeImpl: (Code[AnyRef], Code[AnyRef] => CM[Code[AnyRef]]) => CMCodeCPS[AnyRef],
+    docstring: String, argNames: (String, String)*)
     (implicit hrt: HailRep[T], hru: HailRep[U], hrv: HailRep[V]) = {
     val m = BinaryLambdaAggregatorTransformer[T, U, V](hrv.typ, impl, codeImpl)
     bind(name, MethodType(hrt.typ, hru.typ), m, MetaData(Option(docstring), argNames))
@@ -577,6 +577,11 @@ object FunctionRegistry {
     bind(name, MethodType(hrt.typ), Arity0Aggregator[T, U](hru.typ, ctor), MetaData(Option(docstring), argNames))
   }
 
+  def registerDependentAggregator[T, U](name: String, ctor: () => (() => TypedAggregator[U]), docstring: String, argNames: (String, String)*)
+    (implicit hrt: HailRep[T], hru: HailRep[U]) = {
+    bind(name, MethodType(hrt.typ), Arity0DependentAggregator[T, U](hru.typ, ctor), MetaData(Option(docstring), argNames))
+  }
+
   def registerLambdaAggregator[T, U, V](name: String, ctor: ((Any) => Any) => TypedAggregator[V], docstring: String, argNames: (String, String)*)
     (implicit hrt: HailRep[T], hru: HailRep[U], hrv: HailRep[V]) = {
     bind(name, MethodType(hrt.typ, hru.typ), UnaryLambdaAggregator[T, U, V](hrv.typ, ctor), MetaData(Option(docstring), argNames))
@@ -587,9 +592,19 @@ object FunctionRegistry {
     bind(name, MethodType(hrt.typ, hru.typ, hrv.typ), BinaryLambdaAggregator[T, U, V, W](hrw.typ, ctor), MetaData(Option(docstring), argNames))
   }
 
+  def registerDependentLambdaAggregator[T, U, V, W](name: String, ctor: () => (((Any) => Any, V) => TypedAggregator[W]), docstring: String, argNames: (String, String)*)
+    (implicit hrt: HailRep[T], hru: HailRep[U], hrv: HailRep[V], hrw: HailRep[W]) = {
+    bind(name, MethodType(hrt.typ, hru.typ, hrv.typ), BinaryDependentLambdaAggregator[T, U, V, W](hrw.typ, ctor), MetaData(Option(docstring), argNames))
+  }
+
   def registerAggregator[T, U, V](name: String, ctor: (U) => TypedAggregator[V], docstring: String, argNames: (String, String)*)
     (implicit hrt: HailRep[T], hru: HailRep[U], hrv: HailRep[V]) = {
     bind(name, MethodType(hrt.typ, hru.typ), Arity1Aggregator[T, U, V](hrv.typ, ctor), MetaData(Option(docstring), argNames))
+  }
+
+  def registerDependentAggregator[T, U, V](name: String, ctor: () => ((U) => TypedAggregator[V]), docstring: String, argNames: (String, String)*)
+    (implicit hrt: HailRep[T], hru: HailRep[U], hrv: HailRep[V]) = {
+    bind(name, MethodType(hrt.typ, hru.typ), Arity1DependentAggregator[T, U, V](hrv.typ, ctor), MetaData(Option(docstring), argNames))
   }
 
   def registerAggregator[T, U, V, W, X](name: String, ctor: (U, V, W) => TypedAggregator[X], docstring: String, argNames: (String, String)*)
@@ -617,7 +632,8 @@ object FunctionRegistry {
   }
 
   val GR = GRVariable(GenomeReference.GRCh37)
-  private def nonceToNullable[T : TypeInfo, U >: Null](check: Code[T] => Code[Boolean], v: Code[T], ifPresent: Code[T] => Code[U]): CM[Code[U]] = for (
+
+  private def nonceToNullable[T: TypeInfo, U >: Null](check: Code[T] => Code[Boolean], v: Code[T], ifPresent: Code[T] => Code[U]): CM[Code[U]] = for (
     (stx, x) <- CM.memoize(v)
   ) yield Code(stx, check(x).mux(Code._null[U], ifPresent(x)))
 
@@ -686,14 +702,15 @@ object FunctionRegistry {
     nonceToNullable[Int, java.lang.Integer](_.ceq(-1), x.invoke[Int]("_unboxedDP"), boxInt)
   }, "the total number of informative reads.")
   registerMethodCode("od", { (x: Code[Genotype]) =>
-    CM.ret(x.invoke[Boolean]("hasOD").mux(boxInt(x.invoke[Int]("od_")),Code._null[java.lang.Integer]))
+    CM.ret(x.invoke[Boolean]("hasOD").mux(boxInt(x.invoke[Int]("od_")), Code._null[java.lang.Integer]))
   }, "``od = dp - ad.sum``.")
   registerFieldCode("gq", { (x: Code[Genotype]) =>
     nonceToNullable[Int, java.lang.Integer](_.ceq(-1), x.invoke[Int]("_unboxedGQ"), boxInt)
   }, "the difference between the two smallest PL entries.")
   registerFieldCode("pl", { (x: Code[Genotype]) =>
     CM.ret(arrayToWrappedArray(Code.invokeStatic[Genotype, Genotype, Array[Int]]("unboxedPL", x)))
-  }, """
+  },
+    """
      phred-scaled normalized genotype likelihood values. The conversion between
      ``g.pl`` (Phred-scaled likelihoods) and ``g.gp`` (linear-scaled
      probabilities) assumes a uniform prior.
@@ -728,17 +745,19 @@ object FunctionRegistry {
   registerMethodCode("isNotCalled", { (x: Code[Genotype]) =>
     CM.ret(boxBoolean(Code.invokeStatic[Genotype, Genotype, Boolean]("isNotCalled", x)))
   }, "True if the genotype is ``./.``.")
-  registerMethodCode("nNonRefAlleles", { (x: Code[Genotype]) => for (
-    (stg, g) <- CM.memoize(x)
-  ) yield Code(stg,
-    Code.invokeStatic[Genotype, Genotype, Boolean]("hasNNonRefAlleles", g)
-      .mux(boxInt(Code.invokeStatic[Genotype, Genotype, Int]("nNonRefAlleles_", g)), Code._null))
+  registerMethodCode("nNonRefAlleles", { (x: Code[Genotype]) =>
+    for (
+      (stg, g) <- CM.memoize(x)
+    ) yield Code(stg,
+      Code.invokeStatic[Genotype, Genotype, Boolean]("hasNNonRefAlleles", g)
+        .mux(boxInt(Code.invokeStatic[Genotype, Genotype, Int]("nNonRefAlleles_", g)), Code._null))
   }, "the number of called alternate alleles.")
-  registerMethodCode("pAB", { (x: Code[Genotype]) => for (
-    (stg, g) <- CM.memoize(x)
-  ) yield Code(stg,
+  registerMethodCode("pAB", { (x: Code[Genotype]) =>
+    for (
+      (stg, g) <- CM.memoize(x)
+    ) yield Code(stg,
       Code.invokeStatic[Genotype, Genotype, Boolean]("hasPAB", g)
-      .mux(boxDouble(Code.invokeStatic[Genotype, Genotype, Double, Double]("pAB_", g, 0.5)), Code._null))
+        .mux(boxDouble(Code.invokeStatic[Genotype, Genotype, Double, Double]("pAB_", g, 0.5)), Code._null))
   }, "p-value for pulling the given allelic depth from a binomial distribution with mean 0.5.  Missing if the call is not heterozygous.")
 
   private def intArraySumCode(a: Code[Array[Int]]): CM[Code[Int]] = for (
@@ -753,28 +772,23 @@ object FunctionRegistry {
     s
   )
 
-  registerMethodCode("fractionReadsRef", { (x: Code[Genotype]) => for (
-    (stad, ad) <- CM.memoize(Code.invokeStatic[Genotype, Genotype, Array[Int]]("unboxedAD", x));
-    (stsum, sum) <- CM.memoize(intArraySumCode(ad))
-  ) yield Code(stad, stsum, sum.ceq(0).mux(Code._null, boxDouble(ad(0).toD / sum.toD)))
+  registerMethodCode("fractionReadsRef", { (x: Code[Genotype]) =>
+    for (
+      (stad, ad) <- CM.memoize(Code.invokeStatic[Genotype, Genotype, Array[Int]]("unboxedAD", x));
+      (stsum, sum) <- CM.memoize(intArraySumCode(ad))
+    ) yield Code(stad, stsum, sum.ceq(0).mux(Code._null, boxDouble(ad(0).toD / sum.toD)))
   }, "the ratio of ref reads to the sum of all *informative* reads.")
-  registerFieldCode("fakeRef",
-    { (x: Code[Genotype]) => CM.ret(boxBoolean(x.invoke[Boolean]("fakeRef"))) },
+  registerFieldCode("fakeRef", { (x: Code[Genotype]) => CM.ret(boxBoolean(x.invoke[Boolean]("fakeRef"))) },
     "True if this genotype was downcoded in :py:meth:`~hail.VariantDataset.split_multi`.  This can happen if a ``1/2`` call is split to ``0/1``, ``0/1``.")
-  registerFieldCode("isLinearScale",
-    { (x: Code[Genotype]) => CM.ret(boxBoolean(x.invoke[Boolean]("isLinearScale"))) },
+  registerFieldCode("isLinearScale", { (x: Code[Genotype]) => CM.ret(boxBoolean(x.invoke[Boolean]("isLinearScale"))) },
     "True if the data was imported from :py:meth:`~hail.HailContext.import_gen` or :py:meth:`~hail.HailContext.import_bgen`.")
-  registerFieldCode("contig",
-    { (x: Code[Variant]) => CM.ret(x.invoke[String]("contig")) },
+  registerFieldCode("contig", { (x: Code[Variant]) => CM.ret(x.invoke[String]("contig")) },
     "String representation of contig, exactly as imported. *NB: Hail stores contigs as strings. Use double-quotes when checking contig equality.*")(variantHr(GR), stringHr)
-  registerFieldCode("start",
-    { (x: Code[Variant]) => CM.ret(boxInt(x.invoke[Int]("start"))) },
+  registerFieldCode("start", { (x: Code[Variant]) => CM.ret(boxInt(x.invoke[Int]("start"))) },
     "SNP position or start of an indel.")(variantHr(GR), boxedInt32Hr)
-  registerFieldCode("ref",
-    { (x: Code[Variant]) => CM.ret(x.invoke[String]("ref")) },
+  registerFieldCode("ref", { (x: Code[Variant]) => CM.ret(x.invoke[String]("ref")) },
     "Reference allele sequence.")(variantHr(GR), stringHr)
-  registerFieldCode("altAlleles",
-    { (x: Code[Variant]) => CM.ret(x.invoke[IndexedSeq[AltAllele]]("altAlleles")) },
+  registerFieldCode("altAlleles", { (x: Code[Variant]) => CM.ret(x.invoke[IndexedSeq[AltAllele]]("altAlleles")) },
     "The :ref:`alternate alleles <altallele>`.")(variantHr(GR), arrayHr(altAlleleHr))
   registerMethod("nAltAlleles", { (x: Variant) => x.nAltAlleles }, "Number of alternate alleles, equal to ``nAlleles - 1``.")(variantHr(GR), int32Hr)
   registerMethod("nAlleles", { (x: Variant) => x.nAlleles }, "Number of alleles.")(variantHr(GR), int32Hr)
@@ -1274,14 +1288,14 @@ object FunctionRegistry {
     "min" -> "Minimum value of interval.",
     "max" -> "Maximum value of interval, non-inclusive.")
 
-  register("dbeta", { (x: Double, a: Double, b: Double) => dbeta(x, a, b)},
-  """
+  register("dbeta", { (x: Double, a: Double, b: Double) => dbeta(x, a, b) },
+    """
     Returns the probability density at x of a `beta distribution <https://en.wikipedia.org/wiki/Beta_distribution>`__
     with parameters a (alpha) and b (beta).
   """,
-  "x" -> "Point in [0,1] at which to sample. If a < 1 then x must be positive. If b < 1 then x must be less than 1.",
-  "a" -> "the alpha parameter in the beta distribution.The result is undefined for non-positive a.",
-  "b" -> "the beta parameter in the beta distribution. The result is undefined for non-positive b.")
+    "x" -> "Point in [0,1] at which to sample. If a < 1 then x must be positive. If b < 1 then x must be less than 1.",
+    "a" -> "the alpha parameter in the beta distribution.The result is undefined for non-positive a.",
+    "b" -> "the beta parameter in the beta distribution. The result is undefined for non-positive b.")
   register("rnorm", { (mean: Double, sd: Double) => mean + sd * scala.util.Random.nextGaussian() },
     """
     Returns a random draw from a normal distribution with mean ``mean`` and standard deviation ``sd``. ``sd`` should be non-negative. This function is non-deterministic.
@@ -1298,7 +1312,7 @@ object FunctionRegistry {
     Returns left-quantile x for which p = Prob(:math:`Z` < x) with :math:`Z` a standard normal random variable. ``p`` must satisfy 0 < ``p`` < 1. Inverse of pnorm.
     """,
     "p" -> "Probability")
-  
+
   register("rpois", { (lambda: Double) => rpois(lambda) },
     """
     Returns a random draw from a Poisson distribution with rate parameter ``lambda``. This function is non-deterministic.
@@ -1878,7 +1892,10 @@ object FunctionRegistry {
     """
   )(aggregableHr(TTHr), int64Hr)
 
-  registerAggregator[Any, IndexedSeq[Any]]("collect", () => new CollectAggregator(),
+  registerDependentAggregator[Any, IndexedSeq[Any]]("collect", () => {
+    val t = TT.t
+    () => new CollectAggregator(t)
+  },
     """
     Returns an array with all of the elements in the aggregable. Order is not guaranteed.
 
@@ -1892,7 +1909,10 @@ object FunctionRegistry {
     """
   )(aggregableHr(TTHr), arrayHr(TTHr))
 
-  registerAggregator[Any, Set[Any]]("collectAsSet", () => new CollectSetAggregator(),
+  registerDependentAggregator[Any, Set[Any]]("collectAsSet", () => {
+    val t = TT.t
+    () => new CollectSetAggregator(t)
+  },
     """
     Returns the vset of all unique elements in the aggregable.
     """
@@ -2029,7 +2049,10 @@ object FunctionRegistry {
       def typ = HWECombiner.signature
     })
 
-  registerAggregator[Any, Any]("counter", () => new CounterAggregator(),
+  registerDependentAggregator[Any, Any]("counter", () => {
+    val t = TT.t
+    () => new CounterAggregator(t)
+  },
     """
     Counts the number of occurrences of each element in an aggregable.
 
@@ -2213,7 +2236,10 @@ object FunctionRegistry {
     """,
     "expr" -> "Lambda expression.")(aggregableHr(TTHr), unaryHr(TTHr, boxedboolHr), boolHr)
 
-  registerAggregator("take", (n: Int) => new TakeAggregator(n),
+  registerDependentAggregator("take", () => {
+    val t = TT.t
+    (n: Int) => new TakeAggregator(t, n)
+  },
     """
     Take the first ``n`` items of an aggregable.
 
@@ -2225,7 +2251,8 @@ object FunctionRegistry {
     """, "n" -> "Number of items to take.")(
     aggregableHr(TTHr), int32Hr, arrayHr(TTHr))
 
-  private val genericTakeByDocs = """
+  private val genericTakeByDocs =
+    """
     Returns the first ``n`` items of an aggregable in ascending order, ordered
     by the result of ``f``. ``NA`` always appears last. If the aggregable
     contains less than ``n`` items, then the result will contain as many
@@ -2233,7 +2260,8 @@ object FunctionRegistry {
 
     """
 
-  private val integralTakeByDocs = genericTakeByDocs ++ """
+  private val integralTakeByDocs = genericTakeByDocs ++
+    """
     **Examples**
 
     Consider an aggregable ``gs`` containing these elements::
@@ -2260,14 +2288,22 @@ object FunctionRegistry {
 
     """
 
-  registerLambdaAggregator("takeBy", (f: (Any) => Any, n: Int) => new TakeByAggregator[Int](f, n),
+  registerDependentLambdaAggregator("takeBy", () => {
+    val t = TT.t
+    (f: (Any) => Any, n: Int) => new TakeByAggregator[Int](t, f, n)
+  },
     integralTakeByDocs, "f" -> "Lambda expression for mapping an aggregable to an ordered value.", "n" -> "Number of items to take."
   )(aggregableHr(TTHr), unaryHr(TTHr, boxedInt32Hr), int32Hr, arrayHr(TTHr))
-  registerLambdaAggregator("takeBy", (f: (Any) => Any, n: Int) => new TakeByAggregator[Long](f, n),
+
+  registerDependentLambdaAggregator("takeBy", () => {
+    val t = TT.t
+    (f: (Any) => Any, n: Int) => new TakeByAggregator[Long](t, f, n)
+  },
     integralTakeByDocs, "f" -> "Lambda expression for mapping an aggregable to an ordered value.", "n" -> "Number of items to take."
   )(aggregableHr(TTHr), unaryHr(TTHr, boxedInt64Hr), int32Hr, arrayHr(TTHr))
 
-  private val floatingPointTakeByDocs = genericTakeByDocs ++ """
+  private val floatingPointTakeByDocs = genericTakeByDocs ++
+    """
     Note that ``NaN`` always appears after any finite or infinite floating-point
     numbers but before ``NA``. For example, consider an aggregable containing
     these elements::
@@ -2284,14 +2320,24 @@ object FunctionRegistry {
 
     """
 
-  registerLambdaAggregator("takeBy", (f: (Any) => Any, n: Int) => new TakeByAggregator[Float](f, n),
+  registerDependentLambdaAggregator("takeBy", () => {
+    val t = TT.t
+    (f: (Any) => Any, n: Int) => new TakeByAggregator[Float](t, f, n)
+  },
     floatingPointTakeByDocs, "f" -> "Lambda expression for mapping an aggregable to an ordered value.", "n" -> "Number of items to take."
   )(aggregableHr(TTHr), unaryHr(TTHr, boxedFloat32Hr), int32Hr, arrayHr(TTHr))
-  registerLambdaAggregator("takeBy", (f: (Any) => Any, n: Int) => new TakeByAggregator[Double](f, n),
+
+  registerDependentLambdaAggregator("takeBy", () => {
+    val t = TT.t
+    (f: (Any) => Any, n: Int) => new TakeByAggregator[Double](t, f, n)
+  },
     floatingPointTakeByDocs, "f" -> "Lambda expression for mapping an aggregable to an ordered value.", "n" -> "Number of items to take."
   )(aggregableHr(TTHr), unaryHr(TTHr, boxedFloat64Hr), int32Hr, arrayHr(TTHr))
 
-  registerLambdaAggregator("takeBy", (f: (Any) => Any, n: Int) => new TakeByAggregator[String](f, n),
+  registerDependentLambdaAggregator("takeBy", () => {
+    val t = TT.t
+    (f: (Any) => Any, n: Int) => new TakeByAggregator[String](t, f, n)
+  },
     genericTakeByDocs, "f" -> "Lambda expression for mapping an aggregable to an ordered value.", "n" -> "Number of items to take."
   )(aggregableHr(TTHr), unaryHr(TTHr, stringHr), int32Hr, arrayHr(TTHr))
 

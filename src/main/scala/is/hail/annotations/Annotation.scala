@@ -160,14 +160,14 @@ object Annotation {
     t match {
       case t: TStruct =>
         val region = MemoryBuffer()
-        val rvb = new RegionValueBuilder()
+        val rvb = new RegionValueBuilder(region)
         rvb.start(t)
-        rvb.addAnnotation(t, rvb)
+        rvb.addAnnotation(t, a)
         new UnsafeRow(t, region, rvb.end())
 
       case t: TArray =>
         val region = MemoryBuffer()
-        val rvb = new RegionValueBuilder()
+        val rvb = new RegionValueBuilder(region)
         rvb.start(t)
         rvb.addAnnotation(t, a)
         new UnsafeIndexedSeq(t, region, rvb.end())

@@ -13,6 +13,17 @@ import org.testng.annotations.Test
 
 class AggregatorSuite extends SparkSuite {
 
+  @Test def testAggregateBySampleShared() {
+    val vds = hc.importVCFGeneric("src/test/resources/sample2.vcf")
+
+    val (maxDP1, _) = vds.annotateSamplesExpr("sa.topG = gs.takeBy(g => -g.DP, 1)")
+      .querySamples("samples.map(s => sa.topG[0].DP).max()")
+
+    val (maxDP2, _) = vds.queryGenotypes("gs.map(g => g.DP).max()")
+
+    assert(maxDP1 == maxDP2)
+  }
+
   @Test def testRows() {
     val vds = hc.importVCF("src/test/resources/sample2.vcf")
       .splitMulti()
