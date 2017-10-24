@@ -292,6 +292,110 @@ class LZ4InputBuffer(in: InputStream) extends InputBuffer {
   }
 }
 
+object EmitDecoder {
+  var n = 0
+
+  def gen(base: String): String = {
+    n += 1
+    base + n
+  }
+
+  def emitDecoder(t: Type) {
+    println(s"offset_t read_rv() {")
+    t match {
+      case t: TStruct =>
+        val soff = gen("soff")
+        println(s"  region.align(${ t.alignment });")
+        println(s"  offset_t $soff = region.allocate(${ t.byteSize });")
+
+        emitStruct(t, soff)
+
+        println(s"  return $soff;")
+        println("}")
+    }
+  }
+
+  def emitArray(t: TArray, aoff: String) {
+    val len = gen("len")
+    val nmissing = gen("nmissing")
+    println(s"  int $len = in.read_int();")
+    println(s"  int $nmissing = ($len + 7) >> 3;")
+    val elems_delta = gen("elems_off")
+    println(s"  int $elems_delta = alignto(4 + $nmissing, ${ t.elementType.alignment });")
+    println(s"  region.align(${ t.contentsAlignment });")
+    println(s"  $aoff = region.allocate($elems_delta + $len * ${ t.elementByteSize });")
+    println(s"  region.store_int($aoff, $len);")
+    println(s"  in.read_bytes(region, $aoff + 4, $nmissing);")
+    var i = gen("i")
+    println(s"  for (int $i = 0; $i < $len; ++$i) {")
+    println(s"    if (!region.load_bit($aoff + 4, $i)) {")
+    val elem_off = gen("elem_off")
+    println(s"      offset_t $elem_off = $aoff + $elems_delta + $i * ${ t.elementByteSize };")
+    t.elementType match {
+      case et: TStruct =>
+        emitStruct(et, elem_off)
+      case TBoolean => println(s"  region.store_bool($elem_off, in.read_bool());")
+      case TInt32 => println(s"  region.store_int($elem_off, in.read_int());")
+      case TInt64 => println(s"  region.store_long($elem_off, in.read_long());")
+      case TFloat32 => println(s"  region.store_float($elem_off, in.read_float());")
+      case TFloat64 => println(s"  region.store_double($elem_off, in.read_double());")
+      case TBinary =>
+        val boff = gen("boff")
+        val len = gen("len")
+        println(s"  int $len = in.read_int();")
+        println(s"  region.align(4);")
+        println(s"  offset_t $boff = region.allocate(4 + $len);")
+        println(s"  region.store_int($boff, $len);")
+        println(s"  in.read_bytes(region, $boff + 4, $len);")
+        println(s"  region.store_offset($elem_off, $boff);")
+      case ft: TArray =>
+        val aoff = gen("aoff")
+        println(s"  offset_t $aoff;")
+        emitArray(ft, aoff)
+        println(s"  region.store_offset($elem_off, $aoff);")
+    }
+    println(s"    } // end elem missing")
+    println(s"  } // end a")
+  }
+
+  def emitStruct(t: TStruct, off: String) {
+    val nMissingBytes = (t.size + 7) / 8
+
+    println(s"  in.read_bytes(region, $off, $nMissingBytes);")
+    var i = 0
+    while (i < t.size) {
+      println(s"  if (!region.load_bit($off, $i)) { // ${ t.fields(i).name }")
+      t.fieldType(i) match {
+        case et: TStruct =>
+          val soff = gen("soff")
+          println(s"  offset_t $soff = $off + ${ t.byteOffsets(i) };")
+          emitStruct(et, soff)
+        case TBoolean => println(s"  region.store_bool($off + ${ t.byteOffsets(i) }, in.read_bool());")
+        case TInt32 => println(s"  region.store_int($off + ${ t.byteOffsets(i) }, in.read_int());")
+        case TInt64 => println(s"  region.store_long($off + ${ t.byteOffsets(i) }, in.read_long());")
+        case TFloat32 => println(s"  region.store_float($off + ${ t.byteOffsets(i) }, in.read_float());")
+        case TFloat64 => println(s"  region.store_double($off + ${ t.byteOffsets(i) }, in.read_double());")
+        case TBinary =>
+          val boff = gen("boff")
+          val len = gen("len")
+          println(s"  int $len = in.read_int();")
+          println(s"  region.align(4);")
+          println(s"  offset_t $boff = region.allocate(4 + $len);")
+          println(s"  region.store_int($boff, $len);")
+          println(s"  in.read_bytes(region, $boff + 4, $len);")
+          println(s"  region.store_offset($off + ${ t.byteOffsets(i) }, $boff);")
+        case ft: TArray =>
+          val aoff = gen("aoff")
+          println(s"  offset_t $aoff;")
+          emitArray(ft, aoff)
+          println(s"  region.store_offset($off + ${ t.byteOffsets(i) }, $aoff);")
+      }
+      println(s"  } // end field $i ")
+      i += 1
+    }
+  }
+}
+
 final class Decoder(in: InputBuffer) {
   def readByte(): Byte = in.readByte()
 
@@ -393,7 +497,9 @@ final class Decoder(in: InputBuffer) {
 }
 
 final class Encoder(out: OutputBuffer) {
-  def flush() { out.flush() }
+  def flush() {
+    out.flush()
+  }
 
   def writeByte(b: Byte): Unit = out.writeByte(b)
 

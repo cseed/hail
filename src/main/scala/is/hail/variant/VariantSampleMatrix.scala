@@ -49,9 +49,12 @@ object VariantSampleMatrix {
   def read(hc: HailContext, dirname: String,
     dropSamples: Boolean = false, dropVariants: Boolean = false): VariantSampleMatrix[_, _, _] = {
     val (fileMetadata, nPartitions) = readFileMetadata(hc.hadoopConf, dirname)
-    new VariantSampleMatrix(hc,
+    val vsm = new VariantSampleMatrix(hc,
       fileMetadata.metadata,
       MatrixRead(hc, dirname, nPartitions, fileMetadata, dropSamples, dropVariants))
+    println(vsm.matrixType.rowType.fundamentalType)
+    EmitDecoder.emitDecoder(vsm.matrixType.rowType.fundamentalType)
+    vsm
   }
 
   def readFileMetadata(hConf: hadoop.conf.Configuration, dirname: String,
