@@ -3,12 +3,10 @@ package is.hail.variant
 import is.hail.{SparkSuite, TestUtils}
 import is.hail.annotations.Annotation
 import is.hail.check.{Gen, Prop}
-import is.hail.expr.{TArray, TSet, TString}
+import is.hail.expr.{MatrixType, TArray, TString}
 import is.hail.io.annotators.IntervalList
 import is.hail.utils._
 import org.testng.annotations.Test
-
-import scala.io.Source
 
 class IntervalSuite extends SparkSuite {
 
@@ -50,8 +48,9 @@ class IntervalSuite extends SparkSuite {
   }
 
   @Test def testAll() {
-    val vds = new VariantSampleMatrix(hc, VSMFileMetadata(Array.empty[String]),
-      sc.parallelize(Seq((Variant("1", 100, "A", "T"), (Annotation.empty, Iterable.empty[Genotype])))).toOrderedRDD)
+    val vds = new VariantSampleMatrix(hc, MatrixType(), VSMLocalValue(Array.empty[Annotation]),
+      sc.parallelize(Seq((Variant("1", 100, "A", "T"), (Annotation.empty, Iterable.empty[Genotype])))).toOrderedRDD,
+      wasSplit = false)
 
     val intervalFile = tmpDir.createTempFile("intervals")
     hadoopConf.writeTextFile(intervalFile) { out =>
@@ -167,7 +166,7 @@ class IntervalSuite extends SparkSuite {
     Prop.forAll(intervalsGen.filter(_.nonEmpty)) { intervals =>
       hadoopConf.writeTextFile(iList) { out =>
         intervals.foreach { i =>
-          out.write(s"22\t${ i.start.position }\t${ i.end.position }\n")
+          out.write(s"22\t${i.start.position}\t${i.end.position}\n")
         }
       }
 
@@ -175,7 +174,7 @@ class IntervalSuite extends SparkSuite {
       val vdsRemove = vds.filterVariantsTable(IntervalList.read(hc, iList), keep = false)
 
       val p1 = vdsKeep.same(vds.copy(rdd = vds.rdd.filter { case (v, _) =>
-          intervals.exists(_.contains(v.locus))
+        intervals.exists(_.contains(v.locus))
       }))
 
       val p2 = vdsRemove.same(vds.copy(rdd = vds.rdd.filter { case (v, _) =>

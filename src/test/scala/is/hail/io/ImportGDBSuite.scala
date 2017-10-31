@@ -44,13 +44,9 @@ class ImportGDBSuite extends SparkSuite {
     val gdbVariantSampleMatrix = LoadGDB(hc, reader, loader, workspace, arrName, vid, callsets, vcfHeader)
     val vcfVariantSampleMatrix = LoadVCF(hc, reader, vcf, Array(vcf))
 
-    val vcfVAS = vcfVariantSampleMatrix
-      .metadata
-      .vaSignature
+    val vcfVAS = vcfVariantSampleMatrix.vaSignature
 
-    val gdbVAS = gdbVariantSampleMatrix
-      .metadata
-      .vaSignature
+    val gdbVAS = gdbVariantSampleMatrix.vaSignature
 
     assert(vcfVAS.equals(gdbVAS))
   }

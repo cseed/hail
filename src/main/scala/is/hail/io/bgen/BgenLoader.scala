@@ -2,7 +2,7 @@ package is.hail.io.bgen
 
 import is.hail.HailContext
 import is.hail.annotations._
-import is.hail.expr.{TArray, TCall, TFloat64, TString, TStruct, TVariant}
+import is.hail.expr.{MatrixType, TArray, TCall, TFloat64, TString, TStruct, TVariant}
 import is.hail.io.vcf.LoadVCF
 import is.hail.io.{HadoopFSDataBinaryReader, IndexBTree}
 import is.hail.utils._
@@ -75,17 +75,11 @@ object BgenLoader {
       (decoder.getKey: Annotation, (decoder.getAnnotation, decoder.getValue))
     })).toOrderedRDD(fastKeys)(TVariant(gr).orderedKey, classTag[(Annotation, Iterable[Annotation])])
 
-    new GenericDataset(hc, VSMMetadata(
-      TString,
-      saSignature = TStruct.empty,
-      TVariant(gr),
-      vaSignature = signature,
-      genotypeSignature = TStruct("GT" -> TCall, "GP" -> TArray(TFloat64)),
-      globalSignature = TStruct.empty),
-      VSMLocalValue(globalAnnotation = Annotation.empty,
-        sampleIds = sampleIds,
-        sampleAnnotations = Array.fill(nSamples)(Annotation.empty)),
-      rdd)
+    new GenericDataset(hc, MatrixType(
+      vType = TVariant(gr),
+      vaType = signature,
+      gType = TStruct("GT" -> TCall, "GP" -> TArray(TFloat64))),
+      VSMLocalValue(sampleIds = sampleIds), rdd, false)
   }
 
   def index(hConf: org.apache.hadoop.conf.Configuration, file: String) {

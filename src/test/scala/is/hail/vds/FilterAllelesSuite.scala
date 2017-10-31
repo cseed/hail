@@ -3,9 +3,9 @@ package is.hail.vds
 import is.hail.SparkSuite
 import is.hail.annotations._
 import is.hail.check.Prop
-import is.hail.expr.{TString, TStruct}
+import is.hail.expr.{MatrixType}
 import is.hail.utils._
-import is.hail.variant.{AltAllele, Genotype, VSMFileMetadata, VSMSubgen, Variant, VariantSampleMatrix}
+import is.hail.variant.{AltAllele, Genotype, VSMLocalValue, VSMSubgen, Variant, VariantSampleMatrix}
 import org.testng.annotations.Test
 
 class FilterAllelesSuite extends SparkSuite {
@@ -34,11 +34,7 @@ class FilterAllelesSuite extends SparkSuite {
     val genotypes1 = Seq(genotype11, genotype12, genotype13)
     val row1: (Variant, (Annotation, Iterable[Genotype])) = (variant1, (va1, genotypes1))
 
-    val vds = new VariantSampleMatrix(hc, VSMFileMetadata(Array("1", "2", "3"),
-      IndexedSeq[Annotation](null, null, null),
-      null,
-      TString,
-      TStruct.empty),
+    val vds = new VariantSampleMatrix(hc, MatrixType(), VSMLocalValue(Array("1", "2", "3")),
       sc.parallelize(Seq(row1)).toOrderedRDD)
       .filterAlleles("aIndex == 2", subset = false, keep = false)
 
@@ -62,11 +58,7 @@ class FilterAllelesSuite extends SparkSuite {
     val genotypes1 = Seq(genotype11, genotype12, genotype13)
     val row1: (Variant, (Annotation, Iterable[Genotype])) = (variant1, (va1, genotypes1))
 
-    val vds = new VariantSampleMatrix(hc, VSMFileMetadata(Array("1", "2", "3"),
-      IndexedSeq[Annotation](null, null, null),
-      null,
-      TString,
-      TStruct.empty),
+    val vds = new VariantSampleMatrix(hc, MatrixType(), VSMLocalValue(Array("1", "2", "3")),
       sc.parallelize(Seq(row1)).toOrderedRDD)
       .filterAlleles("aIndex == 1", subset = false, keep = false)
 
@@ -90,11 +82,7 @@ class FilterAllelesSuite extends SparkSuite {
     val genotypes1 = Seq(genotype11, genotype12, genotype13)
     val row1: (Variant, (Annotation, Iterable[Genotype])) = (variant1, (va1, genotypes1))
 
-    val vds = new VariantSampleMatrix(hc, VSMFileMetadata(Array("1", "2", "3"),
-      IndexedSeq[Annotation](null, null, null),
-      null,
-      TString,
-      TStruct.empty),
+    val vds = new VariantSampleMatrix(hc, MatrixType(), VSMLocalValue(Array("1", "2", "3")),
       sc.parallelize(Seq(row1)).toOrderedRDD)
       .filterAlleles("aIndex == 1", subset = true, keep = false)
 
@@ -118,11 +106,7 @@ class FilterAllelesSuite extends SparkSuite {
     val genotypes1 = Seq(genotype11, genotype12, genotype13)
     val row1: (Variant, (Annotation, Iterable[Genotype])) = (variant1, (va1, genotypes1))
 
-    val vds = new VariantSampleMatrix(hc, VSMFileMetadata(Array("1", "2", "3"),
-      IndexedSeq[Annotation](null, null, null),
-      null,
-      TString,
-      TStruct.empty),
+    val vds = new VariantSampleMatrix(hc, MatrixType(), VSMLocalValue(Array("1", "2", "3")),
       sc.parallelize(Seq(row1)).toOrderedRDD)
       .filterAlleles("aIndex == 2", subset = true, keep = false)
 
@@ -146,11 +130,7 @@ class FilterAllelesSuite extends SparkSuite {
     val genotypes1 = Seq(genotype11, genotype12, genotype13)
     val row1: (Variant, (Annotation, Iterable[Genotype])) = (variant1, (va1, genotypes1))
 
-    val vds = new VariantSampleMatrix(hc, VSMFileMetadata(Array("1", "2", "3"),
-      IndexedSeq[Annotation](null, null, null),
-      null,
-      TString,
-      TStruct.empty),
+    val vds = new VariantSampleMatrix(hc, MatrixType(), VSMLocalValue(Array("1", "2", "3")),
       sc.parallelize(Seq(row1)).toOrderedRDD)
       .filterAlleles("aIndex == 2", subset = true, keep = false, filterAlteredGenotypes = true)
 
@@ -171,11 +151,7 @@ class FilterAllelesSuite extends SparkSuite {
     val genotypes1 = Seq(Genotype(1), Genotype(2), Genotype(3))
     val row1: (Variant, (Annotation, Iterable[Genotype])) = (variant1, (va1, genotypes1))
 
-    val vds = new VariantSampleMatrix(hc, VSMFileMetadata(Array("1", "2", "3"),
-      IndexedSeq[Annotation](null, null, null),
-      null,
-      TString,
-      TStruct.empty),
+    val vds = new VariantSampleMatrix(hc, MatrixType(), VSMLocalValue(Array("1", "2", "3")),
       sc.parallelize(Seq(row1)).toOrderedRDD)
       .filterAlleles("aIndex == 2", keep = false, subset = false, annotationExpr = "va = aIndices")
 

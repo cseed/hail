@@ -2,6 +2,7 @@ package is.hail.utils
 
 import is.hail.HailContext
 import is.hail.annotations._
+import is.hail.expr.{MatrixType, MatrixValue}
 import is.hail.variant._
 
 import scala.util.Random
@@ -125,6 +126,6 @@ object TestRDDBuilder {
       }.toArray
 
     val variantRDD = hc.sc.parallelize(variantArray)
-    new VariantSampleMatrix(hc, VSMFileMetadata(sampleList), variantRDD.toOrderedRDD)
+    new VariantSampleMatrix(hc, MatrixType(), VSMLocalValue(sampleList), variantRDD.toOrderedRDD, wasSplit = false)
   }
 }

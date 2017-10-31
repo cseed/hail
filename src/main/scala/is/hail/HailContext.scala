@@ -11,7 +11,7 @@ import is.hail.io.vcf._
 import is.hail.keytable.KeyTable
 import is.hail.stats.{BaldingNicholsModel, Distribution, UniformDist}
 import is.hail.utils.{log, _}
-import is.hail.variant.{GenericDataset, GenomeReference, Genotype, Locus, VSMFileMetadata, VSMSubgen, Variant, VariantDataset, VariantSampleMatrix}
+import is.hail.variant.{GenericDataset, GenomeReference, Genotype, Locus, VSMFileMetadata, VSMLocalValue, VSMSubgen, Variant, VariantDataset, VariantSampleMatrix}
 import org.apache.hadoop
 import org.apache.log4j.{ConsoleAppender, LogManager, PatternLayout, PropertyConfigurator}
 import org.apache.spark.deploy.SparkHadoopUtil
@@ -33,8 +33,8 @@ object HailContext {
     local: String, blockSize: Long): SparkContext = {
     require(blockSize >= 0)
     require(is.hail.HAIL_SPARK_VERSION == org.apache.spark.SPARK_VERSION,
-      s"""This Hail JAR was compiled for Spark ${ is.hail.HAIL_SPARK_VERSION },
-         |  but the version of Spark available at runtime is ${ org.apache.spark.SPARK_VERSION }.""".stripMargin)
+      s"""This Hail JAR was compiled for Spark ${is.hail.HAIL_SPARK_VERSION},
+         |  but the version of Spark available at runtime is ${org.apache.spark.SPARK_VERSION}.""".stripMargin)
 
     val conf = new SparkConf().setAppName(appName)
 
@@ -97,7 +97,7 @@ object HailContext {
     if (problems.nonEmpty)
       fatal(
         s"""Found problems with SparkContext configuration:
-           |  ${ problems.mkString("\n  ") }""".stripMargin)
+           |  ${problems.mkString("\n  ")}""".stripMargin)
   }
 
   def configureLogging(logFile: String, quiet: Boolean, append: Boolean) {
@@ -182,7 +182,7 @@ class HailContext private(val sc: SparkContext,
       .take(maxLines)
       .groupBy(_.source.asInstanceOf[TextContext].file)
       .foreach { case (file, lines) =>
-        info(s"$file: ${ lines.length } ${ plural(lines.length, "match", "matches") }:")
+        info(s"$file: ${lines.length} ${plural(lines.length, "match", "matches")}:")
         lines.map(_.value).foreach { line =>
           val (screen, logged) = line.truncatable().strings
           log.info("\t" + logged)
@@ -216,7 +216,7 @@ class HailContext private(val sc: SparkContext,
     }
 
     if (inputs.isEmpty)
-      fatal(s"arguments refer to no files: '${ files.mkString(",") }'")
+      fatal(s"arguments refer to no files: '${files.mkString(",")}'")
 
     BgenLoader.load(this, inputs, sampleFile, tolerance, nPartitions)
   }
@@ -242,7 +242,7 @@ class HailContext private(val sc: SparkContext,
     }
 
     if (inputs.isEmpty)
-      fatal(s"arguments refer to no files: ${ files.mkString(",") }")
+      fatal(s"arguments refer to no files: ${files.mkString(",")}")
 
     val samples = BgenLoader.readSampleFile(sc.hadoopConfiguration, sampleFile)
     val nSamples = samples.length
@@ -255,17 +255,17 @@ class HailContext private(val sc: SparkContext,
     if (unequalSamples.length > 0)
       fatal(
         s"""The following GEN files did not contain the expected number of samples $nSamples:
-           |  ${ unequalSamples.map(x => s"""(${ x._2 } ${ x._1 }""").mkString("\n  ") }""".stripMargin)
+           |  ${unequalSamples.map(x => s"""(${x._2} ${x._1}""").mkString("\n  ")}""".stripMargin)
 
     val noVariants = results.filter(_.nVariants == 0).map(_.file)
     if (noVariants.length > 0)
       fatal(
         s"""The following GEN files did not contain at least 1 variant:
-           |  ${ noVariants.mkString("\n  ") })""".stripMargin)
+           |  ${noVariants.mkString("\n  ")})""".stripMargin)
 
     val nVariants = results.map(_.nVariants).sum
 
-    info(s"Number of GEN files parsed: ${ results.length }")
+    info(s"Number of GEN files parsed: ${results.length}")
     info(s"Number of variants in all GEN files: $nVariants")
     info(s"Number of samples in GEN files: $nSamples")
 
@@ -274,12 +274,13 @@ class HailContext private(val sc: SparkContext,
     val rdd = sc.union(results.map(_.rdd)).toOrderedRDD(TVariant(GenomeReference.GRCh37).orderedKey, classTag[(Annotation, Iterable[Annotation])])
 
     new GenericDataset(this,
-      VSMFileMetadata(samples,
-        vaSignature = signature,
-        genotypeSignature = TStruct("GT" -> TCall,
-          "GP" -> TArray(TFloat64)),
-        wasSplit = true),
-      rdd)
+      MatrixType(
+        vaType = signature,
+        gType = TStruct("GT" -> TCall,
+          "GP" -> TArray(TFloat64))),
+      VSMLocalValue(samples),
+      rdd,
+      wasSplit = true)
   }
 
   def importTable(inputs: java.util.ArrayList[String],
@@ -321,7 +322,7 @@ class HailContext private(val sc: SparkContext,
 
     val files = hadoopConf.globAll(inputs)
     if (files.isEmpty)
-      fatal(s"Arguments referred to no files: '${ files.mkString(",") }'")
+      fatal(s"Arguments referred to no files: '${files.mkString(",")}'")
 
     val (struct, rdd) =
       TextTableReader.read(sc)(files, types, commentChar, separator, missing,
@@ -448,7 +449,7 @@ class HailContext private(val sc: SparkContext,
     }
 
     if (inputs.isEmpty)
-      fatal(s"arguments refer to no files: '${ files.mkString(",") }'")
+      fatal(s"arguments refer to no files: '${files.mkString(",")}'")
 
     val conf = new SerializableHadoopConfiguration(hadoopConf)
 
@@ -456,7 +457,7 @@ class HailContext private(val sc: SparkContext,
       BgenLoader.index(conf.value, in)
     }
 
-    info(s"Number of BGEN files indexed: ${ inputs.length }")
+    info(s"Number of BGEN files indexed: ${inputs.length}")
   }
 
   def baldingNicholsModel(populations: Int,

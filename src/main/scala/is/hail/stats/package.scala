@@ -2,9 +2,9 @@ package is.hail
 
 import breeze.linalg.Matrix
 import is.hail.annotations.Annotation
-import is.hail.expr.{TArray, TFloat64, TStruct}
+import is.hail.expr.{MatrixType, TArray, TFloat64, TStruct}
 import is.hail.utils._
-import is.hail.variant.{Genotype, VSMFileMetadata, Variant, VariantDataset, VariantKeyDataset}
+import is.hail.variant.{Genotype, VSMFileMetadata, VSMLocalValue, Variant, VariantDataset, VariantKeyDataset}
 import net.sourceforge.jdistlib.{Beta, ChiSquare, Normal, Poisson}
 import org.apache.commons.math3.distribution.HypergeometricDistribution
 import org.apache.spark.sql.Row
@@ -327,7 +327,7 @@ package object stats {
       nPartitions
     ).toOrderedRDD
 
-    new VariantDataset(hc, VSMFileMetadata(sampleIds, wasSplit = true), rdd)
+    new VariantDataset(hc, MatrixType(), VSMLocalValue(sampleIds), rdd, wasSplit = true)
   }
 
   // genotypes(i,j) is genotype of variant j in sample i; i and j are 0-based indices
@@ -355,10 +355,9 @@ package object stats {
       nPartitions
     ).toOrderedRDD
 
-    new VariantKeyDataset(hc, VSMFileMetadata(sampleIds,
-      genotypeSignature = TStruct(
-        "GP" -> TArray(TFloat64)),
-      wasSplit = true),
-      rdd)
+    new VariantKeyDataset(hc, MatrixType(gType = TStruct("GP" -> TArray(TFloat64))),
+      VSMLocalValue(sampleIds),
+      rdd,
+      wasSplit = true)
   }
 }

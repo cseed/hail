@@ -52,42 +52,42 @@ class VSMSuite extends SparkSuite {
     val vds2 = hc.importVCF("src/test/resources/sample.vcf.gz", force = true)
     assert(vds1.same(vds2))
 
-    val s1mdata = VSMFileMetadata(Array("S1", "S2", "S3"))
+    val s1typ = MatrixType()
+    val s1lv = VSMLocalValue(Array("S1", "S2", "S3"))
     val s1va1: Annotation = null
     val s1va2 = Annotation()
 
-    val s2mdata = VSMFileMetadata(Array("S1", "S2"))
+    val s2typ = MatrixType()
+    val s2lv = VSMLocalValue(Array("S1", "S2"))
     val s2va1: Annotation = null
     val s2va2: Annotation = null
 
-    val s3mdata = VSMFileMetadata(
-      Array("S1", "S2", "S3"),
-      Annotation.emptyIndexedSeq(3),
-      vaSignature = TStruct(
+    val s3typ = MatrixType(
+      vaType = TStruct(
         "inner" -> TStruct(
           "thing1" -> TString),
         "thing2" -> TString))
+    val s3lv = VSMLocalValue(Array("S1", "S2", "S3"))
     val s3va1 = Annotation(Annotation("yes"), "yes")
     val s3va2 = Annotation(Annotation("yes"), "no")
     val s3va3 = Annotation(Annotation("no"), "yes")
 
-    val s4mdata = VSMFileMetadata(
-      Array("S1", "S2"),
-      Annotation.emptyIndexedSeq(2),
-      vaSignature = TStruct(
+    val s4typ = MatrixType(
+      vaType = TStruct(
         "inner" -> TStruct(
           "thing1" -> TString),
         "thing2" -> TString,
         "dummy" -> TString))
+    val s4lv = VSMLocalValue(Array("S1", "S2"))
     val s4va1 = Annotation(Annotation("yes"), "yes", null)
     val s4va2 = Annotation(Annotation("yes"), "no", "dummy")
 
-    assert(s1mdata != s2mdata)
-    assert(s1mdata != s3mdata)
-    assert(s2mdata != s3mdata)
-    assert(s1mdata != s4mdata)
-    assert(s2mdata != s4mdata)
-    assert(s3mdata != s4mdata)
+    assert(s1lv != s2lv || s1typ != s2typ)
+    assert(s1lv != s3lv || s1typ != s3typ)
+    assert(s2lv != s3lv || s2typ != s3typ)
+    assert(s1lv != s4lv || s1typ != s4typ)
+    assert(s2lv != s4lv || s2typ != s4typ)
+    assert(s3lv != s4lv || s3typ != s4typ)
 
     val v1 = Variant("1", 1, "A", "T")
     val v2 = Variant("1", 2, "T", "G")
@@ -168,15 +168,15 @@ class VSMSuite extends SparkSuite {
         Iterable(Genotype(0),
           Genotype(0)))))).toOrderedRDD
 
-    val vdss = Array(new VariantDataset(hc, s3mdata, s3rdd1),
-      new VariantDataset(hc, s3mdata, s3rdd2),
-      new VariantDataset(hc, s3mdata, s3rdd3),
-      new VariantDataset(hc, s2mdata, s2rdd4),
-      new VariantDataset(hc, s3mdata, s3rdd5),
-      new VariantDataset(hc, s3mdata, s3rdd6),
-      new VariantDataset(hc, s1mdata, s1rdd7),
-      new VariantDataset(hc, s2mdata, s2rdd8),
-      new VariantDataset(hc, s4mdata, s4rdd9))
+    val vdss = Array(new VariantDataset(hc, s3typ, s3lv, s3rdd1),
+      new VariantDataset(hc, s3typ, s3lv, s3rdd2),
+      new VariantDataset(hc, s3typ, s3lv, s3rdd3),
+      new VariantDataset(hc, s2typ, s2lv, s2rdd4),
+      new VariantDataset(hc, s3typ, s3lv, s3rdd5),
+      new VariantDataset(hc, s3typ, s3lv, s3rdd6),
+      new VariantDataset(hc, s1typ, s1lv, s1rdd7),
+      new VariantDataset(hc, s2typ, s2lv, s2rdd8),
+      new VariantDataset(hc, s4typ, s4lv, s4rdd9))
 
     for (vds <- vdss)
       vds.typecheck()

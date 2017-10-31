@@ -1,6 +1,5 @@
 package is.hail.variant
 
-import java.io.FileNotFoundException
 import java.nio.ByteBuffer
 
 import is.hail.annotations._
@@ -48,14 +47,14 @@ object VariantSampleMatrix {
 
   def read(hc: HailContext, dirname: String,
     dropSamples: Boolean = false, dropVariants: Boolean = false): VariantSampleMatrix[_, _, _] = {
-    val (fileMetadata, nPartitions) = readFileMetadata(hc.hadoopConf, dirname)
+    val fileMetadata = readFileMetadata(hc.hadoopConf, dirname)
     new VariantSampleMatrix(hc,
-      fileMetadata.metadata,
-      MatrixRead(hc, dirname, nPartitions, fileMetadata, dropSamples, dropVariants))
+      MatrixRead(hc, dirname, fileMetadata.nPartitions, fileMetadata.typ, fileMetadata.localValue, dropSamples, dropVariants),
+      fileMetadata.wasSplit)
   }
 
   def readFileMetadata(hConf: hadoop.conf.Configuration, dirname: String,
-    requireParquetSuccess: Boolean = true): (VSMFileMetadata, Int) = {
+    requireParquetSuccess: Boolean = true): VSMFileMetadata = {
     if (!dirname.endsWith(".vds") && !dirname.endsWith(".vds/"))
       fatal(s"input path ending in `.vds' required, found `$dirname'")
 
@@ -78,13 +77,13 @@ object VariantSampleMatrix {
           s"""corrupt or outdated VDS: invalid metadata
              |  Recreate VDS with current version of Hail.
              |  Detailed exception:
-             |  ${ e.getMessage }""".stripMargin)
+             |  ${e.getMessage}""".stripMargin)
       }
     }
 
     if (metadata.version != VariantSampleMatrix.fileVersion)
       fatal(
-        s"""Invalid VDS: old version [${ metadata.version }]
+        s"""Invalid VDS: old version [${metadata.version}]
            |  Recreate VDS with current version of Hail.
          """.stripMargin)
 
@@ -115,8 +114,16 @@ object VariantSampleMatrix {
     val ids = sampleInfo.map(_._1)
     val annotations = sampleInfo.map(_._2)
 
-    (VSMFileMetadata(VSMMetadata(sSignature, saSignature, vSignature, vaSignature, globalSignature, genotypeSignature, metadata.split),
-      VSMLocalValue(globalAnnotation, ids, annotations)),
+    VSMFileMetadata(
+      metadata.split,
+      MatrixType(
+        globalType = globalSignature,
+        sType = sSignature,
+        saType = saSignature,
+        vType = vSignature,
+        vaType = vaSignature,
+        gType = genotypeSignature),
+      VSMLocalValue(globalAnnotation, ids, annotations),
       metadata.n_partitions)
   }
 
@@ -183,7 +190,7 @@ object VariantSampleMatrix {
         fatal(
           s"""cannot combine split and unsplit datasets
              |  Split status in datasets[0]: $wasSplit
-             |  Split status in datasets[$i]: ${ vds.wasSplit }""".stripMargin)
+             |  Split status in datasets[$i]: ${vds.wasSplit}""".stripMargin)
       } else if (vas != vaSchema) {
         fatal(
           s"""cannot combine datasets with different row annotation schemata
@@ -262,9 +269,10 @@ case class VSMSubgen[RPK, RK, T >: Null](
         import kOk._
 
         new VariantSampleMatrix[RPK, RK, T](hc,
-          VSMMetadata(sSig, saSig, vSig, vaSig, globalSig, tSig, wasSplit = wasSplit),
+          MatrixType(globalType = globalSig, sType = sSig, saType = saSig, vType = vSig, vaType = vSig, gType = tSig),
           VSMLocalValue(global, sampleIds, saValues),
-          hc.sc.parallelize(rows, nPartitions).toOrderedRDD)
+          hc.sc.parallelize(rows, nPartitions).toOrderedRDD,
+          wasSplit)
           .deduplicate()
       }
 }
@@ -311,48 +319,69 @@ object VSMSubgen {
     tGen = (t: Type, v: Variant) => Genotype.genRealistic(v))
 }
 
-class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata: VSMMetadata,
-  val ast: MatrixIR)(implicit val tct: ClassTag[T]) extends JoinAnnotator {
+class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext,
+  val ast: MatrixIR,
+  val wasSplit: Boolean)(implicit val tct: ClassTag[T]) extends JoinAnnotator {
 
   implicit val kOk: OrderedKey[RPK, RK] = ast.typ.vType.typedOrderedKey[RPK, RK]
 
   import kOk._
 
+  def this(hc: HailContext, ast: MatrixIR)(implicit tct: ClassTag[T]) = this(hc, ast, wasSplit = false)
+
   def this(hc: HailContext,
-    metadata: VSMMetadata,
+    typ: MatrixType,
+    localValue: VSMLocalValue,
+    rdd: OrderedRDD[RPK, RK, (Annotation, Iterable[T])],
+    wasSplit: Boolean)(implicit tct: ClassTag[T]) =
+    this(hc,
+      MatrixLiteral(
+        MatrixValue(typ, localValue, rdd)),
+      wasSplit)
+
+  def this(hc: HailContext,
+    typ: MatrixType,
     localValue: VSMLocalValue,
     rdd: OrderedRDD[RPK, RK, (Annotation, Iterable[T])])(implicit tct: ClassTag[T]) =
-    this(hc, metadata,
+    this(hc,
       MatrixLiteral(
-        MatrixType(metadata),
-        MatrixValue(MatrixType(metadata), localValue, rdd)))
-
-  def this(hc: HailContext, fileMetadata: VSMFileMetadata,
-    rdd: OrderedRDD[RPK, RK, (Annotation, Iterable[T])])(implicit tct: ClassTag[T]) =
-    this(hc, fileMetadata.metadata, fileMetadata.localValue, rdd)
+        MatrixValue(typ, localValue, rdd)),
+      wasSplit = false)
 
   def this(hc: HailContext,
-    metadata: VSMMetadata,
+    typ: MatrixType,
+    localValue: VSMLocalValue,
+    rdd2: OrderedRDD2,
+    wasSplit: Boolean)(implicit tct: ClassTag[T]) =
+    this(hc,
+      MatrixLiteral(
+        MatrixValue(typ, localValue, rdd2)),
+      wasSplit)
+
+  def this(hc: HailContext,
+    typ: MatrixType,
     localValue: VSMLocalValue,
     rdd2: OrderedRDD2)(implicit tct: ClassTag[T]) =
-    this(hc, metadata,
+    this(hc,
       MatrixLiteral(
-        MatrixType(metadata),
-        MatrixValue(MatrixType(metadata), localValue, rdd2)))
+        MatrixValue(typ, localValue, rdd2)),
+      wasSplit = false)
 
   def requireSampleTString(method: String) {
     if (sSignature != TString)
       fatal(s"in $method: column key (sample) schema must be String, but found: $sSignature")
   }
 
-  val VSMMetadata(sSignature, saSignature, vSignature, vaSignature, globalSignature, genotypeSignature, wasSplit) = metadata
+  def matrixType: MatrixType = ast.typ
+
+  val MatrixType(globalSignature, sSignature, saSignature, vSignature, vaSignature, genotypeSignature) = matrixType
 
   lazy val value: MatrixValue = {
     val opt = MatrixIR.optimize(ast)
     opt.execute(hc)
   }
 
-  lazy val MatrixValue(matrixType, VSMLocalValue(globalAnnotation, sampleIds, sampleAnnotations), rdd2) = value
+  lazy val MatrixValue(_, VSMLocalValue(globalAnnotation, sampleIds, sampleAnnotations), rdd2) = value
 
   lazy val rdd: OrderedRDD[RPK, RK, (Annotation, Iterable[T])] = value.rdd
 
@@ -651,8 +680,8 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
       if (!keyTypes.sameElements(vdsKeyType))
         fatal(
           s"""method `annotateSamplesTable' encountered a mismatch between table keys and computed keys.
-             |  Computed keys:  [ ${ vdsKeyType.mkString(", ") } ]
-             |  Key table keys: [ ${ keyTypes.mkString(", ") } ]""".stripMargin)
+             |  Computed keys:  [ ${vdsKeyType.mkString(", ")} ]
+             |  Key table keys: [ ${keyTypes.mkString(", ")} ]""".stripMargin)
 
       val keyFuncArray = vdsKeyFs.toArray
 
@@ -683,7 +712,7 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
         case other =>
           fatal(
             s"""method 'annotate_samples_table' expects a key table keyed by [ $sSignature ]
-               |  Found key [ ${ other.mkString(", ") } ] instead.""".stripMargin)
+               |  Found key [ ${other.mkString(", ")} ] instead.""".stripMargin)
       }
     }
   }
@@ -727,7 +756,7 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
     insertIntoRow[UnsafeRow](() => new UnsafeRow(localRowType))(
       newVASignature, List("va"), { (ur, rv, rvb) =>
         ur.set(rv)
-        
+
         val v = ur.getAs[RK](1)
         val va = ur.get(2)
         val gs = ur.getAs[Iterable[T]](3)
@@ -797,8 +826,8 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
       if (!keyTypes.sameElements(vdsKeyType))
         fatal(
           s"""method `annotateVariantsTable' encountered a mismatch between table keys and computed keys.
-             |  Computed keys:  [ ${ vdsKeyType.mkString(", ") } ]
-             |  Key table keys: [ ${ keyTypes.mkString(", ") } ]""".stripMargin)
+             |  Computed keys:  [ ${vdsKeyType.mkString(", ")} ]
+             |  Key table keys: [ ${keyTypes.mkString(", ")} ]""".stripMargin)
 
       val thisRdd = rdd.map { case (v, (va, gs)) =>
         keyEC.setAll(v, va)
@@ -868,7 +897,7 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
                |  [ $vSignature ]
                |  [ Locus ]
                |  [ Interval ]
-               |  Found key [ ${ keyTypes.mkString(", ") } ] instead.""".stripMargin)
+               |  Found key [ ${keyTypes.mkString(", ")} ] instead.""".stripMargin)
       }
     }
   }
@@ -997,8 +1026,8 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
 
     info(
       s"""Modified the genotype schema with annotateGenotypesExpr.
-         |  Original: ${ genotypeSignature.toPrettyString(compact = true) }
-         |  New: ${ finalType.toPrettyString(compact = true) }""".stripMargin)
+         |  Original: ${genotypeSignature.toPrettyString(compact = true)}
+         |  New: ${finalType.toPrettyString(compact = true)}""".stripMargin)
 
     mapValuesWithAll(finalType, { (v: RK, va: Annotation, s: Annotation, sa: Annotation, g: T) =>
       ec.setAll(v, va, s, sa, g)
@@ -1082,7 +1111,7 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
 
       case other => fatal(
         s"""method 'filterSamplesTable' requires a table with key [ $sSignature ]
-           |  Found key [ ${ other.mkString(", ") } ]""".stripMargin)
+           |  Found key [ ${other.mkString(", ")} ]""".stripMargin)
     }
   }
 
@@ -1176,7 +1205,7 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
 
         if (keep) {
           if (overlapPartitions.length < rdd.partitions.length)
-            info(s"filtered to ${ overlapPartitions.length } of ${ leftTotalPartitions } partitions")
+            info(s"filtered to ${overlapPartitions.length} of ${leftTotalPartitions} partitions")
 
 
           val zipRDD = intRDD.partitionBy(new Partitioner {
@@ -1208,7 +1237,7 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
            |  [ $vSignature ]
            |  [ Locus ]
            |  [ Interval ]
-           |  Found [ ${ keyFields.mkString(", ") } ]""".stripMargin)
+           |  Found [ ${keyFields.mkString(", ")} ]""".stripMargin)
     }
 
     copy(rdd = filt.asOrderedRDD)
@@ -1251,8 +1280,8 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
     if (wasSplit != right.wasSplit) {
       warn(
         s"""cannot join split and unsplit datasets
-           |  left was split: ${ wasSplit }
-           |  light was split: ${ right.wasSplit }""".stripMargin)
+           |  left was split: ${wasSplit}
+           |  light was split: ${right.wasSplit}""".stripMargin)
     }
 
     if (genotypeSignature != right.genotypeSignature) {
@@ -1377,7 +1406,7 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
       val v = ur.getAs[RK](1)
       val va = ur.get(2)
       val gs = ur.getAs[Iterable[T]](3)
-        rvb.addAnnotation(newVASignature, f(v, va, gs))
+      rvb.addAnnotation(newVASignature, f(v, va, gs))
     })
   }
 
@@ -1606,11 +1635,11 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
     }
 
     if (missingSamples.nonEmpty)
-      fatal(s"Found ${ missingSamples.size } ${ plural(missingSamples.size, "sample ID") } in dataset that are not in new ordering:\n  " +
+      fatal(s"Found ${missingSamples.size} ${plural(missingSamples.size, "sample ID")} in dataset that are not in new ordering:\n  " +
         s"@1", missingSamples.truncatable("\n  "))
 
     if (notInDataset.nonEmpty)
-      fatal(s"Found ${ notInDataset.size } ${ plural(notInDataset.size, "sample ID") } in new ordering that are not in dataset:\n  " +
+      fatal(s"Found ${notInDataset.size} ${plural(notInDataset.size, "sample ID")} in new ordering that are not in dataset:\n  " +
         s"@1", notInDataset.truncatable("\n  "))
 
     val newAnnotations = new Array[Annotation](nSamples)
@@ -1644,7 +1673,7 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
 
   def renameSamples(newIds: Array[Annotation]): VariantSampleMatrix[RPK, RK, T] = {
     if (newIds.length != sampleIds.length)
-      fatal(s"dataset contains $nSamples samples, but new ID list contains ${ newIds.length }")
+      fatal(s"dataset contains $nSamples samples, but new ID list contains ${newIds.length}")
     copy2(sampleIds = newIds)
   }
 
@@ -1660,7 +1689,7 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
     requireSampleTString("rename duplicates")
     val (newIds, duplicates) = mangle(stringSampleIds.toArray)
     if (duplicates.nonEmpty)
-      info(s"Renamed ${ duplicates.length } duplicate ${ plural(duplicates.length, "sample ID") }. " +
+      info(s"Renamed ${duplicates.length} duplicate ${plural(duplicates.length, "sample ID")}. " +
         s"Mangled IDs as follows:\n  @1", duplicates.map { case (pre, post) => s""""$pre" => "$post"""" }.truncatable("\n  "))
     else
       info(s"No duplicate sample IDs found.")
@@ -1675,50 +1704,50 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
       metadataSame = false
       println(
         s"""different va signature:
-           |  left:  ${ vaSignature.toPrettyString(compact = true) }
-           |  right: ${ that.vaSignature.toPrettyString(compact = true) }""".stripMargin)
+           |  left:  ${vaSignature.toPrettyString(compact = true)}
+           |  right: ${that.vaSignature.toPrettyString(compact = true)}""".stripMargin)
     }
     if (saSignature != that.saSignature) {
       metadataSame = false
       println(
         s"""different sa signature:
-           |  left:  ${ saSignature.toPrettyString(compact = true) }
-           |  right: ${ that.saSignature.toPrettyString(compact = true) }""".stripMargin)
+           |  left:  ${saSignature.toPrettyString(compact = true)}
+           |  right: ${that.saSignature.toPrettyString(compact = true)}""".stripMargin)
     }
     if (globalSignature != that.globalSignature) {
       metadataSame = false
       println(
         s"""different global signature:
-           |  left:  ${ globalSignature.toPrettyString(compact = true) }
-           |  right: ${ that.globalSignature.toPrettyString(compact = true) }""".stripMargin)
+           |  left:  ${globalSignature.toPrettyString(compact = true)}
+           |  right: ${that.globalSignature.toPrettyString(compact = true)}""".stripMargin)
     }
     if (sampleIds != that.sampleIds) {
       metadataSame = false
       println(
         s"""different sample ids:
            |  left:  $sampleIds
-           |  right: ${ that.sampleIds }""".stripMargin)
+           |  right: ${that.sampleIds}""".stripMargin)
     }
     if (!sampleAnnotationsSimilar(that, tolerance)) {
       metadataSame = false
       println(
         s"""different sample annotations:
            |  left:  $sampleAnnotations
-           |  right: ${ that.sampleAnnotations }""".stripMargin)
+           |  right: ${that.sampleAnnotations}""".stripMargin)
     }
     if (sampleIds != that.sampleIds) {
       metadataSame = false
       println(
         s"""different global annotation:
            |  left:  $globalAnnotation
-           |  right: ${ that.globalAnnotation }""".stripMargin)
+           |  right: ${that.globalAnnotation}""".stripMargin)
     }
     if (wasSplit != that.wasSplit) {
       metadataSame = false
       println(
         s"""different was split:
            |  left:  $wasSplit
-           |  right: ${ that.wasSplit }""".stripMargin)
+           |  right: ${that.wasSplit}""".stripMargin)
     }
     if (!metadataSame)
       println("metadata were not the same")
@@ -1812,8 +1841,11 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
     wasSplit: Boolean = wasSplit)
     (implicit tct: ClassTag[T2]): VariantSampleMatrix[RPK2, RK2, T2] =
     new VariantSampleMatrix[RPK2, RK2, T2](hc,
-      VSMMetadata(sSignature, saSignature, vSignature, vaSignature, globalSignature, genotypeSignature, wasSplit),
-      VSMLocalValue(globalAnnotation, sampleIds, sampleAnnotations), rdd)
+      MatrixType(globalType = globalSignature,
+        sType = sSignature, saType = saSignature,
+        vType = vSignature, vaType = vaSignature,
+        gType = genotypeSignature),
+      VSMLocalValue(globalAnnotation, sampleIds, sampleAnnotations), rdd, wasSplit)
 
   def copy2[RPK2, RK2, T2 >: Null](rdd2: OrderedRDD2 = rdd2,
     sampleIds: IndexedSeq[Annotation] = sampleIds,
@@ -1828,20 +1860,17 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
     wasSplit: Boolean = wasSplit)
     (implicit tct: ClassTag[T2]): VariantSampleMatrix[RPK2, RK2, T2] =
     new VariantSampleMatrix[RPK2, RK2, T2](hc,
-      VSMMetadata(sSignature, saSignature, vSignature, vaSignature, globalSignature, genotypeSignature, wasSplit),
-      VSMLocalValue(globalAnnotation, sampleIds, sampleAnnotations), rdd2)
+      MatrixType(globalType = globalSignature,
+        sType = sSignature, saType = saSignature,
+        vType = vSignature, vaType = vaSignature,
+        gType = genotypeSignature),
+      VSMLocalValue(globalAnnotation, sampleIds, sampleAnnotations), rdd2, wasSplit)
 
   def copyAST[RPK2, RK2, T2 >: Null](ast: MatrixIR = ast,
-    sSignature: Type = sSignature,
-    saSignature: Type = saSignature,
-    vSignature: Type = vSignature,
-    vaSignature: Type = vaSignature,
-    globalSignature: Type = globalSignature,
-    genotypeSignature: Type = genotypeSignature,
     wasSplit: Boolean = wasSplit)(implicit tct: ClassTag[T2]): VariantSampleMatrix[RPK2, RK2, T2] =
     new VariantSampleMatrix[RPK2, RK2, T2](hc,
-      VSMMetadata(sSignature, saSignature, vSignature, vaSignature, globalSignature, genotypeSignature, wasSplit),
-      ast)
+      ast,
+      wasSplit)
 
   def samplesKT(): KeyTable = {
     KeyTable(hc, sparkContext.parallelize(sampleIdsAndAnnotations)
@@ -1863,7 +1892,7 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
   def setVaAttributes(path: List[String], kv: Map[String, String]): VariantSampleMatrix[RPK, RK, T] = {
     vaSignature match {
       case t: TStruct => copy2(vaSignature = t.setFieldAttributes(path, kv))
-      case t => fatal(s"Cannot set va attributes to ${ path.mkString(".") } since va is not a Struct.")
+      case t => fatal(s"Cannot set va attributes to ${path.mkString(".")} since va is not a Struct.")
     }
   }
 
@@ -1874,12 +1903,12 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
   def deleteVaAttribute(path: List[String], attribute: String): VariantSampleMatrix[RPK, RK, T] = {
     vaSignature match {
       case t: TStruct => copy2(vaSignature = t.deleteFieldAttribute(path, attribute))
-      case t => fatal(s"Cannot delete va attributes from ${ path.mkString(".") } since va is not a Struct.")
+      case t => fatal(s"Cannot delete va attributes from ${path.mkString(".")} since va is not a Struct.")
     }
   }
 
   override def toString =
-    s"VariantSampleMatrix(metadata=$metadata, rdd=$rdd, sampleIds=$sampleIds, nSamples=$nSamples, vaSignature=$vaSignature, saSignature=$saSignature, globalSignature=$globalSignature, sampleAnnotations=$sampleAnnotations, sampleIdsAndAnnotations=$sampleIdsAndAnnotations, globalAnnotation=$globalAnnotation, wasSplit=$wasSplit)"
+    s"VariantSampleMatrix(wasSplit=$wasSplit, rdd=$rdd, sampleIds=$sampleIds, nSamples=$nSamples, vaSignature=$vaSignature, saSignature=$saSignature, globalSignature=$globalSignature, sampleAnnotations=$sampleAnnotations, sampleIdsAndAnnotations=$sampleIdsAndAnnotations, globalAnnotation=$globalAnnotation, wasSplit=$wasSplit)"
 
   def nSamples: Int = sampleIds.length
 
@@ -1888,8 +1917,8 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
     if (!globalSignature.typeCheck(globalAnnotation)) {
       warn(
         s"""found violation in global annotation
-           |Schema: ${ globalSignature.toPrettyString() }
-           |Annotation: ${ Annotation.printAnnotation(globalAnnotation) }""".stripMargin)
+           |Schema: ${globalSignature.toPrettyString()}
+           |Annotation: ${Annotation.printAnnotation(globalAnnotation)}""".stripMargin)
     }
 
     sampleIdsAndAnnotations.find { case (_, sa) => !saSignature.typeCheck(sa) }
@@ -1897,8 +1926,8 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
         foundError = true
         warn(
           s"""found violation in sample annotations for sample $s
-             |Schema: ${ saSignature.toPrettyString() }
-             |Annotation: ${ Annotation.printAnnotation(sa) }""".stripMargin)
+             |Schema: ${saSignature.toPrettyString()}
+             |Annotation: ${Annotation.printAnnotation(sa)}""".stripMargin)
       }
 
     val localVaSignature = vaSignature
@@ -1908,8 +1937,8 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
         foundError = true
         warn(
           s"""found violation in variant annotations for variant $v
-             |Schema: ${ localVaSignature.toPrettyString() }
-             |Annotation: ${ Annotation.printAnnotation(va) }""".stripMargin)
+             |Schema: ${localVaSignature.toPrettyString()}
+             |Annotation: ${Annotation.printAnnotation(va)}""".stripMargin)
       }
 
     if (foundError)
@@ -1941,8 +1970,8 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
   def variantsKT(): KeyTable = {
     val localRowType = rowType
     val typ = TStruct(
-        "v" -> vSignature,
-        "va" -> vaSignature)
+      "v" -> vSignature,
+      "va" -> vaSignature)
     new KeyTable(hc, rdd2.mapPartitions { it =>
       val rv2b = new RegionValueBuilder()
       val rv2 = RegionValue()
@@ -2089,24 +2118,24 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
   def makeVariantConcrete(): VariantSampleMatrix[Locus, Variant, T] = {
     vSignature match {
       case TVariant(_) =>
-      case _ => fatal(s"variant signature `Variant' required, found: ${ vSignature.toPrettyString() }")
+      case _ => fatal(s"variant signature `Variant' required, found: ${vSignature.toPrettyString()}")
     }
 
-    new VariantSampleMatrix[Locus, Variant, T](hc, metadata, ast)
+    new VariantSampleMatrix[Locus, Variant, T](hc, ast, wasSplit)
   }
 
   def makeGenotypeConcrete(): VariantSampleMatrix[RPK, RK, Genotype] = {
     if (genotypeSignature != TGenotype)
-      fatal(s"genotype signature `Genotype' required, found: `${ genotypeSignature.toPrettyString() }'")
+      fatal(s"genotype signature `Genotype' required, found: `${genotypeSignature.toPrettyString()}'")
 
-    new VariantSampleMatrix[RPK, RK, Genotype](hc, metadata, ast)
+    new VariantSampleMatrix[RPK, RK, Genotype](hc, ast, wasSplit)
   }
 
   def toVKDS: VariantSampleMatrix[Locus, Variant, T] = makeVariantConcrete()
 
   def toVDS: VariantDataset = makeVariantConcrete().makeGenotypeConcrete()
 
-  def toGDS: GenericDataset = new VariantSampleMatrix[Annotation, Annotation, Annotation](hc, metadata, ast)
+  def toGDS: GenericDataset = new VariantSampleMatrix[Annotation, Annotation, Annotation](hc, ast, wasSplit)
 
   def rowType: TStruct = matrixType.rowType
 
@@ -2163,6 +2192,6 @@ class VariantSampleMatrix[RPK, RK, T >: Null](val hc: HailContext, val metadata:
     maxSize: Int = 46340, // floor(sqrt(Int.MaxValue))
     accuracy: Double = 1e-6,
     iterations: Int = 10000): KeyTable = {
-    Skat(this, variantKeys, singleKey,  weightExpr, y, x, covariates, logistic, maxSize, accuracy, iterations)
+    Skat(this, variantKeys, singleKey, weightExpr, y, x, covariates, logistic, maxSize, accuracy, iterations)
   }
 }

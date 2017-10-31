@@ -22,7 +22,7 @@ object LoadVCF {
   def warnDuplicates(ids: Array[String]) {
     val duplicates = ids.counter().filter(_._2 > 1)
     if (duplicates.nonEmpty) {
-      warn(s"Found ${ duplicates.size } duplicate ${ plural(duplicates.size, "sample ID") }:\n  @1",
+      warn(s"Found ${duplicates.size} duplicate ${plural(duplicates.size, "sample ID")}:\n  @1",
         duplicates.toArray.sortBy(-_._2).map { case (id, count) => s"""($count) "$id"""" }.truncatable("\n  "))
     }
   }
@@ -97,7 +97,7 @@ object LoadVCF {
       case (VCFHeaderLineType.String, false) => TString
       case (VCFHeaderLineType.Character, false) => TString
       case (VCFHeaderLineType.Flag, false) => TBoolean
-      case (_, true) => fatal(s"Can only convert a header line with type `String' to a Call Type. Found `${ line.getType }'.")
+      case (_, true) => fatal(s"Can only convert a header line with type `String' to a Call Type. Found `${line.getType}'.")
     }
 
     val attrs = Map("Description" -> line.getDescription,
@@ -226,8 +226,8 @@ object LoadVCF {
       if (hd1.sampleIds.length != hd.sampleIds.length) {
         fatal(
           s"""invalid sample ids: sample ids are different lengths.
-             | ${ files(0) } has ${ hd1.sampleIds.length } ids and
-             | ${ file } has ${ hd.sampleIds.length } ids.
+             | ${files(0)} has ${hd1.sampleIds.length} ids and
+             | ${file} has ${hd.sampleIds.length} ids.
            """.stripMargin)
       }
 
@@ -236,7 +236,7 @@ object LoadVCF {
         if (s1 != s2) {
           fatal(
             s"""invalid sample ids: expected sample ids to be identical for all inputs. Found different sample ids at position $i.
-               |    ${ files(0) }: $s1
+               |    ${files(0)}: $s1
                |    $file: $s2""".stripMargin)
         }
       }
@@ -244,14 +244,14 @@ object LoadVCF {
       if (hd1.genotypeSignature != hd.genotypeSignature)
         fatal(
           s"""invalid genotype signature: expected signatures to be identical for all inputs.
-             |   ${ files(0) }: ${ hd1.genotypeSignature.toPrettyString(compact = true, printAttrs = true) }
-             |   $file: ${ hd.genotypeSignature.toPrettyString(compact = true, printAttrs = true) }""".stripMargin)
+             |   ${files(0)}: ${hd1.genotypeSignature.toPrettyString(compact = true, printAttrs = true)}
+             |   $file: ${hd.genotypeSignature.toPrettyString(compact = true, printAttrs = true)}""".stripMargin)
 
       if (hd1.vaSignature != hd.vaSignature)
         fatal(
           s"""invalid variant annotation signature: expected signatures to be identical for all inputs.
-             |   ${ files(0) }: ${ hd1.vaSignature.toPrettyString(compact = true, printAttrs = true) }
-             |   $file: ${ hd.vaSignature.toPrettyString(compact = true, printAttrs = true) }""".stripMargin)
+             |   ${files(0)}: ${hd1.vaSignature.toPrettyString(compact = true, printAttrs = true)}
+             |   $file: ${hd.vaSignature.toPrettyString(compact = true, printAttrs = true)}""".stripMargin)
     }
 
     val VCFHeaderInfo(sampleIdsHeader, infoSignature, vaSignature, genotypeSignature, canonicalFlags) = header1
@@ -268,14 +268,10 @@ object LoadVCF {
     val lines = sc.textFilesLines(files, nPartitions.getOrElse(sc.defaultMinPartitions))
 
     val gr = GenomeReference.GRCh37
-    val vsmMetadata = VSMMetadata(
-      TString,
-      TStruct.empty,
-      TVariant(gr),
-      vaSignature,
-      TStruct.empty,
-      genotypeSignature)
-    val matrixType = MatrixType(vsmMetadata)
+    val matrixType: MatrixType = MatrixType(
+      vType = TVariant(gr),
+      vaType = vaSignature,
+      gType = genotypeSignature)
 
     val locusType = matrixType.locusType
     val vType = matrixType.vType
@@ -311,44 +307,39 @@ object LoadVCF {
     val rdd = OrderedRDD2(
       matrixType.orderedRDD2Type,
       lines
-      .mapPartitions { lines =>
-        val codec = new htsjdk.variant.vcf.VCFCodec()
-        codec.readHeader(new BufferedLineIterator(headerLinesBc.value.iterator.buffered))
+        .mapPartitions { lines =>
+          val codec = new htsjdk.variant.vcf.VCFCodec()
+          codec.readHeader(new BufferedLineIterator(headerLinesBc.value.iterator.buffered))
 
-        val region = MemoryBuffer()
-        val rvb = new RegionValueBuilder(region)
-        val rv = RegionValue(region)
+          val region = MemoryBuffer()
+          val rvb = new RegionValueBuilder(region)
+          val rv = RegionValue(region)
 
-        lines.flatMap { l =>
-          l.map { line =>
-            if (line.isEmpty || line(0) == '#')
-              None
-            else if (!lineRef(line).forall(c => c == 'A' || c == 'C' || c == 'G' || c == 'T' || c == 'N')) {
-              None
-            } else {
-              val vc = codec.decode(line)
-              if (vc.isSymbolic) {
+          lines.flatMap { l =>
+            l.map { line =>
+              if (line.isEmpty || line(0) == '#')
+                None
+              else if (!lineRef(line).forall(c => c == 'A' || c == 'C' || c == 'G' || c == 'T' || c == 'N')) {
                 None
               } else {
-                region.clear()
-                rvb.start(rowType.fundamentalType)
-                rvb.startStruct()
-                reader.readRecord(vc, rvb, infoSignatureBc.value, genotypeSignatureBc.value, dropSamples, canonicalFlags)
-                rvb.endStruct()
-                rv.setOffset(rvb.end())
+                val vc = codec.decode(line)
+                if (vc.isSymbolic) {
+                  None
+                } else {
+                  region.clear()
+                  rvb.start(rowType.fundamentalType)
+                  rvb.startStruct()
+                  reader.readRecord(vc, rvb, infoSignatureBc.value, genotypeSignatureBc.value, dropSamples, canonicalFlags)
+                  rvb.endStruct()
+                  rv.setOffset(rvb.end())
 
-                Some(rv)
+                  Some(rv)
+                }
               }
-            }
-          }.value
-        }
-      }, Some(justVariants), None)
+            }.value
+          }
+        }, Some(justVariants), None)
 
-    new VariantSampleMatrix(hc,
-      vsmMetadata,
-      VSMLocalValue(Annotation.empty,
-        sampleIds,
-        Annotation.emptyIndexedSeq(sampleIds.length)),
-      rdd)
+    new VariantSampleMatrix(hc, matrixType, VSMLocalValue(sampleIds), rdd, false)
   }
 }

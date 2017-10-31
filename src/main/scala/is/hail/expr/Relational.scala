@@ -4,7 +4,7 @@ import is.hail.HailContext
 import is.hail.annotations._
 import is.hail.methods.Aggregators
 import is.hail.sparkextras._
-import is.hail.variant.{VSMFileMetadata, VSMLocalValue, VSMMetadata}
+import is.hail.variant.{GenomeReference, VSMLocalValue}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.Row
 import is.hail.utils._
@@ -15,30 +15,24 @@ import org.json4s.jackson.JsonMethods
 import scala.reflect.ClassTag
 
 case class MatrixType(
-  metadata: VSMMetadata) extends BaseType {
-  def globalType: Type = metadata.globalSignature
-
-  def sType: Type = metadata.sSignature
-
-  def saType: Type = metadata.saSignature
+  globalType: Type = TStruct.empty,
+  sType: Type = TString,
+  saType: Type = TStruct.empty,
+  vType: Type = TVariant(GenomeReference.GRCh37),
+  vaType: Type = TStruct.empty,
+  gType: Type = TGenotype) extends BaseType {
 
   def locusType: Type = vType match {
     case t: TVariant => TLocus(t.gr)
     case _ => vType
   }
 
-  def vType: Type = metadata.vSignature
-
-  def vaType: Type = metadata.vaSignature
-
-  def genotypeType: Type = metadata.genotypeSignature
-
   def rowType: TStruct =
     TStruct(
       "pk" -> locusType,
       "v" -> vType,
       "va" -> vaType,
-      "gs" -> TArray(genotypeType))
+      "gs" -> TArray(gType))
 
   def orderedRDD2Type: OrderedRDD2Type = {
     new OrderedRDD2Type(Array("pk"),
@@ -55,14 +49,14 @@ case class MatrixType(
       "global" -> (0, globalType),
       "s" -> (1, sType),
       "sa" -> (2, saType),
-      "g" -> (3, genotypeType),
+      "g" -> (3, gType),
       "v" -> (4, vType),
       "va" -> (5, vaType))
     EvalContext(Map(
       "global" -> (0, globalType),
       "s" -> (1, sType),
       "sa" -> (2, saType),
-      "gs" -> (3, TAggregable(genotypeType, aggregationST))))
+      "gs" -> (3, TAggregable(gType, aggregationST))))
   }
 
   def variantEC: EvalContext = {
@@ -70,14 +64,14 @@ case class MatrixType(
       "global" -> (0, globalType),
       "v" -> (1, vType),
       "va" -> (2, vaType),
-      "g" -> (3, genotypeType),
+      "g" -> (3, gType),
       "s" -> (4, sType),
       "sa" -> (5, saType))
     EvalContext(Map(
       "global" -> (0, globalType),
       "v" -> (1, vType),
       "va" -> (2, vaType),
-      "gs" -> (3, TAggregable(genotypeType, aggregationST))))
+      "gs" -> (3, TAggregable(gType, aggregationST))))
   }
 
   def genotypeEC: EvalContext = {
@@ -87,18 +81,8 @@ case class MatrixType(
       "va" -> (2, vaType),
       "s" -> (3, sType),
       "sa" -> (4, saType),
-      "g" -> (5, genotypeType)))
+      "g" -> (5, gType)))
   }
-
-  def copy(globalType: Type = globalType,
-    sType: Type = sType, saType: Type = saType,
-    vType: Type = vType, vaType: Type = vaType,
-    genotypeType: Type = genotypeType): MatrixType =
-    MatrixType(metadata = metadata.copy(
-      globalSignature = globalType,
-      sSignature = sType, saSignature = saType,
-      vSignature = vType, vaSignature = vaType,
-      genotypeSignature = genotypeType))
 }
 
 object BaseIR {
@@ -174,7 +158,7 @@ object MatrixValue {
     implicit val kOk: OrderedKey[Annotation, Annotation] = typ.vType.orderedKey
     val sc = rdd.sparkContext
     val localRowType = typ.rowType
-    val localGType = typ.genotypeType
+    val localGType = typ.gType
     val localNSamples = localValue.nSamples
     val rangeBoundsType = TArray(typ.pkType)
     new MatrixValue(typ, localValue,
@@ -217,11 +201,10 @@ case class MatrixValue(
   typ: MatrixType,
   localValue: VSMLocalValue,
   rdd2: OrderedRDD2) {
-
   def rdd[RPK, RK, T]: OrderedRDD[RPK, RK, (Any, Iterable[T])] = {
     warn("converting OrderedRDD2 => OrderedRDD")
 
-    implicit val tct: ClassTag[T] = typ.genotypeType.scalaClassTag.asInstanceOf[ClassTag[T]]
+    implicit val tct: ClassTag[T] = typ.gType.scalaClassTag.asInstanceOf[ClassTag[T]]
     implicit val kOk: OrderedKey[RPK, RK] = typ.vType.typedOrderedKey[RPK, RK]
 
     import kOk._
@@ -318,13 +301,13 @@ object MatrixIR {
   def optimize(ast: MatrixIR): MatrixIR = {
     BaseIR.rewriteTopDown(ast, {
       case FilterVariants(
-      MatrixRead(hc, path, nPartitions, fileMetadata, dropSamples, _),
+      MatrixRead(hc, path, nPartitions, typ, localValue, dropSamples, _),
       Const(_, false, TBoolean)) =>
-        MatrixRead(hc, path, nPartitions, fileMetadata, dropSamples, dropVariants = true)
+        MatrixRead(hc, path, nPartitions, typ, localValue, dropSamples, dropVariants = true)
       case FilterSamples(
-      MatrixRead(hc, path, nPartitions, fileMetadata, _, dropVariants),
+      MatrixRead(hc, path, nPartitions, typ, localValue, _, dropVariants),
       Const(_, false, TBoolean)) =>
-        MatrixRead(hc, path, nPartitions, fileMetadata, dropSamples = true, dropVariants)
+        MatrixRead(hc, path, nPartitions, typ, localValue, dropSamples = true, dropVariants)
 
       case FilterVariants(m, Const(_, true, TBoolean)) =>
         m
@@ -351,8 +334,8 @@ abstract sealed class MatrixIR extends BaseIR {
 }
 
 case class MatrixLiteral(
-  typ: MatrixType,
   value: MatrixValue) extends MatrixIR {
+  def typ: MatrixType = value.typ
 
   def children: IndexedSeq[BaseIR] = Array.empty[BaseIR]
 
@@ -370,11 +353,10 @@ case class MatrixRead(
   hc: HailContext,
   path: String,
   nPartitions: Int,
-  fileMetadata: VSMFileMetadata,
+  typ: MatrixType,
+  localValue: VSMLocalValue,
   dropSamples: Boolean,
   dropVariants: Boolean) extends MatrixIR {
-
-  def typ: MatrixType = MatrixType(fileMetadata.metadata)
 
   def children: IndexedSeq[BaseIR] = Array.empty[BaseIR]
 
@@ -384,13 +366,6 @@ case class MatrixRead(
   }
 
   def execute(hc: HailContext): MatrixValue = {
-    val metadata = fileMetadata.metadata
-    val localValue =
-      if (dropSamples)
-        fileMetadata.localValue.dropSamples()
-      else
-        fileMetadata.localValue
-
     val rdd =
       if (dropVariants)
         OrderedRDD2.empty(hc.sc, typ.orderedRDD2Type)
@@ -432,7 +407,10 @@ case class MatrixRead(
 
     MatrixValue(
       typ,
-      localValue,
+      if (dropSamples)
+        localValue.dropSamples()
+      else
+        localValue,
       rdd)
   }
 
@@ -456,7 +434,7 @@ case class FilterSamples(
     val prev = child.execute(hc)
 
     val localGlobalAnnotation = prev.localValue.globalAnnotation
-    val sas = typ.metadata.saSignature
+    val sas = typ.saType
     val ec = typ.sampleEC
 
     val f: () => java.lang.Boolean = Parser.evalTypedExpr[java.lang.Boolean](pred, ec)

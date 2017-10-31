@@ -6,7 +6,7 @@ import is.hail.HailContext
 import is.hail.annotations._
 import is.hail.expr.{TStruct, _}
 import is.hail.utils._
-import is.hail.variant.{GenomeReference, Locus, VSMLocalValue, VSMMetadata, Variant, VariantSampleMatrix}
+import is.hail.variant.{GenomeReference, Locus, VSMLocalValue, Variant, VariantSampleMatrix}
 import org.apache.spark.storage.StorageLevel
 import org.json4s._
 
@@ -15,29 +15,29 @@ import scala.collection.JavaConverters.asScalaIteratorConverter
 import java.io.{File, FileWriter}
 
 case class QueryJSON(workspace: String,
-                     array: String,
-                     vid_mapping_file: String,
-                     callset_mapping_file: String,
-                     vcf_header_filename: Option[String],
-                     //type List[List[Any]] b/c genomicsDB accepts both single columns and ranges of columns to query
-                     query_column_ranges: List[List[Any]] = List(List(List(0, 2829728720l))),
-                     reference_genome: String = "",
-                     query_attributes: List[String] = List(),
-                     query_row_ranges: Option[List[List[Int]]] = None,
-                     max_diploid_alt_alleles_that_can_be_genotyped: Option[Int] = None,
-                     vcf_output_filename: Option[List[String]] = None,
-                     vcf_output_format: Option[String] = None,
-                     produce_GT_field: Boolean = true,
-                     index_output_VCF: Option[Boolean] = None,
-                     combined_vcf_records_buffer_size_limit: Option[Int] = None)
+  array: String,
+  vid_mapping_file: String,
+  callset_mapping_file: String,
+  vcf_header_filename: Option[String],
+  //type List[List[Any]] b/c genomicsDB accepts both single columns and ranges of columns to query
+  query_column_ranges: List[List[Any]] = List(List(List(0, 2829728720l))),
+  reference_genome: String = "",
+  query_attributes: List[String] = List(),
+  query_row_ranges: Option[List[List[Int]]] = None,
+  max_diploid_alt_alleles_that_can_be_genotyped: Option[Int] = None,
+  vcf_output_filename: Option[List[String]] = None,
+  vcf_output_format: Option[String] = None,
+  produce_GT_field: Boolean = true,
+  index_output_VCF: Option[Boolean] = None,
+  combined_vcf_records_buffer_size_limit: Option[Int] = None)
 
 object LoadGDB {
 
   def createQueryJSON(tiledbworkspace: String,
-                      arrayName: String,
-                      vid_mapping_file: String,
-                      callsets_mapping_file: String,
-                      vcfHeaderPath: Option[String]): File = {
+    arrayName: String,
+    vid_mapping_file: String,
+    callsets_mapping_file: String,
+    vcfHeaderPath: Option[String]): File = {
     val tempFile = File.createTempFile("sample2query", ".json")
     jackson.Serialization.write(QueryJSON(tiledbworkspace,
       arrayName,
@@ -50,15 +50,15 @@ object LoadGDB {
 
   /* PATH PARAMETERS REQUIRE ABSOLUTE PATHS */
   def apply[T >: Null](hc: HailContext,
-               reader: HtsjdkRecordReader,
-               loaderJSONFile: String,
-               tiledbWorkspace: String,
-               arrayName: String,
-               vid_mapping_file: String,
-               callsets_mapping_file: String,
-               vcfHeaderPath: Option[String],
-               nPartitions: Option[Int] = None,
-               dropSamples: Boolean = false): VariantSampleMatrix[Locus, Variant, Annotation] = {
+    reader: HtsjdkRecordReader,
+    loaderJSONFile: String,
+    tiledbWorkspace: String,
+    arrayName: String,
+    vid_mapping_file: String,
+    callsets_mapping_file: String,
+    vcfHeaderPath: Option[String],
+    nPartitions: Option[Int] = None,
+    dropSamples: Boolean = false): VariantSampleMatrix[Locus, Variant, Annotation] = {
     val sc = hc.sc
 
     val codec = new htsjdk.variant.vcf.VCFCodec()
@@ -148,16 +148,10 @@ object LoadGDB {
 
     queryFile.delete()
 
-    new VariantSampleMatrix(hc, VSMMetadata(
-      TString,
-      TStruct.empty,
-      TVariant(GenomeReference.GRCh37),
-      variantAnnotationSignatures,
-      TStruct.empty,
-      genotypeSignature),
-      VSMLocalValue(Annotation.empty,
-        sampleIds,
-        Annotation.emptyIndexedSeq(sampleIds.length)),
-      rdd)
+    new VariantSampleMatrix(hc, MatrixType(
+      vaType = variantAnnotationSignatures,
+      globalType = genotypeSignature),
+      VSMLocalValue(sampleIds),
+      rdd, false)
   }
 }

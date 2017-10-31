@@ -42,7 +42,7 @@ object PlinkLoader {
           else
             (Variant(recodedContig, bpPos.toInt, allele1, allele2), rsId)
 
-        case other => fatal(s"Invalid .bim line.  Expected 6 fields, found ${ other.length } ${ plural(other.length, "field") }")
+        case other => fatal(s"Invalid .bim line.  Expected 6 fields, found ${other.length} ${plural(other.length, "field")}")
       }
     }.value
     ).toArray)
@@ -68,7 +68,7 @@ object PlinkLoader {
 
         val split = line.split(delimiter)
         if (split.length != 6)
-          fatal(s"expected 6 fields, but found ${ split.length }")
+          fatal(s"expected 6 fields, but found ${split.length}")
         val Array(fam, kid, dad, mom, isFemale, pheno) = split
 
         val fam1 = if (fam != "0") fam else null
@@ -89,7 +89,7 @@ object PlinkLoader {
             pheno match {
               case ffConfig.missingValue => null
               case numericRegex() => pheno.toDouble
-              case _ => fatal(s"Invalid quantitative phenotype: `$pheno'. Value must be numeric or `${ ffConfig.missingValue }'")
+              case _ => fatal(s"Invalid quantitative phenotype: `$pheno'. Value must be numeric or `${ffConfig.missingValue}'")
             }
           else
             pheno match {
@@ -99,7 +99,7 @@ object PlinkLoader {
               case "0" => null
               case "-9" => null
               case "N/A" => null
-              case numericRegex() => fatal(s"Invalid case-control phenotype: `$pheno'. Control is `1', case is `2', missing is `0', `-9', `${ ffConfig.missingValue }', or non-numeric.")
+              case numericRegex() => fatal(s"Invalid case-control phenotype: `$pheno'. Control is `1', case is `2', missing is `0', `-9', `${ffConfig.missingValue}', or non-numeric.")
               case _ => null
             }
         idBuilder += kid
@@ -143,17 +143,17 @@ object PlinkLoader {
         (v: Annotation, (Annotation(rsId), vr.getValue: Iterable[Annotation]))
     }.toOrderedRDD(fastKeys)(TVariant(gr).orderedKey, classTag[(Annotation, Iterable[Annotation])])
 
-    new GenericDataset(hc, VSMMetadata(
-      saSignature = sampleAnnotationSignature,
-      vaSignature = plinkSchema,
-      vSignature = TVariant(gr),
-      globalSignature = TStruct.empty,
-      genotypeSignature = TStruct("GT" -> TCall),
-      wasSplit = true),
+    new GenericDataset(hc, MatrixType(
+      saType = sampleAnnotationSignature,
+      vaType = plinkSchema,
+      vType = TVariant(gr),
+      globalType = TStruct.empty,
+      gType = TStruct("GT" -> TCall)),
       VSMLocalValue(globalAnnotation = Annotation.empty,
         sampleIds = sampleIds,
         sampleAnnotations = sampleAnnotations),
-      variantRDD)
+      variantRDD,
+      wasSplit = true)
   }
 
   def apply(hc: HailContext, bedPath: String, bimPath: String, famPath: String, ffConfig: FamFileConfig,
@@ -188,7 +188,7 @@ object PlinkLoader {
       fatal("bed file size does not match expected number of bytes based on bed and fam files")
 
     if (bedSize < nPartitions.getOrElse(hc.sc.defaultMinPartitions))
-      fatal(s"The number of partitions requested (${ nPartitions.getOrElse(hc.sc.defaultMinPartitions) }) is greater than the file size ($bedSize)")
+      fatal(s"The number of partitions requested (${nPartitions.getOrElse(hc.sc.defaultMinPartitions)}) is greater than the file size ($bedSize)")
 
     val (ids, annotations) = sampleInfo.unzip
 
@@ -196,7 +196,7 @@ object PlinkLoader {
     if (duplicateIds.nonEmpty) {
       val n = duplicateIds.length
       warn(
-        s"""found $n duplicate sample ${ plural(n, "ID") }
+        s"""found $n duplicate sample ${plural(n, "ID")}
            |  Duplicate IDs: @1""".stripMargin, duplicateIds)
     }
 
