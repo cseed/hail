@@ -7,7 +7,6 @@ import is.hail.utils._
 import is.hail.variant.{GenomeReference, Genotype, Variant, VariantSampleMatrix}
 
 import scala.io.Source
-import scala.reflect.ClassTag
 
 object ExportVCF {
 
@@ -190,21 +189,18 @@ object ExportVCF {
     }(sb += ':')
   }
 
-  def apply(vsm0: VariantSampleMatrix, path: String, append: Option[String] = None,
+  def apply(vsm: VariantSampleMatrix, path: String, append: Option[String] = None,
     parallel: Boolean = false) {
     
-    vsm0.requireColKeyString("export_vcf")
-    vsm0.requireRowKeyVariant("export_vcf")
+    vsm.requireColKeyString("export_vcf")
+    vsm.requireRowKeyVariant("export_vcf")
     
-    val vsm = vsm0.genotypeSignature match {
-      case TGenotype(_) =>
-        vsm0.annotateGenotypesExpr("g = {GT: Call(g.gt), AD: g.ad, DP: g.dp, GQ: g.gq, PL: g.pl}")
-          .copy2(genotypeSignature = TGenotype.representationWithVCFAttributes())
-      case t: TStruct => vsm0
-      case t => fatal(s"export_vcf requires g to have type TStruct, found $t")
+    val tg = vsm.genotypeSignature match {
+      case t: TStruct => t
+      case t =>
+        fatal(s"export_vcf requires g to have type TStruct, found $t")
     }
-    
-    val tg = vsm.genotypeSignature.asInstanceOf[TStruct]
+
     checkFormatSignature(tg)
         
     val formatFieldOrder: Array[Int] = tg.fieldIdx.get("GT") match {

@@ -185,11 +185,11 @@ object MatrixValue {
           UnsafeIndexedSeq(rangeBoundsType,
             rdd.orderedPartitioner.rangeBounds.map(b => Row(b)))),
         rdd.mapPartitions { it =>
-          val region = MemoryBuffer()
-          val rvb = new RegionValueBuilder(region)
-          val rv = RegionValue(region)
-
           it.map { case (v, (va, gs)) =>
+            val region = MemoryBuffer()
+            val rvb = new RegionValueBuilder(region)
+            val rv = RegionValue(region)
+
             region.clear()
             rvb.start(localRowType)
             rvb.startStruct()

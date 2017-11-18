@@ -3,7 +3,7 @@ package is.hail.methods
 import breeze.linalg.{DenseMatrix, convert, norm}
 import breeze.stats.mean
 import is.hail.utils._
-import is.hail.variant.{Genotype, Locus, Variant, VariantDataset}
+import is.hail.variant._
 import is.hail.{SparkSuite, TestUtils, stats}
 import org.apache.spark.mllib.linalg._
 import org.apache.spark.mllib.linalg.distributed._
@@ -25,7 +25,7 @@ class LDMatrixSuite extends SparkSuite {
   @Test def testEntries() {
     val nSamples = vds.nSamples
 
-    val variantsTable = vds.typedRDD[Locus, Variant, Genotype].map { case (v, (_, gs)) =>
+    val variantsTable = vds.typedRDD[Locus, Variant].map { case (v, (_, gs)) =>
       (v, LDPrune.toBitPackedVector(gs.hardCallIterator, nSamples))}.collectAsMap()
 
     val indexToBPV = distLDMatrix.variants.map(v => variantsTable(v).get)

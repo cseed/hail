@@ -21,8 +21,6 @@ object Call extends Serializable {
       s"${ p.j }/${ p.k }"
     }
 
-  def toGenotype(call: Call): Genotype = Genotype(call)
-
   def check(call: Call, nAlleles: Int) {
     val nGenotypes = triangle(nAlleles)
     assert(call == null || (call >= 0 && call < nGenotypes), s"Invalid genotype found `$call' for number of alleles equal to `$nAlleles'.")

@@ -1,6 +1,5 @@
 package is.hail.io.bgen
 
-import breeze.linalg.DenseVector
 import is.hail.annotations._
 import is.hail.io.{ByteArrayReader, KeySerializedValueRecord}
 import is.hail.utils._

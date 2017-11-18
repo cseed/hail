@@ -42,27 +42,11 @@ object VariantDataset {
 class VariantDatasetFunctions(private val vsm: VariantSampleMatrix) extends AnyVal {
 
   def annotateAllelesExpr(expr: String): VariantSampleMatrix = {
-    val splitVariantExpr = "va.aIndex = aIndex, va.wasSplit = wasSplit"
-    val gType = vsm.genotypeSignature
-    val splitGenotypeExpr =
-      if (gType.isOfType(TGenotype())) {
-        """
-          g = let
-              newgt = downcode(Call(g.gt), aIndex) and
-              newad = if (isDefined(g.ad))
-                  let sum = g.ad.sum() and adi = g.ad[aIndex] in [sum - adi, adi]
-                else
-                  NA: Array[Int] and
-              newpl = if (isDefined(g.pl))
-                  range(3).map(i => range(g.pl.length).filter(j => downcode(Call(j), aIndex) == Call(i)).map(j => g.pl[j]).min())
-                else
-                  NA: Array[Int] and
-              newgq = gqFromPL(newpl)
-            in Genotype(newV, newgt, newad, g.dp, newgq, newpl)"""
-      } else {
-        if (!vsm.genotypeSignature.isOfType(Genotype.htsGenotypeType))
-          fatal(s"annotate_alleles: genotype_schema must be TGenotype or the HTS genotype schema, found: ${ vsm.genotypeSignature }")
+    if (!vsm.genotypeSignature.isOfType(Genotype.htsGenotypeType))
+      fatal(s"annotate_alleles: genotype_schema must be the HTS genotype schema, found: ${ vsm.genotypeSignature }")
 
+    val splitVariantExpr = "va.aIndex = aIndex, va.wasSplit = wasSplit"
+    val splitGenotypeExpr =
         """
           g = let
             newgt = downcode(g.GT, aIndex) and
@@ -76,7 +60,6 @@ class VariantDatasetFunctions(private val vsm: VariantSampleMatrix) extends AnyV
                 NA: Array[Int] and
             newgq = gqFromPL(newpl)
           in { GT: newgt, AD: newad, DP: g.DP, GQ: newgq, PL: newpl }"""
-      }
 
     annotateAllelesExprGeneric(splitVariantExpr, splitGenotypeExpr, variantExpr = expr)
   }
@@ -189,8 +172,8 @@ class VariantDatasetFunctions(private val vsm: VariantSampleMatrix) extends AnyV
   }
 
   def summarize(): SummaryResult = {
-    vsm.typedRDD[Locus, Variant, Genotype]
-      .aggregate(new SummaryCombiner[Genotype](_.hardCallIterator.countNonNegative()))(_.merge(_), _.merge(_))
+    vsm.typedRDD[Locus, Variant]
+      .aggregate(new SummaryCombiner[Annotation](_.hardCallIterator.countNonNegative()))(_.merge(_), _.merge(_))
       .result(vsm.nSamples)
   }
 
@@ -261,8 +244,17 @@ class VariantDatasetFunctions(private val vsm: VariantSampleMatrix) extends AnyV
 
     val nSamples = vsm.nSamples
 
-    val plinkRDD = vsm.typedRDD[Locus, Variant, Genotype]
-      .mapValuesWithKey { case (v, (va, gs)) => ExportBedBimFam.makeBedRow(gs, nSamples) }
+    val localRowType = vsm.rowType
+    val plinkRDD = vsm.rdd2
+      .mapPartitions { it =>
+        val view = HardCallView(localRowType)
+        it.map { rv =>
+          val v = Variant.fromRegionValue(rv.region,
+            localRowType.loadField(rv, 1))
+          view.setRegion(rv)
+          (v, ExportBedBimFam.makeBedRow(view, nSamples))
+        }
+      }
       .persist(StorageLevel.MEMORY_AND_DISK)
 
     plinkRDD.map { case (v, bed) => bed }
@@ -290,51 +282,11 @@ class VariantDatasetFunctions(private val vsm: VariantSampleMatrix) extends AnyV
 
   def filterAlleles(filterExpr: String, variantExpr: String = "",
     keep: Boolean = true, subset: Boolean = true, leftAligned: Boolean = false, keepStar: Boolean = false): VariantSampleMatrix = {
+    if (!vsm.genotypeSignature.isOfType(Genotype.htsGenotypeType))
+      fatal(s"filter_alleles: genotype_schema must be TGenotype or the HTS genotype schema, found: ${ vsm.genotypeSignature }")
 
-    val gType = vsm.genotypeSignature
-    val genotypeExpr = if (gType.isOfType(TGenotype())) {
-      if (subset) {
-        """
-g = let newpl = if (isDefined(g.pl))
-        let unnorm = range(newV.nGenotypes).map(newi =>
-            let oldi = gtIndex(newToOld[gtj(newi)], newToOld[gtk(newi)])
-             in g.pl[oldi]) and
-            minpl = unnorm.min()
-         in unnorm - minpl
-      else
-        NA: Array[Int] and
-    newgt = gtFromPL(newpl) and
-    newad = if (isDefined(g.ad))
-        range(newV.nAlleles).map(newi => g.ad[newToOld[newi]])
-      else
-        NA: Array[Int] and
-    newgq = gqFromPL(newpl) and
-    newdp = g.dp
- in Genotype(newV, Call(newgt), newad, newdp, newgq, newpl)
-        """
-      } else {
-        // downcode
-        s"""
-g = let newgt = gtIndex(oldToNew[gtj(g.gt)], oldToNew[gtk(g.gt)]) and
-    newad = if (isDefined(g.ad))
-        range(newV.nAlleles).map(i => range(v.nAlleles).filter(j => oldToNew[j] == i).map(j => g.ad[j]).sum())
-      else
-        NA: Array[Int] and
-    newdp = g.dp and
-    newpl = if (isDefined(g.pl))
-        range(newV.nGenotypes).map(gi => range(v.nGenotypes).filter(gj => gtIndex(oldToNew[gtj(gj)], oldToNew[gtk(gj)]) == gi).map(gj => g.pl[gj]).min())
-      else
-        NA: Array[Int] and
-    newgq = gqFromPL(newpl)
- in Genotype(newV, Call(newgt), newad, newdp, newgq, newpl)
-        """
-      }
-    } else {
-      if (!vsm.genotypeSignature.isOfType(Genotype.htsGenotypeType))
-        fatal(s"filter_alleles: genotype_schema must be TGenotype or the HTS genotype schema, found: ${ vsm.genotypeSignature }")
-
-      if (subset) {
-        """
+    val genotypeExpr = if (subset) {
+      """
 g = let newpl = if (isDefined(g.PL))
         let unnorm = range(newV.nGenotypes).map(newi =>
             let oldi = gtIndex(newToOld[gtj(newi)], newToOld[gtk(newi)])
@@ -352,9 +304,9 @@ g = let newpl = if (isDefined(g.PL))
     newdp = g.DP
  in { GT: Call(newgt), AD: newad, DP: newdp, GQ: newgq, PL: newpl }
         """
-      } else {
-        // downcode
-        s"""
+    } else {
+      // downcode
+      s"""
 g = let newgt = gtIndex(oldToNew[gtj(g.GT)], oldToNew[gtk(g.GT)]) and
     newad = if (isDefined(g.AD))
         range(newV.nAlleles).map(i => range(v.nAlleles).filter(j => oldToNew[j] == i).map(j => g.AD[j]).sum())
@@ -368,7 +320,6 @@ g = let newgt = gtIndex(oldToNew[gtj(g.GT)], oldToNew[gtk(g.GT)]) and
     newgq = gqFromPL(newpl)
  in { GT: Call(newgt), AD: newad, DP: newdp, GQ: newgq, PL: newpl }
         """
-      }
     }
 
     FilterAlleles(vsm, filterExpr, variantExpr, genotypeExpr,
@@ -388,12 +339,7 @@ g = let newgt = gtIndex(oldToNew[gtj(g.GT)], oldToNew[gtk(g.GT)]) and
   }
 
   def hardCalls(): VariantSampleMatrix = {
-    vsm.mapValues(TGenotype(), { g =>
-      if (g == null)
-        g
-      else
-        Genotype(g.asInstanceOf[Genotype]._unboxedGT): Annotation
-    })
+    vsm.annotateGenotypesExpr("g = {GT: g.GT}")
   }
 
   /**
@@ -454,19 +400,6 @@ g = let newgt = gtIndex(oldToNew[gtj(g.GT)], oldToNew[gtk(g.GT)]) and
     val (rrm, m) = ComputeRRM(vsm, forceBlock, forceGramian)
     info(s"rrm: RRM computed using $m variants.")
     KinshipMatrix(vsm.hc, vsm.sSignature, rrm, vsm.sampleIds.toArray, m)
-  }
-
-  def deNovo(ped: Pedigree,
-    referenceAF: String,
-    minGQ: Int = 20,
-    minPDeNovo: Double = 0.05,
-    maxParentAB: Double = 0.05,
-    minChildAB: Double = 0.20,
-    minDepthRatio: Double = 0.10): KeyTable = {
-    require(vsm.wasSplit)
-    vsm.requireColKeyString("de novo")
-
-    DeNovo(vsm, ped, referenceAF, minGQ, minPDeNovo, maxParentAB, minChildAB, minDepthRatio)
   }
 
   /**
@@ -622,29 +555,11 @@ g = let newgt = gtIndex(oldToNew[gtj(g.GT)], oldToNew[gtk(g.GT)]) and
   }
 
   def splitMulti(keepStar: Boolean = false, leftAligned: Boolean = false): VariantSampleMatrix = {
-    val gType = vsm.genotypeSignature
-    if (gType.isOfType(TGenotype())) {
-      vsm.splitMultiGeneric("va.aIndex = aIndex, va.wasSplit = wasSplit",
-        s"""g =
-    let
-      newgt = downcode(Call(g.gt), aIndex) and
-      newad = if (isDefined(g.ad))
-          let sum = g.ad.sum() and adi = g.ad[aIndex] in [sum - adi, adi]
-        else
-          NA: Array[Int] and
-      newpl = if (isDefined(g.pl))
-          range(3).map(i => range(g.pl.length).filter(j => downcode(Call(j), aIndex) == Call(i)).map(j => g.pl[j]).min())
-        else
-          NA: Array[Int] and
-      newgq = gqFromPL(newpl)
-    in Genotype(newV, newgt, newad, g.dp, newgq, newpl)""",
-        keepStar, leftAligned)
-    } else {
-      if (!vsm.genotypeSignature.isOfType(Genotype.htsGenotypeType))
-        fatal(s"split_multi: genotype_schema must be TGenotype or the HTS genotype schema, found: ${ vsm.genotypeSignature }")
+    if (!vsm.genotypeSignature.isOfType(Genotype.htsGenotypeType))
+      fatal(s"split_multi: genotype_schema must be the HTS genotype schema, found: ${ vsm.genotypeSignature }")
 
-      vsm.splitMultiGeneric("va.aIndex = aIndex, va.wasSplit = wasSplit",
-        s"""g =
+    vsm.splitMultiGeneric("va.aIndex = aIndex, va.wasSplit = wasSplit",
+      s"""g =
     let
       newgt = downcode(g.GT, aIndex) and
       newad = if (isDefined(g.AD))
@@ -656,12 +571,11 @@ g = let newgt = gtIndex(oldToNew[gtj(g.GT)], oldToNew[gtk(g.GT)]) and
         else
           NA: Array[Int] and
       newgq = gqFromPL(newpl)
-    in { GT: newgt, AD: newad, DP: g.DP, GQ: newgq, PL: newPL }""",
-        keepStar, leftAligned)
-    }
+    in { GT: newgt, AD: newad, DP: g.DP, GQ: newgq, PL: newpl }""",
+      keepStar, leftAligned)
   }
 
-  def splitMultiGeneric(variantExpr: String, genotypeExpr: String, keepStar: Boolean, leftAligned: Boolean): VariantSampleMatrix = {
+  def splitMultiGeneric(variantExpr: String, genotypeExpr: String, keepStar: Boolean = false, leftAligned: Boolean = false): VariantSampleMatrix = {
     val splitmulti = new SplitMulti(vsm, variantExpr, genotypeExpr, keepStar, leftAligned)
     splitmulti.split()
   }

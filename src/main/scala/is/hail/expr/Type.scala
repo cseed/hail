@@ -24,7 +24,7 @@ abstract class BaseType
 object Type {
   def genScalar(required: Boolean) =
     Gen.oneOf(TBoolean(required), TInt32(required), TInt64(required), TFloat32(required),
-      TFloat64(required), TString(required), TAltAllele(required), TGenotype(required), TCall(required))
+      TFloat64(required), TString(required), TAltAllele(required), TCall(required))
 
   val genOptionalScalar = genScalar(false)
 
@@ -34,7 +34,7 @@ object Type {
     val grDependents = GenomeReference.references.values.toArray.flatMap(gr =>
       Array(TVariant(gr, required), TLocus(gr, required), TInterval(gr, required)))
     val others = Array(
-      TAltAllele(required), TGenotype(required), TCall(required))
+      TAltAllele(required), TCall(required))
     Gen.oneOfSeq(grDependents ++ others)
   }
 
@@ -81,8 +81,12 @@ object Type {
       Gen.frequency(
         (4, genScalar(required)),
         (1, genComplexType(required)),
-        (1, genArb.map { TArray(_) }),
-        (1, genArb.map { TSet(_) }),
+        (1, genArb.map {
+          TArray(_)
+        }),
+        (1, genArb.map {
+          TSet(_)
+        }),
         (1, Gen.zip(genRequired, genArb).map { case (k, v) => TDict(k, v) }),
         (1, genTStruct.resize(size)))
     }
@@ -128,7 +132,7 @@ sealed abstract class Type extends BaseType with Serializable {
 
   def isBound: Boolean = children.forall(_.isBound)
 
-  def subst(): Type = this
+  def subst(): Type = this.setRequired(false)
 
   def getAsOption[T](fields: String*)(implicit ct: ClassTag[T]): Option[T] = {
     getOption(fields: _*)
@@ -299,7 +303,6 @@ sealed abstract class Type extends BaseType with Serializable {
       case TFloat32(req) => TFloat32(!req)
       case TFloat64(req) => TFloat64(!req)
       case TString(req) => TString(!req)
-      case TGenotype(req) => TGenotype(!req)
       case TCall(req) => TCall(!req)
       case TAltAllele(req) => TAltAllele(!req)
       case t: TArray => t.copy(required = !t.required)
@@ -321,14 +324,15 @@ sealed abstract class Type extends BaseType with Serializable {
       case TFloat32(_) => t == TFloat32Optional || t == TFloat32Required
       case TFloat64(_) => t == TFloat64Optional || t == TFloat64Required
       case TString(_) => t == TStringOptional || t == TStringRequired
-      case TGenotype(_) => t == TGenotypeOptional || t == TGenotypeRequired
       case TCall(_) => t == TCallOptional || t == TCallRequired
       case TAltAllele(_) => t == TAltAlleleOptional || t == TAltAlleleRequired
       case t2: TLocus => t == t2 || t == !t2
       case t2: TVariant => t == t2 || t == !t2
       case t2: TInterval => t == t2 || t == !t2
-      case t2: TStruct => t.isInstanceOf[TStruct] &&
-        t.asInstanceOf[TStruct].fields.zip(t2.fields).forall { case (f1: Field, f2: Field) => f1.typ.isOfType(f2.typ) && f1.name == f2.name }
+      case t2: TStruct =>
+        t.isInstanceOf[TStruct] &&
+          t.asInstanceOf[TStruct].size == t2.size &&
+          t.asInstanceOf[TStruct].fields.zip(t2.fields).forall { case (f1: Field, f2: Field) => f1.typ.isOfType(f2.typ) && f1.name == f2.name }
       case t2: TArray => t.isInstanceOf[TArray] && t.asInstanceOf[TArray].elementType.isOfType(t2.elementType)
       case t2: TSet => t.isInstanceOf[TSet] && t.asInstanceOf[TSet].elementType.isOfType(t2.elementType)
       case t2: TDict => t.isInstanceOf[TDict] && t.asInstanceOf[TDict].keyType.isOfType(t2.keyType) && t.asInstanceOf[TDict].valueType.isOfType(t2.valueType)
@@ -357,10 +361,15 @@ sealed abstract class Type extends BaseType with Serializable {
 
 case object TVoid extends Type {
   override val required = true
+
   override def _toString = "Void"
+
   override def ordering(missingGreatest: Boolean): Ordering[is.hail.annotations.Annotation] = throw new UnsupportedOperationException("No ordering on Void")
+
   override def scalaClassTag: scala.reflect.ClassTag[_ <: AnyRef] = throw new UnsupportedOperationException("No ClassTag for Void")
+
   override def _typeCheck(a: Any): Boolean = throw new UnsupportedOperationException("No elements of Void")
+
   override def isRealizable = false
 }
 
@@ -1080,7 +1089,7 @@ final case class TArray(elementType: Type, override val required: Boolean = fals
     }
   }
 
-  override def subst() = TArray(elementType.subst())
+  override def subst() = TArray(elementType.subst().setRequired(false))
 
   override def _pretty(sb: StringBuilder, indent: Int, printAttrs: Boolean, compact: Boolean = false) {
     sb.append("Array[")
@@ -1271,69 +1280,6 @@ final case class TDict(keyType: Type, valueType: Type, override val required: Bo
   }
 }
 
-sealed class TGenotype(override val required: Boolean) extends ComplexType {
-  def _toString = "Genotype"
-
-  val representation: TStruct = TGenotype.representation(required)
-
-  def _typeCheck(a: Any): Boolean = a.isInstanceOf[Genotype]
-
-  override def genNonmissingValue: Gen[Annotation] = Genotype.genNonmissingValue
-
-  override def desc: String = "A ``Genotype`` is a Hail data type representing a genotype in the Variant Dataset. It is referred to as ``g`` in the expression language."
-
-  override def scalaClassTag: ClassTag[Genotype] = classTag[Genotype]
-
-  override def ordering(missingGreatest: Boolean): Ordering[Annotation] = {
-    val rowOrd = fundamentalType.ordering(missingGreatest)
-    val ord = new Ordering[Annotation] {
-      def compare(x: Annotation, y: Annotation): Int = rowOrd.compare(
-        Genotype.toRow(x.asInstanceOf[Genotype]),
-        Genotype.toRow(y.asInstanceOf[Genotype]))
-    }
-    annotationOrdering(extendOrderingToNull(missingGreatest)(ord))
-  }
-}
-
-object TGenotype {
-  def apply(required: Boolean = false): TGenotype = if (required) TGenotypeRequired else TGenotypeOptional
-
-  def unapply(t: TGenotype): Option[Boolean] = Option(t.required)
-
-  def representation(required: Boolean = false): TStruct = {
-    val t = TStruct(
-      "gt" -> TInt32(),
-      "ad" -> TArray(!TInt32()),
-      "dp" -> TInt32(),
-      "gq" -> TInt32(),
-      "pl" -> TArray(!TInt32()))
-    
-    t.setRequired(required).asInstanceOf[TStruct]
-  }
-  
-  def representationWithVCFAttributes(required: Boolean = false): TStruct = {
-    val t = TStruct(IndexedSeq(
-      Field("GT", TCall(), 0,
-        Map("Number" -> "1", "Type" -> "String", "Description" -> "Genotype")),
-      Field("AD", TArray(TInt32()), 1,
-        Map("Number" -> "R", "Type" -> "Integer",
-          "Description" -> "Allelic depths for the ref and alt alleles in the order listed")),
-      Field("DP", TInt32(), 2,
-        Map("Number" -> "1", "Type" -> "Integer", "Description" -> "Read Depth")),
-      Field("GQ", TInt32(), 3,
-        Map("Number" -> "1", "Type" -> "Integer", "Description" -> "Genotype Quality")),
-      Field("PL", TArray(TInt32()), 4,
-        Map("Number" -> "G", "Type" -> "Integer",
-          "Description" -> "Normalized, Phred-scaled likelihoods for genotypes as defined in the VCF specification"))))
-    
-    t.setRequired(required).asInstanceOf[TStruct]
-  }
-}
-
-case object TGenotypeOptional extends TGenotype(false)
-
-case object TGenotypeRequired extends TGenotype(true)
-
 sealed class TCall(override val required: Boolean) extends ComplexType {
   def _toString = "Call"
 
@@ -1384,6 +1330,7 @@ sealed class TAltAllele(override val required: Boolean) extends ComplexType {
 
 object TAltAllele {
   def apply(required: Boolean = false): TAltAllele = if (required) TAltAlleleRequired else TAltAlleleOptional
+
   def unapply(t: TAltAllele): Option[Boolean] = Option(t.required)
 
   def representation(required: Boolean = false): TStruct = {
@@ -1401,11 +1348,11 @@ case object TAltAlleleRequired extends TAltAllele(true)
 
 object TVariant {
   def representation(required: Boolean = false): TStruct = {
-  	val rep = TStruct(
-    "contig" -> !TString(),
-    "start" -> !TInt32(),
-    "ref" -> !TString(),
-    "altAlleles" -> !TArray(!TAltAllele().representation))
+    val rep = TStruct(
+      "contig" -> !TString(),
+      "start" -> !TInt32(),
+      "ref" -> !TString(),
+      "altAlleles" -> !TArray(!TAltAllele().representation))
     if (required) (!rep).asInstanceOf[TStruct] else rep
   }
 }
@@ -2300,6 +2247,7 @@ final case class TStruct(fields: IndexedSeq[Field], override val required: Boole
     }
     (a, i)
   }
+
   def nMissingBytes: Int = (nMissing + 7) >>> 3
 
   var byteOffsets: Array[Long] = _
@@ -2376,7 +2324,7 @@ final case class TStruct(fields: IndexedSeq[Field], override val required: Boole
   def isFieldRequired(fieldIdx: Int): Boolean = fieldType(fieldIdx).required
 
   def isFieldDefined(region: MemoryBuffer, offset: Long, fieldIdx: Int): Boolean =
-     isFieldRequired(fieldIdx) || !region.loadBit(offset, missingIdx(fieldIdx))
+    isFieldRequired(fieldIdx) || !region.loadBit(offset, missingIdx(fieldIdx))
 
   def isFieldDefined(region: Code[MemoryBuffer], offset: Code[Long], fieldIdx: Int): Code[Boolean] =
     if (isFieldRequired(fieldIdx))

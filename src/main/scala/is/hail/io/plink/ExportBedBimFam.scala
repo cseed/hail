@@ -4,17 +4,16 @@ import is.hail.variant._
 
 object ExportBedBimFam {
 
-  val gtMap = Array(1, 3, 2, 0)
+  val gtMap = Array(3, 2, 0)
 
-  def makeBedRow(gs: Iterable[Genotype], n: Int): Array[Byte] = {
-    val gts = gs.hardCallIterator
-
+  def makeBedRow(view: HardCallView, n: Int): Array[Byte] = {
     val nBytes = (n + 3) / 4
     val a = Array.ofDim[Byte](nBytes)
     var b = 0
     var k = 0
     while (k < n) {
-      b |= gtMap(gts.next() + 1) << ((k & 3) * 2)
+      view.setGenotype(k)
+      b |= (if (view.hasGT) gtMap(view.getGT) else 1) << ((k & 3) * 2)
       if ((k & 3) == 3) {
         a(k >> 2) = b.toByte
         b = 0
