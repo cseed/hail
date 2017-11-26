@@ -212,7 +212,7 @@ class VariantDataset(HistoryMixin):
         - ``global``: global annotations
         - ``v`` (*Variant(GR)*): split :ref:`variant(gr)`
         - ``va``: split variant annotations
-        - ``gs`` (*Aggregable*): aggregable of split :ref:`genotype` for variant ``v``
+        - ``gs`` (*Aggregable*): aggregable of split genotype for variant ``v``
 
         where ``gs`` has the namespace:
 
@@ -221,7 +221,7 @@ class VariantDataset(HistoryMixin):
         - ``va``: split variant annotations
         - ``s``: sample
         - ``sa``: sample annotations
-        - ``g``: split :ref:`genotype`
+        - ``g``: split genotype
 
         """
 
@@ -425,7 +425,7 @@ class VariantDataset(HistoryMixin):
         - ``s`` (*Sample*): sample
         - ``sa``: sample annotations
         - ``global``: global annotations
-        - ``gs`` (*Aggregable[Genotype]*): aggregable of :ref:`genotype` for sample ``s``
+        - ``gs`` (*Aggregable[Genotype]*): aggregable of genotype for sample ``s``
 
         :param expr: Annotation expression.
         :type expr: str or list of str
@@ -649,7 +649,7 @@ class VariantDataset(HistoryMixin):
           - ``v`` (*Variant(GR)*): :ref:`variant(gr)`
           - ``va``: variant annotations
           - ``global``: global annotations
-          - ``gs`` (*Aggregable[Genotype]*): aggregable of :ref:`genotype` for variant ``v``
+          - ``gs`` (*Aggregable[Genotype]*): aggregable of genotype for variant ``v``
 
         For more information, see the documentation on writing `expressions <overview.html#expressions>`__
         and using the `Hail Expression Language <exprlang.html>`__.
@@ -2130,7 +2130,7 @@ class VariantDataset(HistoryMixin):
         - ``s`` (*Sample*): sample
         - ``sa``: sample annotations
         - ``global``: global annotations
-        - ``gs`` (*Aggregable[Genotype]*): aggregable of :ref:`genotype` for sample ``s``
+        - ``gs`` (*Aggregable[Genotype]*): aggregable of genotype for sample ``s``
 
         For more information, see the documentation on `data representation, annotations <overview.html#>`__, and
         the `expression language <exprlang.html>`__.
@@ -2260,7 +2260,7 @@ class VariantDataset(HistoryMixin):
         - ``v`` (*Variant(GR)*): :ref:`variant(gr)`
         - ``va``: variant annotations
         - ``global``: global annotations
-        - ``gs`` (*Aggregable[Genotype]*): aggregable of :ref:`genotype` for variant ``v``
+        - ``gs`` (*Aggregable[Genotype]*): aggregable of genotype for variant ``v``
 
         For more information, see the `Overview <overview.html#>`__ and the `Expression Language <exprlang.html>`__.
 
@@ -4203,13 +4203,13 @@ class VariantDataset(HistoryMixin):
         The namespace of the expressions includes:
 
         - ``global``: global annotations
-        - ``gs`` (*Aggregable[Genotype]*): aggregable of :ref:`genotype`
+        - ``gs`` (*Aggregable[Genotype]*): aggregable of genotype
 
         Map and filter expressions on this aggregable have the following
         namespace:
 
         - ``global``: global annotations
-        - ``g``: :ref:`genotype`
+        - ``g``: genotype
         - ``v``: :ref:`variant(GR)`
         - ``va``: variant annotations
         - ``s``: sample
