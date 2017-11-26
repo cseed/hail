@@ -137,7 +137,7 @@ object Genotype {
       Some(udp)
   }
 
-  def apply(gtx: Int): Annotation = Annotation(if (gtx == -1) null else gtx, null, -1, -1, null)
+  def apply(gtx: Int): Annotation = Annotation(if (gtx == -1) null else gtx, null, null, null, null)
 
   def apply(gt: java.lang.Integer, ad: Array[Int], dp: java.lang.Integer, gq: java.lang.Integer, pl: Array[Int]): Annotation =
     Annotation(gt, ad: IndexedSeq[Int], dp, gq, pl: IndexedSeq[Int])
@@ -146,8 +146,8 @@ object Genotype {
     ad: Option[Array[Int]] = None,
     dp: Option[Int] = None,
     gq: Option[Int] = None,
-    px: Option[Array[Int]] = None): Annotation =
-    Annotation(gt.orNull, ad.map(_.toArray).orNull, dp.orNull, gq.orNull, px.map(_.toArray).orNull)
+    pl: Option[Array[Int]] = None): Annotation =
+    Annotation(gt.orNull, ad.map(adx => adx: IndexedSeq[Int]).orNull, dp.orNull, gq.orNull, pl.map(plx => plx: IndexedSeq[Int]).orNull)
 
   def gqFromPL(pl: Array[Int]): Int = {
     var m = 99
@@ -267,10 +267,10 @@ object Genotype {
   def phredToLinear(i: Int): Double =
     if (i < maxPhredInTable) phredToLinearConversionTable(i) else math.pow(10, i / -10.0)
 
-  def plToDosage(px0: Int, px1: Int, px2: Int): Double = {
-    val p0 = phredToLinear(px0)
-    val p1 = phredToLinear(px1)
-    val p2 = phredToLinear(px2)
+  def plToDosage(pl0: Int, pl1: Int, pl2: Int): Double = {
+    val p0 = phredToLinear(pl0)
+    val p1 = phredToLinear(pl1)
+    val p2 = phredToLinear(pl2)
 
     (p1 + 2 * p2) / (p0 + p1 + p2)
   }
