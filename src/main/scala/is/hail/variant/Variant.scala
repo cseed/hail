@@ -3,7 +3,6 @@ package is.hail.variant
 import is.hail.annotations.{MemoryBuffer, RegionValue}
 import is.hail.check.{Arbitrary, Gen}
 import is.hail.expr._
-import is.hail.sparkextras.OrderedKey
 import is.hail.utils._
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
@@ -113,19 +112,6 @@ object Variant {
       r.getSeq[Row](3)
         .map(s => AltAllele.fromRow(s))
         .toArray)
-
-  implicit val orderedKey: OrderedKey[Locus, Variant] =
-    new OrderedKey[Locus, Variant] {
-      def project(key: Variant): Locus = key.locus
-
-      val kOrd: Ordering[Variant] = Variant.order
-
-      val pkOrd: Ordering[Locus] = Locus.order
-
-      val kct: ClassTag[Variant] = implicitly[ClassTag[Variant]]
-
-      val pkct: ClassTag[Locus] = implicitly[ClassTag[Locus]]
-    }
 
   def variantUnitRdd(sc: SparkContext, input: String): RDD[(Variant, Unit)] =
     sc.textFileLines(input)

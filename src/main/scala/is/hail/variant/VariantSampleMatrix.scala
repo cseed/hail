@@ -50,53 +50,6 @@ object VariantSampleMatrix {
       MatrixRead(hc, dirname, nPartitions, fileMetadata, dropSamples, dropVariants))
   }
 
-  def apply(hc: HailContext,
-    metadata: VSMMetadata,
-    localValue: VSMLocalValue,
-    rdd: OrderedRDD[Annotation, Annotation, (Annotation, Iterable[Annotation])]): VariantSampleMatrix =
-    new VariantSampleMatrix(hc, metadata,
-      MatrixLiteral(
-        MatrixType(metadata),
-        MatrixValue(MatrixType(metadata), localValue, rdd)))
-
-  def apply(hc: HailContext, fileMetadata: VSMFileMetadata,
-    rdd: OrderedRDD[Annotation, Annotation, (Annotation, Iterable[Annotation])]): VariantSampleMatrix =
-    VariantSampleMatrix(hc, fileMetadata.metadata, fileMetadata.localValue, rdd)
-
-  def fromLegacy[RK, T](hc: HailContext,
-    metadata: VSMMetadata,
-    localValue: VSMLocalValue,
-    rdd: RDD[(RK, (Annotation, Iterable[T]))]): VariantSampleMatrix = {
-    implicit val kOk = metadata.vSignature.orderedKey
-    VariantSampleMatrix(hc, metadata, localValue,
-      rdd.mapPartitions({ it =>
-        it.map { case (v, (va, gs)) =>
-          (v: Annotation, (va, gs: Iterable[Annotation]))
-        }
-      }, preservesPartitioning = true).toOrderedRDD)
-  }
-
-  def fromLegacy[RK, T](hc: HailContext,
-    metadata: VSMMetadata,
-    localValue: VSMLocalValue,
-    rdd: RDD[(RK, (Annotation, Iterable[T]))],
-    fastKeys: RDD[RK]): VariantSampleMatrix = {
-    implicit val kOk = metadata.vSignature.orderedKey
-    VariantSampleMatrix(hc, metadata, localValue,
-      OrderedRDD(
-        rdd.mapPartitions({ it =>
-          it.map { case (v, (va, gs)) =>
-            (v: Annotation, (va, gs: Iterable[Annotation]))
-          }
-        }, preservesPartitioning = true),
-        Some(fastKeys.map { k => k: Annotation }), None))
-  }
-
-  def fromLegacy[RK, T](hc: HailContext,
-    fileMetadata: VSMFileMetadata,
-    rdd: RDD[(RK, (Annotation, Iterable[T]))]): VariantSampleMatrix =
-    fromLegacy(hc, fileMetadata.metadata, fileMetadata.localValue, rdd)
-
   def readFileMetadata(hConf: hadoop.conf.Configuration, dirname: String,
     requireParquetSuccess: Boolean = true): (VSMFileMetadata, Int) = {
     if (!dirname.endsWith(".vds") && !dirname.endsWith(".vds/"))
@@ -349,10 +302,6 @@ object VSMSubgen {
 class VariantSampleMatrix(val hc: HailContext, val metadata: VSMMetadata,
   val ast: MatrixIR) extends JoinAnnotator {
 
-  implicit val kOk: OrderedKey[Annotation, Annotation] = ast.typ.vType.orderedKey
-
-  implicit val kOrd: Ordering[Annotation] = kOk.kOrd
-
   def this(hc: HailContext,
     metadata: VSMMetadata,
     localValue: VSMLocalValue,
@@ -386,16 +335,6 @@ class VariantSampleMatrix(val hc: HailContext, val metadata: VSMMetadata,
   }
 
   lazy val MatrixValue(matrixType, VSMLocalValue(globalAnnotation, sampleIds, sampleAnnotations), rdd2) = value
-
-  lazy val rdd: OrderedRDD[Annotation, Annotation, (Annotation, Iterable[Annotation])] = value.rdd
-
-  def typedRDD[RPK, RK](implicit rkct: ClassTag[RK]): OrderedRDD[RPK, RK, (Annotation, Iterable[Annotation])] = {
-    implicit val kOk = vSignature.typedOrderedKey[RPK, RK]
-    rdd.map { case (v, (va, gs)) =>
-      (v.asInstanceOf[RK], (va, gs))
-    }
-      .toOrderedRDD
-  }
 
   def stringSampleIds: IndexedSeq[String] = {
     assert(sSignature.isInstanceOf[TString])
@@ -1398,23 +1337,6 @@ class VariantSampleMatrix(val hc: HailContext, val metadata: VSMMetadata,
     })
   }
 
-  def mapPartitionsWithAll[U](f: Iterator[(Annotation, Annotation, Annotation, Annotation, Annotation)] => Iterator[U])
-    (implicit uct: ClassTag[U]): RDD[U] = {
-    val localSampleIdsBc = sampleIdsBc
-    val localSampleAnnotationsBc = sampleAnnotationsBc
-
-    rdd.mapPartitions { it =>
-      f(it.flatMap { case (v, (va, gs)) =>
-        localSampleIdsBc.value.lazyMapWith2[Annotation, Annotation, (Annotation, Annotation, Annotation, Annotation, Annotation)](
-          localSampleAnnotationsBc.value, gs, { case (s, sa, g) => (v, va, s, sa, g) })
-      })
-    }
-  }
-
-  def mapValues[U >: Null](newGSignature: Type, f: (Annotation) => U)(implicit uct: ClassTag[U]): VariantSampleMatrix = {
-    mapValuesWithAll(newGSignature, (v, va, s, sa, g) => f(g))
-  }
-
   def mapValuesWithAll[U >: Null](newGSignature: Type, f: (Annotation, Annotation, Annotation, Annotation, Annotation) => U)
     (implicit uct: ClassTag[U]): VariantSampleMatrix = {
     val localSampleIdsBc = sampleIdsBc
@@ -1823,38 +1745,7 @@ class VariantSampleMatrix(val hc: HailContext, val metadata: VSMMetadata,
     require(fraction > 0 && fraction < 1, s"the 'fraction' parameter must fall between 0 and 1, found $fraction")
     copy2(rdd2 = rdd2.sample(withReplacement = false, fraction, seed))
   }
-
-  def copy(rdd: OrderedRDD[Annotation, Annotation, (Annotation, Iterable[Annotation])] = rdd,
-    sampleIds: IndexedSeq[Annotation] = sampleIds,
-    sampleAnnotations: IndexedSeq[Annotation] = sampleAnnotations,
-    globalAnnotation: Annotation = globalAnnotation,
-    sSignature: Type = sSignature,
-    saSignature: Type = saSignature,
-    vSignature: Type = vSignature,
-    vaSignature: Type = vaSignature,
-    globalSignature: Type = globalSignature,
-    genotypeSignature: Type = genotypeSignature,
-    wasSplit: Boolean = wasSplit): VariantSampleMatrix =
-    VariantSampleMatrix(hc,
-      VSMMetadata(sSignature, saSignature, vSignature, vaSignature, globalSignature, genotypeSignature, wasSplit),
-      VSMLocalValue(globalAnnotation, sampleIds, sampleAnnotations), rdd)
-
-  def copyLegacy[RK, T](rdd: RDD[(RK, (Annotation, Iterable[T]))],
-    sampleIds: IndexedSeq[Annotation] = sampleIds,
-    sampleAnnotations: IndexedSeq[Annotation] = sampleAnnotations,
-    globalAnnotation: Annotation = globalAnnotation,
-    sSignature: Type = sSignature,
-    saSignature: Type = saSignature,
-    vSignature: Type = vSignature,
-    vaSignature: Type = vaSignature,
-    globalSignature: Type = globalSignature,
-    genotypeSignature: Type = genotypeSignature,
-    wasSplit: Boolean = wasSplit): VariantSampleMatrix =
-    VariantSampleMatrix.fromLegacy(hc,
-      VSMMetadata(sSignature, saSignature, vSignature, vaSignature, globalSignature, genotypeSignature, wasSplit),
-      VSMLocalValue(globalAnnotation, sampleIds, sampleAnnotations),
-      rdd)
-
+  f
   def copy2(rdd2: OrderedRDD2 = rdd2,
     sampleIds: IndexedSeq[Annotation] = sampleIds,
     sampleAnnotations: IndexedSeq[Annotation] = sampleAnnotations,

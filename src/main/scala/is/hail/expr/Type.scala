@@ -5,7 +5,6 @@ import is.hail.asm4s.Code
 import is.hail.asm4s._
 import is.hail.check.Arbitrary._
 import is.hail.check.{Gen, _}
-import is.hail.sparkextras.OrderedKey
 import is.hail.utils
 import is.hail.utils.{Interval, StringEscapeUtils, _}
 import is.hail.variant.{AltAllele, Call, Contig, GRBase, GenomeReference, Genotype, Locus, Variant}
@@ -245,30 +244,6 @@ sealed abstract class Type extends BaseType with Serializable {
   def ordering(missingGreatest: Boolean): Ordering[Annotation]
 
   val partitionKey: Type = this
-
-  def typedOrderedKey[PK, K] = new OrderedKey[PK, K] {
-    def project(key: K): PK = key.asInstanceOf[PK]
-
-    val kOrd: Ordering[K] = ordering(missingGreatest = true).asInstanceOf[Ordering[K]]
-
-    val pkOrd: Ordering[PK] = ordering(missingGreatest = true).asInstanceOf[Ordering[PK]]
-
-    val kct: ClassTag[K] = scalaClassTag.asInstanceOf[ClassTag[K]]
-
-    val pkct: ClassTag[PK] = scalaClassTag.asInstanceOf[ClassTag[PK]]
-  }
-
-  def orderedKey: OrderedKey[Annotation, Annotation] = new OrderedKey[Annotation, Annotation] {
-    def project(key: Annotation): Annotation = key
-
-    val kOrd: Ordering[Annotation] = ordering(missingGreatest = true)
-
-    val pkOrd: Ordering[Annotation] = ordering(missingGreatest = true)
-
-    val kct: ClassTag[Annotation] = classTag[Annotation]
-
-    val pkct: ClassTag[Annotation] = classTag[Annotation]
-  }
 
   def jsonReader: JSONReader[Annotation] = new JSONReader[Annotation] {
     def fromJSON(a: JValue): Annotation = JSONAnnotationImpex.importAnnotation(a, self)
@@ -1383,30 +1358,6 @@ case class TVariant(gr: GRBase, override val required: Boolean = false) extends 
       extendOrderingToNull(missingGreatest)(implicitly[Ordering[Variant]]))
 
   override val partitionKey: Type = TLocus(gr)
-
-  override def typedOrderedKey[PK, K]: OrderedKey[PK, K] = new OrderedKey[PK, K] {
-    def project(key: K): PK = key.asInstanceOf[Variant].locus.asInstanceOf[PK]
-
-    val kOrd: Ordering[K] = ordering(missingGreatest = true).asInstanceOf[Ordering[K]]
-
-    val pkOrd: Ordering[PK] = TLocus(gr).ordering(missingGreatest = true).asInstanceOf[Ordering[PK]]
-
-    val kct: ClassTag[K] = classTag[Variant].asInstanceOf[ClassTag[K]]
-
-    val pkct: ClassTag[PK] = classTag[Locus].asInstanceOf[ClassTag[PK]]
-  }
-
-  override def orderedKey: OrderedKey[Annotation, Annotation] = new OrderedKey[Annotation, Annotation] {
-    def project(key: Annotation): Annotation = key.asInstanceOf[Variant].locus
-
-    val kOrd: Ordering[Annotation] = ordering(missingGreatest = true)
-
-    val pkOrd: Ordering[Annotation] = TLocus(gr).ordering(missingGreatest = true)
-
-    val kct: ClassTag[Annotation] = classTag[Annotation]
-
-    val pkct: ClassTag[Annotation] = classTag[Annotation]
-  }
 
   // FIXME: Remove when representation of contig/position is a naturally-ordered Long
   override def unsafeOrdering(missingGreatest: Boolean): UnsafeOrdering = {

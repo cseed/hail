@@ -2,7 +2,6 @@ package is.hail.variant
 
 import is.hail.check.Gen
 import is.hail.expr.{TInt32, TString, TStruct, Type}
-import is.hail.sparkextras.OrderedKey
 import is.hail.utils._
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.types.{IntegerType, StringType, StructField, StructType}
@@ -10,21 +9,6 @@ import org.json4s._
 
 import scala.reflect.ClassTag
 import scala.util.parsing.combinator.JavaTokenParsers
-
-object LocusImplicits {
-  /* We cannot add this to the Locus companion object because it breaks serialization. */
-  implicit val orderedKey = new OrderedKey[Locus, Locus] {
-    def project(key: Locus): Locus = key
-
-    val kOrd: Ordering[Locus] = Locus.order
-
-    val pkOrd: Ordering[Locus] = Locus.order
-
-    val kct: ClassTag[Locus] = implicitly[ClassTag[Locus]]
-
-    val pkct: ClassTag[Locus] = implicitly[ClassTag[Locus]]
-  }
-}
 
 object Locus {
   val simpleContigs: Seq[String] = (1 to 22).map(_.toString) ++ Seq("X", "Y", "MT")

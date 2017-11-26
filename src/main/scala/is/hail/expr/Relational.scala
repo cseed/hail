@@ -166,91 +166,10 @@ abstract class BaseIR {
   }
 }
 
-object MatrixValue {
-  def apply(
-    typ: MatrixType,
-    localValue: VSMLocalValue,
-    rdd: OrderedRDD[Annotation, Annotation, (Any, Iterable[Annotation])]): MatrixValue = {
-    implicit val kOk: OrderedKey[Annotation, Annotation] = typ.vType.orderedKey
-    val sc = rdd.sparkContext
-    val localRowType = typ.rowType
-    val localGType = typ.genotypeType
-    val localNSamples = localValue.nSamples
-    val rangeBoundsType = TArray(typ.pkType)
-    new MatrixValue(typ, localValue,
-      OrderedRDD2(typ.orderedRDD2Type,
-        new OrderedPartitioner2(rdd.orderedPartitioner.numPartitions,
-          typ.orderedRDD2Type.partitionKey,
-          typ.orderedRDD2Type.kType,
-          UnsafeIndexedSeq(rangeBoundsType,
-            rdd.orderedPartitioner.rangeBounds.map(b => Row(b)))),
-        rdd.mapPartitions { it =>
-          it.map { case (v, (va, gs)) =>
-            val region = MemoryBuffer()
-            val rvb = new RegionValueBuilder(region)
-            val rv = RegionValue(region)
-
-            region.clear()
-            rvb.start(localRowType)
-            rvb.startStruct()
-            rvb.addAnnotation(localRowType.fieldType(0), kOk.project(v))
-            rvb.addAnnotation(localRowType.fieldType(1), v)
-            rvb.addAnnotation(localRowType.fieldType(2), va)
-            rvb.startArray(localNSamples)
-            var i = 0
-            val git = gs.iterator
-            while (git.hasNext) {
-              rvb.addAnnotation(localGType, git.next())
-              i += 1
-            }
-            rvb.endArray()
-            rvb.endStruct()
-
-            rv.setOffset(rvb.end())
-            rv
-          }
-        }))
-  }
-}
-
 case class MatrixValue(
   typ: MatrixType,
   localValue: VSMLocalValue,
   rdd2: OrderedRDD2) {
-
-  def rdd: OrderedRDD[Annotation, Annotation, (Annotation, Iterable[Annotation])] = {
-    warn("converting OrderedRDD2 => OrderedRDD")
-
-    implicit val kOk: OrderedKey[Annotation, Annotation] = typ.vType.orderedKey
-
-    import kOk._
-
-    val localRowType = typ.rowType
-    val localNSamples = localValue.nSamples
-    OrderedRDD(
-      rdd2.map { rv =>
-        val ur = new UnsafeRow(localRowType, rv.region.copy(), rv.offset)
-
-        val gs = ur.getAs[IndexedSeq[Annotation]](3)
-        assert(gs.length == localNSamples)
-
-        (ur.get(1),
-          (ur.get(2),
-            ur.getAs[IndexedSeq[Annotation]](3): Iterable[Annotation]))
-      },
-      OrderedPartitioner(
-        rdd2.orderedPartitioner.rangeBounds.map { b =>
-          b.asInstanceOf[Row].get(0)
-        }.toArray(kOk.pkct),
-        rdd2.orderedPartitioner.numPartitions))
-  }
-
-  def copyRDD(typ: MatrixType = typ,
-    localValue: VSMLocalValue = localValue,
-    rdd: OrderedRDD[Annotation, Annotation, (Any, Iterable[Annotation])]): MatrixValue = {
-    MatrixValue(typ, localValue, rdd)
-  }
-
   def sparkContext: SparkContext = rdd2.sparkContext
 
   def nPartitions: Int = rdd2.partitions.length
