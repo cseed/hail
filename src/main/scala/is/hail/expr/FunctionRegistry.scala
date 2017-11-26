@@ -1095,9 +1095,9 @@ object FunctionRegistry {
     Compute HWE p-value per variant:
 
     >>> (vds.annotate_variants_expr('va.hwe = '
-    ...     'let nHomRef = gs.filter(g => g.isHomRef()).count().toInt32() and '
-    ...     'nHet = gs.filter(g => g.isHet()).count().toInt32() and '
-    ...     'nHomVar = gs.filter(g => g.isHomVar()).count().toInt32() in '
+    ...     'let nHomRef = gs.filter(g => g.GT.isHomRef()).count().toInt32() and '
+    ...     'nHet = gs.filter(g => g.GT.isHet()).count().toInt32() and '
+    ...     'nHomVar = gs.filter(g => g.GT.isHomVar()).count().toInt32() in '
     ...     'hwe(nHomRef, nHet, nHomVar)'))
 
     **Notes**
@@ -1176,10 +1176,10 @@ object FunctionRegistry {
     Annotate each variant with Fisher's exact test association results (assumes minor/major allele count variant annotations have been computed):
 
     >>> (vds.annotate_variants_expr(
-    ...   'va.fet = let macCase = gs.filter(g => sa.pheno.isCase).map(g => g.nNonRefAlleles()).sum() and '
-    ...   'macControl = gs.filter(g => !sa.pheno.isCase).map(g => g.nNonRefAlleles()).sum() and '
-    ...   'majCase = gs.filter(g => sa.pheno.isCase).map(g => 2 - g.nNonRefAlleles()).sum() and '
-    ...   'majControl = gs.filter(g => !sa.pheno.isCase).map(g => 2 - g.nNonRefAlleles()).sum() in '
+    ...   'va.fet = let macCase = gs.filter(g => sa.pheno.isCase).map(g => g.GT.nNonRefAlleles()).sum() and '
+    ...   'macControl = gs.filter(g => !sa.pheno.isCase).map(g => g.GT.nNonRefAlleles()).sum() and '
+    ...   'majCase = gs.filter(g => sa.pheno.isCase).map(g => 2 - g.GT.nNonRefAlleles()).sum() and '
+    ...   'majControl = gs.filter(g => !sa.pheno.isCase).map(g => 2 - g.GT.nNonRefAlleles()).sum() in '
     ...   'fet(macCase, macControl, majCase, majControl)'))
 
     **Notes**
@@ -1199,7 +1199,7 @@ object FunctionRegistry {
 
     >>> (vds.split_multi()
     ...   .annotate_variants_expr(
-    ...   'va.ab_binom_test = let all_samples_ad = gs.filter(g => g.isHet).map(g => g.ad).sum() in '
+    ...   'va.ab_binom_test = let all_samples_ad = gs.filter(g => g.GT.isHet).map(g => g.AD).sum() in '
     ...   'binomTest(all_samples_ad[1], all_samples_ad.sum(), 0.5, "two.sided")'))
     """,
     "x" -> "Number of successes", "n" -> "Number of trials", "p" -> "Probability of success under the null hypothesis",
@@ -1937,7 +1937,7 @@ object FunctionRegistry {
 
     Count the number of heterozygote genotype calls in an aggregable of genotypes (``gs``):
 
-    >>> vds_result = vds.annotate_variants_expr('va.nHets = gs.filter(g => g.isHet()).count()')
+    >>> vds_result = vds.annotate_variants_expr('va.nHets = gs.filter(g => g.GT.isHet()).count()')
     """
   )(aggregableHr(TTHr), int64Hr)
 
@@ -1952,7 +1952,7 @@ object FunctionRegistry {
 
     Collect the list of sample IDs with heterozygote genotype calls per variant:
 
-    >>> vds_result = vds.annotate_variants_expr('va.hetSamples = gs.filter(g => g.isHet()).map(g => s).collect()')
+    >>> vds_result = vds.annotate_variants_expr('va.hetSamples = gs.filter(g => g.GT.isHet()).map(g => s).collect()')
 
     ``va.hetSamples`` will have the type ``Array[String]``.
     """
@@ -1984,7 +1984,7 @@ object FunctionRegistry {
 
     Count the total number of occurrences of each allele across samples, per variant:
 
-    >>> vds_result = vds.annotate_variants_expr('va.AC = gs.map(g => g.oneHotAlleles(v)).sum()')
+    >>> vds_result = vds.annotate_variants_expr('va.AC = gs.map(g => g.GT.oneHotAlleles(v)).sum()')
     """
   )(aggregableHr(arrayHr(int32Hr)), arrayHr(int32Hr))
 
@@ -2086,8 +2086,8 @@ object FunctionRegistry {
     Add a new variant annotation that calculates HWE p-value by phenotype:
 
     >>> vds_result = vds.annotate_variants_expr([
-    ...   'va.hweCase = gs.filter(g => sa.pheno.isCase).hardyWeinberg()',
-    ...   'va.hweControl = gs.filter(g => !sa.pheno.isCase).hardyWeinberg()'])
+    ...   'va.hweCase = gs.filter(g => sa.pheno.isCase).map(g => g.GT).hardyWeinberg()',
+    ...   'va.hweControl = gs.filter(g => !sa.pheno.isCase).map(g => g.GT).hardyWeinberg()'])
 
     **Notes**
 
@@ -2137,7 +2137,7 @@ object FunctionRegistry {
 
     Compute the mean genotype quality score per variant:
 
-    >>> vds_result = vds.annotate_variants_expr('va.gqMean = gs.map(g => g.gq).stats().mean')
+    >>> vds_result = vds.annotate_variants_expr('va.gqMean = gs.map(g => g.GQ).stats().mean')
 
     Compute summary statistics on the number of singleton calls per sample:
 
@@ -2147,12 +2147,12 @@ object FunctionRegistry {
     Compute GQ and DP statistics stratified by genotype call:
 
     >>> gq_dp = [
-    ... 'va.homrefGQ = gs.filter(g => g.isHomRef()).map(g => g.gq).stats()',
-    ... 'va.hetGQ = gs.filter(g => g.isHet()).map(g => g.gq).stats()',
-    ... 'va.homvarGQ = gs.filter(g => g.isHomVar()).map(g => g.gq).stats()',
-    ... 'va.homrefDP = gs.filter(g => g.isHomRef()).map(g => g.dp).stats()',
-    ... 'va.hetDP = gs.filter(g => g.isHet()).map(g => g.dp).stats()',
-    ... 'va.homvarDP = gs.filter(g => g.isHomVar()).map(g => g.dp).stats()']
+    ... 'va.homrefGQ = gs.filter(g => g.GT.isHomRef()).map(g => g.GQ).stats()',
+    ... 'va.hetGQ = gs.filter(g => g.GT.isHet()).map(g => g.GQ).stats()',
+    ... 'va.homvarGQ = gs.filter(g => g.GT.isHomVar()).map(g => g.GQ).stats()',
+    ... 'va.homrefDP = gs.filter(g => g.GT.isHomRef()).map(g => g.DP).stats()',
+    ... 'va.hetDP = gs.filter(g => g.GT.isHet()).map(g => g.DP).stats()',
+    ... 'va.homvarDP = gs.filter(g => g.GT.isHomVar()).map(g => g.DP).stats()']
     >>> vds_result = vds.annotate_variants_expr(gq_dp)
 
     **Notes**
@@ -2188,11 +2188,11 @@ object FunctionRegistry {
 
     Compute GQ-distributions per variant:
 
-    >>> vds_result = vds.annotate_variants_expr('va.gqHist = gs.map(g => g.gq).hist(0, 100, 20)')
+    >>> vds_result = vds.annotate_variants_expr('va.gqHist = gs.map(g => g.GQ).hist(0, 100, 20)')
 
     Compute global GQ-distribution:
 
-    >>> gq_hist = vds.query_genotypes('gs.map(g => g.gq).hist(0, 100, 100)')
+    >>> gq_hist = vds.query_genotypes('gs.map(g => g.GQ).hist(0, 100, 100)')
 
     **Notes**
 
@@ -2213,8 +2213,8 @@ object FunctionRegistry {
     Compute phenotype-specific call statistics:
 
     >>> pheno_stats = [
-    ...   'va.case_stats = gs.filter(g => sa.pheno.isCase).callStats(g => v)',
-    ...   'va.control_stats = gs.filter(g => !sa.pheno.isCase).callStats(g => v)']
+    ...   'va.case_stats = gs.filter(g => sa.pheno.isCase).map(g => g.GT).callStats(g => v)',
+    ...   'va.control_stats = gs.filter(g => !sa.pheno.isCase).map(g => g.GT).callStats(g => v)']
     >>> vds_result = vds.annotate_variants_expr(pheno_stats)
 
     ``va.eur_stats.AC`` will be the allele count (AC) computed from individuals marked as "EUR".
@@ -2233,13 +2233,13 @@ object FunctionRegistry {
     Calculate the inbreeding metric per sample:
 
     >>> vds_result = (vds.variant_qc()
-    ...     .annotate_samples_expr('sa.inbreeding = gs.inbreeding(g => va.qc.AF)'))
+    ...     .annotate_samples_expr('sa.inbreeding = gs.map(g => g.GT).inbreeding(g => va.qc.AF)'))
 
     To obtain the same answer as `PLINK <https://www.cog-genomics.org/plink2>`_, use the following series of commands:
 
     >>> vds_result = (vds.variant_qc()
     ...     .filter_variants_expr('va.qc.AC > 1 && va.qc.AF >= 1e-8 && va.qc.nCalled * 2 - va.qc.AC > 1 && va.qc.AF <= 1 - 1e-8 && v.isAutosomal()')
-    ...     .annotate_samples_expr('sa.inbreeding = gs.inbreeding(g => va.qc.AF)'))
+    ...     .annotate_samples_expr('sa.inbreeding = gs.map(g => g.GT).inbreeding(g => va.qc.AF)'))
 
     **Notes**
 
@@ -2263,12 +2263,12 @@ object FunctionRegistry {
 
     Filter variants with a call rate less than 95%:
 
-    >>> vds_result = vds.filter_variants_expr('gs.fraction(g => g.isCalled()) > 0.90')
+    >>> vds_result = vds.filter_variants_expr('gs.fraction(g => g.GT.isCalled()) > 0.90')
 
     Compute the differential missingness at SNPs and indels:
 
-    >>> exprs = ['sa.SNPmissingness = gs.filter(g => v.altAllele().isSNP()).fraction(g => g.isNotCalled())',
-    ...          'sa.indelmissingness = gs.filter(g => v.altAllele().isIndel()).fraction(g => g.isNotCalled())']
+    >>> exprs = ['sa.SNPmissingness = gs.filter(g => v.altAllele().isSNP()).fraction(g => g.GT.isNotCalled())',
+    ...          'sa.indelmissingness = gs.filter(g => v.altAllele().isIndel()).fraction(g => g.GT.isNotCalled())']
     >>> vds_result = vds.annotate_samples_expr(exprs)
     """)(
     aggregableHr(TTHr), unaryHr(TTHr, boxedboolHr), boxedFloat64Hr)
@@ -2296,7 +2296,7 @@ object FunctionRegistry {
 
     Collect the first 5 sample IDs with at least one alternate allele per variant:
 
-    >>> vds_result = vds.annotate_variants_expr("va.nonRefSamples = gs.filter(g => g.nNonRefAlleles() > 0).map(g => s).take(5)")
+    >>> vds_result = vds.annotate_variants_expr("va.nonRefSamples = gs.filter(g => g.GT.nNonRefAlleles() > 0).map(g => s).take(5)")
     """, "n" -> "Number of items to take.")(
     aggregableHr(TTHr), int32Hr, arrayHr(TTHr))
 
@@ -2427,7 +2427,7 @@ object FunctionRegistry {
 
     Compute a list of genes per sample with loss of function variants (result may have duplicate entries):
 
-    >>> vds_result = vds.annotate_samples_expr('sa.lof_genes = gs.filter(g => va.consequence == "LOF" && g.nNonRefAlleles() > 0).flatMap(g => va.genes).collect()')
+    >>> vds_result = vds.annotate_samples_expr('sa.lof_genes = gs.filter(g => va.consequence == "LOF" && g.GT.nNonRefAlleles() > 0).flatMap(g => va.genes).collect()')
     """
   )(aggregableHr(TTHr, aggST), unaryHr(TTHr, arrayHr(TUHr)), aggregableHr(TUHr, aggST))
 
@@ -2447,7 +2447,7 @@ object FunctionRegistry {
 
     Compute a list of genes per sample with loss of function variants (result does not have duplicate entries):
 
-    >>> vds_result = vds.annotate_samples_expr('sa.lof_genes = gs.filter(g => va.consequence == "LOF" && g.nNonRefAlleles() > 0).flatMap(g => va.genes.toSet()).collect()')
+    >>> vds_result = vds.annotate_samples_expr('sa.lof_genes = gs.filter(g => va.consequence == "LOF" && g.GT.nNonRefAlleles() > 0).flatMap(g => va.genes.toSet()).collect()')
     """, "f" -> "Lambda expression."
   )(aggregableHr(TTHr, aggST), unaryHr(TTHr, setHr(TUHr)), aggregableHr(TUHr, aggST))
 
@@ -2479,7 +2479,7 @@ object FunctionRegistry {
 
     Compute Hardy Weinberg Equilibrium for cases only:
 
-    >>> vds_result = vds.annotate_variants_expr("va.hweCase = gs.filter(g => sa.isCase).hardyWeinberg()")
+    >>> vds_result = vds.annotate_variants_expr("va.hweCase = gs.filter(g => sa.isCase).map(g => g.GT).hardyWeinberg()")
     """, "f" -> "Boolean lambda expression."
   )(aggregableHr(TTHr, aggST), unaryHr(TTHr, boolHr), aggregableHr(TTHr, aggST))
 
@@ -2493,7 +2493,7 @@ object FunctionRegistry {
 
     Convert an aggregable of genotypes (``gs``) to an aggregable of genotype quality scores and then compute summary statistics:
 
-    >>> vds_result = vds.annotate_variants_expr("va.gqStats = gs.map(g => g.gq).stats()")
+    >>> vds_result = vds.annotate_variants_expr("va.gqStats = gs.map(g => g.GQ).stats()")
     """, "f" -> "Lambda expression."
   )(aggregableHr(TTHr, aggST), unaryHr(TTHr, TUHr), aggregableHr(TUHr, aggST))
 
