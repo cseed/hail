@@ -391,9 +391,11 @@ class VariantSampleMatrix(val hc: HailContext, val metadata: VSMMetadata,
 
   def typedRDD[RPK, RK, T](implicit rkct: ClassTag[RK], tct: ClassTag[T]): OrderedRDD[RPK, RK, (Annotation, Iterable[T])] = {
     implicit val kOk = vSignature.typedOrderedKey[RPK, RK]
-    rdd.map { case (v, (va, gs)) =>
-      (v.asInstanceOf[RK], (va, gs.asInstanceOf[Iterable[T]]))
-    }
+    rdd.mapPartitions({ it =>
+      it.map { case (v, (va, gs)) =>
+        (v.asInstanceOf[RK], (va, gs.asInstanceOf[Iterable[T]]))
+      }
+    }, preservesPartitioning = true)
       .toOrderedRDD
   }
 
