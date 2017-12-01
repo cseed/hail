@@ -33,14 +33,6 @@ def float_eq(x, y, tol=10 ** -6):
     return abs(x - y) < tol
 
 class ContextTests(unittest.TestCase):
-    # FIXME remove when attributes get nuked
-    def assert_equal_struct(self, s1, s2):
-        # ignore attributes
-        self.assertEqual([f.name for f in s1.fields],
-                         [f.name for f in s2.fields])
-        self.assertEqual([f.typ for f in s1.fields],
-                         [f.typ for f in s2.fields])
-
     def test_context(self):
         test_resources = 'src/test/resources'
 
@@ -84,7 +76,7 @@ class ContextTests(unittest.TestCase):
         vcf_metadata = hc.get_vcf_metadata(test_resources + '/sample.vcf.bgz')
 
         gds = hc.import_vcf(test_resources + '/sample.vcf.bgz')
-        self.assert_equal_struct(gds.genotype_schema, Type.hts_schema())
+        self.assertEqual(gds.genotype_schema, Type.hts_schema())
         gds = hc.import_vcf(test_resources + '/sample.vcf.bgz')
 
         gds.write('/tmp/sample_generic.vds', overwrite=True)
@@ -326,7 +318,7 @@ class ContextTests(unittest.TestCase):
 
         sample2.split_multi().impute_sex().variant_schema
 
-        self.assert_equal_struct(sample2.genotype_schema, Type.hts_schema())
+        self.assertEqual(sample2.genotype_schema, Type.hts_schema())
 
         m2 = {r.f0: r.f1 for r in hc.import_table(test_resources + '/sample2_rename.tsv', no_header=True,
                                                   impute=True)
