@@ -534,7 +534,7 @@ sealed class TInt32(override val required: Boolean) extends TIntegral {
 }
 
 object TInt32 {
-  def apply(required: Boolean = false) = if (required) TInt32Required else TInt32Optional
+  def apply(required: Boolean = false): TInt32 = if (required) TInt32Required else TInt32Optional
 
   def unapply(t: TInt32): Option[Boolean] = Option(t.required)
 }
