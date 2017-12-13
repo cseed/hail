@@ -36,8 +36,7 @@ testpy: hailjar
 .PHONY: test
 test: testnativelib testpy testng
 
-.PHONY:
-tmppy:
+copypy:
 	mkdir -p build/tmp
 	rm -rf build/tmp/python
 	cp -a python build/tmp
@@ -49,26 +48,25 @@ build/tmp/python/hail/docs/distLinks.rst:
 	echo "You can download a pre-built distribution from the below links. Make sure you download the distribution that matches your Spark version!" >> $@
 	echo >> $@
 	for i in 2.0.2 2.1.0; do \
-	  echo "- \`Current distribution for Spark $i <https://storage.googleapis.com/hail-common/distributions/$(HAIL_VERSION)/Hail-$(HAIL_VERSION)-$(GIT_HASH)-Spark-$1.zip>\`_" >> $@; \
-	done
+  echo "- \`Current distribution for Spark $i <https://storage.googleapis.com/hail-common/distributions/$(HAIL_VERSION)/Hail-$(HAIL_VERSION)-$(GIT_HASH)-Spark-$1.zip>\`_" >> $@; \
+done
 
-.PHONY: functionsrst
-python/hail/docs/functions.rst: hailjar
+python/hail/docs/functions.rst: copypy hailjar
 	mkdir -p build/tmp
 	(cd build/tmp && SPARK_HOME=$(SPARK_HOME) \
-          PYTHONPATH=$(TOP)/python:$(SPARK_HOME)/python:$(PY4J_ZIP) \
-	  SPARK_CLASSPATH=$(TOP)/build/libs/hail-all-spark.jar \
-	  python -c 'from hail import *; from hail.utils import *; hc = HailContext(); fd = FunctionDocumentation(); fd.types_rst("python/hail/docs/types.rst"); fd.functions_rst("python/hail/docs/functions.rst")')
+  PYTHONPATH=$(TOP)/python:$(SPARK_HOME)/python:$(PY4J_ZIP) \
+  SPARK_CLASSPATH=$(TOP)/build/libs/hail-all-spark.jar \
+  python -c 'from hail import *; from hail.utils import *; hc = HailContext(); fd = FunctionDocumentation(); fd.types_rst("python/hail/docs/types.rst"); fd.functions_rst("python/hail/docs/functions.rst")')
 
-# transitively depends on tmppy through functionsrst
 .PHONY: pydocs
-pydocs: python/hail/docs/functions.rst build/tmp/python/hail/docs/distLinks.rst hailjar
-	SPARK_HOME=$(SPARK_HOME) \
-          PYTHONPATH=$(TOP)/python:$(SPARK_HOME)/python:$(PY4J_ZIP) \
-	  SPARK_CLASSPATH=$(TOP)/build/libs/hail-all-spark.jar \
-	  HAIL_VERSION=$(HAIL_VERSION) \
-	  HAIL_RELEASE=$(HAIL_RELEASE) \
-	  make -C build/tmp/python/hail/docs clean html
+pydocs: python/hail/docs/functions.rst build/tmp/python/hail/docs/distLinks.rst
+	PYTHONPATH=$(TOP)/python:$(SPARK_HOME)/python:$(PY4J_ZIP) \
+  HAIL_VERSION=$(HAIL_VERSION) \
+  HAIL_RELEASE=$(HAIL_RELEASE) \
+  make -C build/tmp/python/hail/docs clean html
+	mkdir -p build/www/docs
+	rm -rf build/www/docs/stable
+	mv build/tmp/python/hail/docs/_build/html build/www/docs/stable
 
 .PHONY: copywww
 copywww:
