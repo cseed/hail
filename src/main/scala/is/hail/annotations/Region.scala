@@ -16,7 +16,7 @@ object Region {
   }
 }
 
-final class Region(private var mem: Array[Byte], private var end: Long = 0) extends KryoSerializable with Serializable {
+final class Region(var mem: Array[Byte], private var end: Long = 0) extends KryoSerializable with Serializable {
   def size: Long = end
 
   def capacity: Long = mem.length
@@ -151,8 +151,18 @@ final class Region(private var mem: Array[Byte], private var end: Long = 0) exte
   }
 
   def allocate(alignment: Long, n: Long): Long = {
+    val oldEnd = end
+
     align(alignment)
-    allocate(n)
+    val p = allocate(n)
+
+    var i = oldEnd.toInt
+    while(i < end) {
+      assert(mem(i) == 0)
+      i += 1
+    }
+
+    p
   }
 
   def loadBoolean(off: Long): Boolean = {
@@ -253,14 +263,22 @@ final class Region(private var mem: Array[Byte], private var end: Long = 0) exte
 
   def clear(newEnd: Long) {
     assert(newEnd <= end)
+    var i = newEnd.toInt
+    while (i < end) {
+      mem(i) = 0
+      i += 1
+    }
+
     end = newEnd
   }
 
   def clear() {
-    end = 0
+    clear(0)
   }
 
   def setFrom(from: Region) {
+    clear()
+
     if (from.end > capacity) {
       val newLength = math.max((capacity * 3) / 2, from.end)
       mem = new Array[Byte](newLength.toInt)

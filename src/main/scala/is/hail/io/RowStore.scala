@@ -2,7 +2,7 @@ package is.hail.io
 
 import java.io.{InputStream, OutputStream}
 
-import is.hail.annotations.{Memory, Region, RegionValue}
+import is.hail.annotations.{Memory, Region, RegionValue, RegionValueBuilder}
 import is.hail.expr._
 import is.hail.utils._
 import is.hail.variant.LZ4Utils
@@ -212,6 +212,51 @@ abstract class InputBuffer {
   def readBoolean(): Boolean = readByte() != 0
 }
 
+class PackOutputBuffer(obuf: OutputBuffer) {
+  def flush(): Unit = obuf.flush()
+
+  def writeByte(b: Byte): Unit = obuf.writeByte(b)
+
+  def writeInt(i: Int): Unit = obuf.writeInt(i)
+
+  def writeLong(l: Long): Unit = obuf.writeLong(l)
+
+  def writeFloat(f: Float): Unit = obuf.writeFloat(f)
+
+  def writeDouble(d: Double): Unit = obuf.writeDouble(d)
+
+  def writeBytes(region: Region, off: Long, n: Int): Unit = {
+    val buf = new Array[Byte](8)
+
+    var i = off
+    while (i < n) {
+      var mask = 0
+      var j = 0
+      while (j < 8) {
+        val b =
+          if (i + j < n)
+            region.loadByte(i + j)
+          else
+            0.toByte
+        buf(j) = b
+        if (b != 0)
+          mask = mask | (1 << j)
+        j += 1
+      }
+      obuf.writeByte(mask.toByte)
+      j = 0
+      while (j < 8) {
+        val b = buf(j)
+        if (b != 0)
+          obuf.writeByte(b)
+        j += 1
+      }
+
+      i += 8
+    }
+  }
+}
+
 class LZ4InputBuffer(in: InputStream) extends InputBuffer {
   private val buf = new Array[Byte](LZ4Buffer.blockSize)
   private var end: Int = 0
@@ -414,7 +459,9 @@ final class Decoder(in: InputBuffer) {
 }
 
 final class Encoder(out: OutputBuffer) {
-  def flush() { out.flush() }
+  def flush() {
+    out.flush()
+  }
 
   def writeByte(b: Byte): Unit = out.writeByte(b)
 
@@ -503,19 +550,30 @@ final class Encoder(out: OutputBuffer) {
 
 object RichRDDRegionValue {
   def writeRowsPartition(t: TStruct)(i: Int, it: Iterator[RegionValue], os: OutputStream): Long = {
-    val en = new Encoder(new LZ4OutputBuffer(os))
+    val region = Region()
+    val rvb = new RegionValueBuilder(region)
+
+    val obuf = new PackOutputBuffer(new LZ4OutputBuffer(os))
     var rowCount = 0L
-    
+
     it.foreach { rv =>
-      en.writeByte(1)
-      en.writeRegionValue(t, rv.region, rv.offset)
+      region.clear()
+      rvb.start(t)
+      rvb.addRegionValue(t, rv)
+      val off = rvb.end()
+      assert(off == 0)
+
+      obuf.writeByte(1)
+      val n = region.size.toInt
+      obuf.writeInt(n)
+      obuf.writeBytes(region, 0, n)
       rowCount += 1
     }
 
-    en.writeByte(0) // end
-    en.flush()
+    obuf.writeByte(0) // end
+    obuf.flush()
     os.close()
-    
+
     rowCount
   }
 }

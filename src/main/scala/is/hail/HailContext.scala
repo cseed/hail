@@ -176,9 +176,12 @@ object HailContext {
       val region = Region()
       val rv = RegionValue(region)
 
-      val dec = new Decoder(new LZ4InputBuffer(in))
+      val ibuf = new LZ4InputBuffer(in)
 
-      var cont: Byte = dec.readByte()
+      var cont: Byte = ibuf.readByte()
+
+      var nBytes = 0L
+      var nZeros = 0L
 
       def hasNext: Boolean = cont != 0
 
@@ -187,11 +190,24 @@ object HailContext {
           throw new NoSuchElementException("next on empty iterator")
 
         region.clear()
-        rv.setOffset(dec.readRegionValue(t, region))
+        val n = ibuf.readInt()
+        region.allocate(1, n)
+        ibuf.readBytes(region, 0, n)
 
-        cont = dec.readByte()
-        if (cont == 0)
+        nBytes += n
+        var i = 0
+        while (i < n) {
+          if (region.mem(i) == 0)
+            nZeros += 1
+          i += 1
+        }
+
+        cont = ibuf.readByte()
+        if (cont == 0) {
           in.close()
+
+          println("nBytes, nZeros", nBytes, nZeros, nZeros.toDouble / nBytes)
+        }
 
         rv
       }
