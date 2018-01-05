@@ -291,4 +291,20 @@ class AnnotationsSuite extends SparkSuite {
 
     assert(hc.readVDS(f).same(vds))
   }
+
+  @Test def testExtendedOrdering() {
+    val ord = ExtendedOrdering.extendToNull(implicitly[Ordering[Int]]).annotationOrdering
+    val rord = ord.reverse
+
+    assert(ord.lt(5, 7))
+    assert(ord.lt(5, null))
+    assert(ord.gt(null, 7))
+
+    assert(ord.equiv(3, 3))
+    assert(ord.equiv(null, null))
+
+    assert(rord.gt(5, 7))
+    assert(rord.lt(5, null))
+    assert(rord.gt(null, 7))
+  }
 }

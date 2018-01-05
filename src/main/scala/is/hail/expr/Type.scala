@@ -240,16 +240,16 @@ sealed abstract class Type extends BaseType with Serializable {
 
   def canCompare(other: Type): Boolean = this == other
 
-  def ordering(missingGreatest: Boolean): Ordering[Annotation]
+  val ordering: ExtendedOrdering[Annotation]
 
   val partitionKey: Type = this
 
   def typedOrderedKey[PK, K] = new OrderedKey[PK, K] {
     def project(key: K): PK = key.asInstanceOf[PK]
 
-    val kOrd: Ordering[K] = ordering(missingGreatest = true).asInstanceOf[Ordering[K]]
+    val kOrd: Ordering[K] = ordering.toOrdering.asInstanceOf[Ordering[K]]
 
-    val pkOrd: Ordering[PK] = ordering(missingGreatest = true).asInstanceOf[Ordering[PK]]
+    val pkOrd: Ordering[PK] = ordering.toOrdering.asInstanceOf[Ordering[PK]]
 
     val kct: ClassTag[K] = scalaClassTag.asInstanceOf[ClassTag[K]]
 
@@ -259,9 +259,9 @@ sealed abstract class Type extends BaseType with Serializable {
   def orderedKey: OrderedKey[Annotation, Annotation] = new OrderedKey[Annotation, Annotation] {
     def project(key: Annotation): Annotation = key
 
-    val kOrd: Ordering[Annotation] = ordering(missingGreatest = true)
+    val kOrd: Ordering[Annotation] = ordering.toOrdering
 
-    val pkOrd: Ordering[Annotation] = ordering(missingGreatest = true)
+    val pkOrd: Ordering[Annotation] = ordering.toOrdering
 
     val kct: ClassTag[Annotation] = classTag[Annotation]
 
@@ -362,7 +362,7 @@ case object TVoid extends Type {
 
   override def _toString = "Void"
 
-  override def ordering(missingGreatest: Boolean): Ordering[is.hail.annotations.Annotation] = throw new UnsupportedOperationException("No ordering on Void")
+  val ordering: ExtendedOrdering[is.hail.annotations.Annotation] = null
 
   override def scalaClassTag: scala.reflect.ClassTag[_ <: AnyRef] = throw new UnsupportedOperationException("No ClassTag for Void")
 
@@ -415,15 +415,9 @@ sealed class TBinary(override val required: Boolean) extends Type {
     }
   }
 
-  def ordering(missingGreatest: Boolean): Ordering[Annotation] = {
-    val ord = Ordering.Iterable[Byte]
+  val ordering: ExtendedOrdering[Annotation] =
+    ExtendedOrdering.extendToNull(Ordering.Iterable[Byte]).annotationOrdering
 
-    annotationOrdering(extendOrderingToNull(missingGreatest)(
-      new Ordering[Array[Byte]] {
-        def compare(a: Array[Byte], b: Array[Byte]): Int = ord.compare(a, b)
-      }))
-  }
-  
   override def byteSize: Long = 8
 }
 
@@ -468,9 +462,8 @@ sealed class TBoolean(override val required: Boolean) extends Type {
     }
   }
 
-  def ordering(missingGreatest: Boolean): Ordering[Annotation] =
-    annotationOrdering(
-      extendOrderingToNull(missingGreatest)(implicitly[Ordering[Boolean]]))
+  val ordering: ExtendedOrdering[Annotation] =
+    ExtendedOrdering.extendToNull(implicitly[Ordering[Boolean]]).annotationOrdering
 
   override def byteSize: Long = 1
 }
@@ -528,15 +521,14 @@ sealed class TInt32(override val required: Boolean) extends TIntegral {
     }
   }
 
-  def ordering(missingGreatest: Boolean): Ordering[Annotation] =
-    annotationOrdering(
-      extendOrderingToNull(missingGreatest)(implicitly[Ordering[Int]]))
+  val ordering: ExtendedOrdering[Annotation] =
+    ExtendedOrdering.extendToNull(implicitly[Ordering[Int]]).annotationOrdering
 
   override def byteSize: Long = 4
 }
 
 object TInt32 {
-  def apply(required: Boolean = false) = if (required) TInt32Required else TInt32Optional
+  def apply(required: Boolean = false): TInt32 = if (required) TInt32Required else TInt32Optional
 
   def unapply(t: TInt32): Option[Boolean] = Option(t.required)
 }
@@ -562,9 +554,8 @@ sealed class TInt64(override val required: Boolean) extends TIntegral {
     }
   }
 
-  def ordering(missingGreatest: Boolean): Ordering[Annotation] =
-    annotationOrdering(
-      extendOrderingToNull(missingGreatest)(implicitly[Ordering[Long]]))
+  val ordering: ExtendedOrdering[Annotation] =
+    ExtendedOrdering.extendToNull(implicitly[Ordering[Long]]).annotationOrdering
 
   override def byteSize: Long = 8
 }
@@ -603,9 +594,8 @@ sealed class TFloat32(override val required: Boolean) extends TNumeric {
     }
   }
 
-  def ordering(missingGreatest: Boolean): Ordering[Annotation] =
-    annotationOrdering(
-      extendOrderingToNull(missingGreatest)(implicitly[Ordering[Float]]))
+  val ordering: ExtendedOrdering[Annotation] =
+    ExtendedOrdering.extendToNull(implicitly[Ordering[Float]]).annotationOrdering
 
   override def byteSize: Long = 4
 }
@@ -644,9 +634,8 @@ sealed class TFloat64(override val required: Boolean) extends TNumeric {
     }
   }
 
-  def ordering(missingGreatest: Boolean): Ordering[Annotation] =
-    annotationOrdering(
-      extendOrderingToNull(missingGreatest)(implicitly[Ordering[Double]]))
+  val ordering: ExtendedOrdering[Annotation] =
+    ExtendedOrdering.extendToNull(implicitly[Ordering[Double]]).annotationOrdering
 
   override def byteSize: Long = 8
 }
@@ -672,9 +661,8 @@ sealed class TString(override val required: Boolean) extends Type {
 
   override def unsafeOrdering(missingGreatest: Boolean): UnsafeOrdering = TBinary(required).unsafeOrdering(missingGreatest)
 
-  def ordering(missingGreatest: Boolean): Ordering[Annotation] =
-    annotationOrdering(
-      extendOrderingToNull(missingGreatest)(implicitly[Ordering[String]]))
+  val ordering: ExtendedOrdering[Annotation] =
+    ExtendedOrdering.extendToNull(implicitly[Ordering[String]]).annotationOrdering
 
   override def byteSize: Long = 8
 
@@ -726,8 +714,7 @@ final case class TFunction(paramTypes: Seq[Type], returnType: Type) extends Type
 
   override def scalaClassTag: ClassTag[AnyRef] = throw new RuntimeException("TFunction is not realizable")
 
-  override def ordering(missingGreatest: Boolean): Ordering[Annotation] =
-    throw new RuntimeException("TFunction is not realizable")
+  val ordering: ExtendedOrdering[Annotation] = null
 }
 
 final case class Box[T](var b: Option[T] = None) {
@@ -780,8 +767,7 @@ final case class TAggregableVariable(elementType: Type, st: Box[SymbolTable]) ex
 
   override def scalaClassTag: ClassTag[AnyRef] = throw new RuntimeException("TAggregableVariable is not realizable")
 
-  override def ordering(missingGreatest: Boolean): Ordering[Annotation] =
-    throw new RuntimeException("TAggregableVariable is not realizable")
+  val ordering: ExtendedOrdering[Annotation] = null
 }
 
 final case class TVariable(name: String, var t: Type = null) extends Type {
@@ -818,8 +804,7 @@ final case class TVariable(name: String, var t: Type = null) extends Type {
 
   override def scalaClassTag: ClassTag[AnyRef] = throw new RuntimeException("TVariable is not realizable")
 
-  override def ordering(missingGreatest: Boolean): Ordering[Annotation] =
-    throw new RuntimeException("TVariable is not realizable")
+  val ordering: ExtendedOrdering[Annotation] = null
 }
 
 object TAggregable {
@@ -867,8 +852,7 @@ final case class TAggregable(elementType: Type, override val required: Boolean =
 
   override def scalaClassTag: ClassTag[_ <: AnyRef] = elementType.scalaClassTag
 
-  override def ordering(missingGreatest: Boolean): Ordering[Annotation] =
-    throw new RuntimeException("TAggregable is not realizable")
+  val ordering: ExtendedOrdering[Annotation] = null
 }
 
 object TContainer {
@@ -1110,9 +1094,8 @@ final case class TArray(elementType: Type, override val required: Boolean = fals
   override def genNonmissingValue: Gen[Annotation] =
     Gen.buildableOf[Array](elementType.genValue).map(x => x: IndexedSeq[Annotation])
 
-  def ordering(missingGreatest: Boolean): Ordering[Annotation] =
-    annotationOrdering(extendOrderingToNull(missingGreatest)(
-      Ordering.Iterable(elementType.ordering(missingGreatest))))
+  val ordering: ExtendedOrdering[Annotation] =
+    ExtendedOrdering.iterableOrdering(elementType.ordering).annotationOrdering
 
   override def desc: String =
     """
@@ -1168,20 +1151,8 @@ final case class TSet(elementType: Type, override val required: Boolean = false)
     sb.append("]")
   }
 
-  def ordering(missingGreatest: Boolean): Ordering[Annotation] = {
-    val elementSortOrd = elementType.ordering(true)
-    val itOrd = Ordering.Iterable(elementType.ordering(missingGreatest))
-    val setOrdering = new Ordering[Set[Annotation]] {
-      def compare(x: Set[Annotation], y: Set[Annotation]): Int = {
-        val s1 = x.toArray.sorted(elementSortOrd)
-        val s2 = y.toArray.sorted(elementSortOrd)
-
-        itOrd.compare(s1, s2)
-      }
-    }
-
-    annotationOrdering(extendOrderingToNull(missingGreatest)(setOrdering))
-  }
+  val ordering: ExtendedOrdering[Annotation] =
+    ExtendedOrdering.setOrdering(elementType.ordering).annotationOrdering
 
   override def str(a: Annotation): String = JsonMethods.compact(toJSON(a))
 
@@ -1269,20 +1240,8 @@ final case class TDict(keyType: Type, valueType: Type, override val required: Bo
 
   override def scalaClassTag: ClassTag[Map[_, _]] = classTag[Map[_, _]]
 
-  def ordering(missingGreatest: Boolean): Ordering[Annotation] = {
-    val elementSortOrd = elementType.ordering(true)
-    val itOrd = Ordering.Iterable(elementType.ordering(missingGreatest))
-    val dict = new Ordering[Map[Annotation, Annotation]] {
-      def compare(x: Map[Annotation, Annotation], y: Map[Annotation, Annotation]): Int = {
-        val s1 = x.toArray.map { case (k, v) => Row(k, v) }.sorted(elementSortOrd)
-        val s2 = y.toArray.map { case (k, v) => Row(k, v) }.sorted(elementSortOrd)
-
-        itOrd.compare(s1, s2)
-      }
-    }
-
-    annotationOrdering(extendOrderingToNull(missingGreatest)(dict))
-  }
+  val ordering: ExtendedOrdering[Annotation] =
+    ExtendedOrdering.mapOrdering(elementType.ordering).annotationOrdering
 }
 
 sealed class TCall(override val required: Boolean) extends ComplexType {
@@ -1298,9 +1257,8 @@ sealed class TCall(override val required: Boolean) extends ComplexType {
 
   override def scalaClassTag: ClassTag[java.lang.Integer] = classTag[java.lang.Integer]
 
-  override def ordering(missingGreatest: Boolean): Ordering[Annotation] =
-    annotationOrdering(
-      extendOrderingToNull(missingGreatest)(implicitly[Ordering[Int]]))
+  val ordering: ExtendedOrdering[Annotation] =
+    ExtendedOrdering.extendToNull(implicitly[Ordering[Int]]).annotationOrdering
 }
 
 object TCall {
@@ -1326,9 +1284,8 @@ sealed class TAltAllele(override val required: Boolean) extends ComplexType {
 
   override def scalaClassTag: ClassTag[AltAllele] = classTag[AltAllele]
 
-  override def ordering(missingGreatest: Boolean): Ordering[Annotation] =
-    annotationOrdering(
-      extendOrderingToNull(missingGreatest)(implicitly[Ordering[AltAllele]]))
+  val ordering: ExtendedOrdering[Annotation] =
+    ExtendedOrdering.extendToNull(implicitly[Ordering[AltAllele]]).annotationOrdering
 
   val representation: TStruct = TAltAllele.representation(required)
 }
@@ -1353,11 +1310,11 @@ case object TAltAlleleRequired extends TAltAllele(true)
 
 object TVariant {
   def representation(required: Boolean = false): TStruct = {
-  	val rep = TStruct(
-    "contig" -> !TString(),
-    "start" -> !TInt32(),
-    "ref" -> !TString(),
-    "altAlleles" -> !TArray(!TAltAllele()))
+    val rep = TStruct(
+      "contig" -> !TString(),
+      "start" -> !TInt32(),
+      "ref" -> !TString(),
+      "altAlleles" -> !TArray(!TAltAllele()))
     if (required) (!rep).asInstanceOf[TStruct] else rep
   }
 }
@@ -1383,18 +1340,17 @@ case class TVariant(gr: GRBase, override val required: Boolean = false) extends 
 
   override def scalaClassTag: ClassTag[Variant] = classTag[Variant]
 
-  override def ordering(missingGreatest: Boolean): Ordering[Annotation] =
-    annotationOrdering(
-      extendOrderingToNull(missingGreatest)(variantOrdering))
+  val ordering: ExtendedOrdering[Annotation] =
+    ExtendedOrdering.extendToNull(variantOrdering).annotationOrdering
 
   override val partitionKey: Type = TLocus(gr)
 
   override def typedOrderedKey[PK, K]: OrderedKey[PK, K] = new OrderedKey[PK, K] {
     def project(key: K): PK = key.asInstanceOf[Variant].locus.asInstanceOf[PK]
 
-    val kOrd: Ordering[K] = ordering(missingGreatest = true).asInstanceOf[Ordering[K]]
+    val kOrd: Ordering[K] = ordering.toOrdering.asInstanceOf[Ordering[K]]
 
-    val pkOrd: Ordering[PK] = TLocus(gr).ordering(missingGreatest = true).asInstanceOf[Ordering[PK]]
+    val pkOrd: Ordering[PK] = TLocus(gr).ordering.toOrdering.asInstanceOf[Ordering[PK]]
 
     val kct: ClassTag[K] = classTag[Variant].asInstanceOf[ClassTag[K]]
 
@@ -1404,9 +1360,9 @@ case class TVariant(gr: GRBase, override val required: Boolean = false) extends 
   override def orderedKey: OrderedKey[Annotation, Annotation] = new OrderedKey[Annotation, Annotation] {
     def project(key: Annotation): Annotation = key.asInstanceOf[Variant].locus
 
-    val kOrd: Ordering[Annotation] = ordering(missingGreatest = true)
+    val kOrd: Ordering[Annotation] = ordering.toOrdering
 
-    val pkOrd: Ordering[Annotation] = TLocus(gr).ordering(missingGreatest = true)
+    val pkOrd: Ordering[Annotation] = TLocus(gr).ordering.toOrdering
 
     val kct: ClassTag[Annotation] = classTag[Annotation]
 
@@ -1479,9 +1435,8 @@ case class TLocus(gr: GRBase, override val required: Boolean = false) extends Co
 
   override def scalaClassTag: ClassTag[Locus] = classTag[Locus]
 
-  override def ordering(missingGreatest: Boolean): Ordering[Annotation] =
-    annotationOrdering(
-      extendOrderingToNull(missingGreatest)(locusOrdering))
+  val ordering: ExtendedOrdering[Annotation] =
+    ExtendedOrdering.extendToNull(locusOrdering).annotationOrdering
 
   // FIXME: Remove when representation of contig/position is a naturally-ordered Long
   override def unsafeOrdering(missingGreatest: Boolean): UnsafeOrdering = {
@@ -1545,16 +1500,14 @@ case class TInterval(pointType: Type, override val required: Boolean = false) ex
     pointType.typeCheck(i.start) && pointType.typeCheck(i.end)
   }
 
-  override def genNonmissingValue: Gen[Annotation] = Interval.gen(pointType.genValue)(pointType.ordering(true))
+  override def genNonmissingValue: Gen[Annotation] = Interval.gen(pointType.genValue)(pointType.ordering.toOrdering)
 
   override def desc: String = "An ``Interval[T]`` is a Hail data type representing a range over ordered values of type T."
 
   override def scalaClassTag: ClassTag[Interval[Annotation]] = classTag[Interval[Annotation]]
 
-  override def ordering(missingGreatest: Boolean): Ordering[Annotation] = {
-    annotationOrdering(
-      extendOrderingToNull(missingGreatest)(Interval.ordering[Annotation]))
-  }
+  val ordering: ExtendedOrdering[Annotation] =
+    ExtendedOrdering.extendToNull(Interval.ordering[Annotation]).annotationOrdering
 
   override def unsafeOrdering(missingGreatest: Boolean): UnsafeOrdering = representation.unsafeOrdering(missingGreatest)
 
@@ -1603,7 +1556,7 @@ object TStruct {
       required)
 
   def apply(args: (String, Type)*): TStruct =
-    apply(false, args:_*)
+    apply(false, args: _*)
 
   def apply(names: java.util.ArrayList[String], types: java.util.ArrayList[Type], required: Boolean): TStruct = {
     val sNames = names.asScala.toArray
@@ -2129,26 +2082,8 @@ final case class TStruct(fields: IndexedSeq[Field], override val required: Boole
 
   override def scalaClassTag: ClassTag[Row] = classTag[Row]
 
-  override def ordering(missingGreatest: Boolean): Ordering[Annotation] = {
-    val fieldOrderings = fields.map(f => f.typ.ordering(missingGreatest))
-
-    annotationOrdering(
-      extendOrderingToNull(missingGreatest)(new Ordering[Row] {
-        def compare(a: Row, b: Row): Int = {
-          var i = 0
-          while (i < a.size) {
-            val c = fieldOrderings(i).compare(a.get(i), b.get(i))
-            if (c != 0)
-              return c
-
-            i += 1
-          }
-
-          // equal
-          0
-        }
-      }))
-  }
+  val ordering: ExtendedOrdering[Annotation] =
+    ExtendedOrdering.rowOrdering(fields.map(_.typ.ordering).toArray).annotationOrdering
 
   override def unsafeOrdering(missingGreatest: Boolean): UnsafeOrdering = {
     val fieldOrderings = fields.map(_.typ.unsafeOrdering(missingGreatest)).toArray
