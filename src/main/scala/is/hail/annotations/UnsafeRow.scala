@@ -221,7 +221,7 @@ object UnsafeRow {
             read(x.pointType, region, ft.loadField(region, offset, 1))
           else
             null
-        Interval[Annotation](start, end)(x.pointType.ordering.toOrdering)
+        Interval(start, end)
     }
   }
 }
