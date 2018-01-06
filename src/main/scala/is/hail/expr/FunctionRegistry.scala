@@ -2673,12 +2673,12 @@ object FunctionRegistry {
     }
 
     // register("<", ord.lt _, null)
-    register("<=", ord.lteq _, null)
+    register("<=", (x: Any, y: Any) => ord.lteq(x, y), null)
     // register(">", ord.gt _, null)
-    register(">=", ord.gteq _, null)
+    register(">=", (x: Any, y: Any) => ord.gteq(x, y), null)
 
-    registerMethod("min", ord.min _, "Returns the minimum value.")
-    registerMethod("max", ord.max _, "Returns the maximum value.")
+    registerMethod("min", (x: Any, y: Any) => ord.min(x, y), "Returns the minimum value.")
+    registerMethod("max", (x: Any, y: Any) => ord.max(x, y), "Returns the maximum value.")
 
     registerMethod("sort", (a: IndexedSeq[Any]) => a.sorted(ord.toOrdering), "Sort the collection in ascending order.")(arrayHr(hrboxedt), arrayHr(hrboxedt))
     registerMethod("sort", (a: IndexedSeq[Any], ascending: Boolean) =>

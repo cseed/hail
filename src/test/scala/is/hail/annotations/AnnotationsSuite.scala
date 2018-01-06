@@ -293,7 +293,7 @@ class AnnotationsSuite extends SparkSuite {
   }
 
   @Test def testExtendedOrdering() {
-    val ord = ExtendedOrdering.extendToNull(implicitly[Ordering[Int]]).annotationOrdering
+    val ord = ExtendedOrdering.extendToNull(implicitly[Ordering[Int]])
     val rord = ord.reverse
 
     assert(ord.lt(5, 7))

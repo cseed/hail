@@ -1,14 +1,14 @@
 package is.hail.expr
 
-import is.hail.annotations.{Annotation, AnnotationPathException, _}
+import is.hail.annotations._
 import is.hail.asm4s.Code
 import is.hail.asm4s._
 import is.hail.check.Arbitrary._
-import is.hail.check.{Gen, _}
+import is.hail.check._
 import is.hail.sparkextras.OrderedKey
 import is.hail.utils
-import is.hail.utils.{Interval, StringEscapeUtils, _}
-import is.hail.variant.{AltAllele, Call, Contig, GRBase, GenomeReference, Genotype, Locus, Variant}
+import is.hail.utils._
+import is.hail.variant.{AltAllele, Call, GRBase, GenomeReference, Locus, Variant}
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.types.DataType
 import org.json4s._
@@ -240,7 +240,7 @@ sealed abstract class Type extends BaseType with Serializable {
 
   def canCompare(other: Type): Boolean = this == other
 
-  val ordering: ExtendedOrdering[Annotation]
+  val ordering: ExtendedOrdering
 
   val partitionKey: Type = this
 
@@ -362,7 +362,7 @@ case object TVoid extends Type {
 
   override def _toString = "Void"
 
-  val ordering: ExtendedOrdering[is.hail.annotations.Annotation] = null
+  val ordering: ExtendedOrdering = null
 
   override def scalaClassTag: scala.reflect.ClassTag[_ <: AnyRef] = throw new UnsupportedOperationException("No ClassTag for Void")
 
@@ -415,8 +415,8 @@ sealed class TBinary(override val required: Boolean) extends Type {
     }
   }
 
-  val ordering: ExtendedOrdering[Annotation] =
-    ExtendedOrdering.extendToNull(Ordering.Iterable[Byte]).annotationOrdering
+  val ordering: ExtendedOrdering =
+    ExtendedOrdering.extendToNull(Ordering.Iterable[Byte])
 
   override def byteSize: Long = 8
 }
@@ -462,8 +462,8 @@ sealed class TBoolean(override val required: Boolean) extends Type {
     }
   }
 
-  val ordering: ExtendedOrdering[Annotation] =
-    ExtendedOrdering.extendToNull(implicitly[Ordering[Boolean]]).annotationOrdering
+  val ordering: ExtendedOrdering =
+    ExtendedOrdering.extendToNull(implicitly[Ordering[Boolean]])
 
   override def byteSize: Long = 1
 }
@@ -521,8 +521,8 @@ sealed class TInt32(override val required: Boolean) extends TIntegral {
     }
   }
 
-  val ordering: ExtendedOrdering[Annotation] =
-    ExtendedOrdering.extendToNull(implicitly[Ordering[Int]]).annotationOrdering
+  val ordering: ExtendedOrdering =
+    ExtendedOrdering.extendToNull(implicitly[Ordering[Int]])
 
   override def byteSize: Long = 4
 }
@@ -554,8 +554,8 @@ sealed class TInt64(override val required: Boolean) extends TIntegral {
     }
   }
 
-  val ordering: ExtendedOrdering[Annotation] =
-    ExtendedOrdering.extendToNull(implicitly[Ordering[Long]]).annotationOrdering
+  val ordering: ExtendedOrdering =
+    ExtendedOrdering.extendToNull(implicitly[Ordering[Long]])
 
   override def byteSize: Long = 8
 }
@@ -594,8 +594,8 @@ sealed class TFloat32(override val required: Boolean) extends TNumeric {
     }
   }
 
-  val ordering: ExtendedOrdering[Annotation] =
-    ExtendedOrdering.extendToNull(implicitly[Ordering[Float]]).annotationOrdering
+  val ordering: ExtendedOrdering =
+    ExtendedOrdering.extendToNull(implicitly[Ordering[Float]])
 
   override def byteSize: Long = 4
 }
@@ -634,8 +634,8 @@ sealed class TFloat64(override val required: Boolean) extends TNumeric {
     }
   }
 
-  val ordering: ExtendedOrdering[Annotation] =
-    ExtendedOrdering.extendToNull(implicitly[Ordering[Double]]).annotationOrdering
+  val ordering: ExtendedOrdering =
+    ExtendedOrdering.extendToNull(implicitly[Ordering[Double]])
 
   override def byteSize: Long = 8
 }
@@ -661,8 +661,8 @@ sealed class TString(override val required: Boolean) extends Type {
 
   override def unsafeOrdering(missingGreatest: Boolean): UnsafeOrdering = TBinary(required).unsafeOrdering(missingGreatest)
 
-  val ordering: ExtendedOrdering[Annotation] =
-    ExtendedOrdering.extendToNull(implicitly[Ordering[String]]).annotationOrdering
+  val ordering: ExtendedOrdering =
+    ExtendedOrdering.extendToNull(implicitly[Ordering[String]])
 
   override def byteSize: Long = 8
 
@@ -714,7 +714,7 @@ final case class TFunction(paramTypes: Seq[Type], returnType: Type) extends Type
 
   override def scalaClassTag: ClassTag[AnyRef] = throw new RuntimeException("TFunction is not realizable")
 
-  val ordering: ExtendedOrdering[Annotation] = null
+  val ordering: ExtendedOrdering = null
 }
 
 final case class Box[T](var b: Option[T] = None) {
@@ -767,7 +767,7 @@ final case class TAggregableVariable(elementType: Type, st: Box[SymbolTable]) ex
 
   override def scalaClassTag: ClassTag[AnyRef] = throw new RuntimeException("TAggregableVariable is not realizable")
 
-  val ordering: ExtendedOrdering[Annotation] = null
+  val ordering: ExtendedOrdering = null
 }
 
 final case class TVariable(name: String, var t: Type = null) extends Type {
@@ -804,7 +804,7 @@ final case class TVariable(name: String, var t: Type = null) extends Type {
 
   override def scalaClassTag: ClassTag[AnyRef] = throw new RuntimeException("TVariable is not realizable")
 
-  val ordering: ExtendedOrdering[Annotation] = null
+  val ordering: ExtendedOrdering = null
 }
 
 object TAggregable {
@@ -852,7 +852,7 @@ final case class TAggregable(elementType: Type, override val required: Boolean =
 
   override def scalaClassTag: ClassTag[_ <: AnyRef] = elementType.scalaClassTag
 
-  val ordering: ExtendedOrdering[Annotation] = null
+  val ordering: ExtendedOrdering = null
 }
 
 object TContainer {
@@ -1094,8 +1094,8 @@ final case class TArray(elementType: Type, override val required: Boolean = fals
   override def genNonmissingValue: Gen[Annotation] =
     Gen.buildableOf[Array](elementType.genValue).map(x => x: IndexedSeq[Annotation])
 
-  val ordering: ExtendedOrdering[Annotation] =
-    ExtendedOrdering.iterableOrdering(elementType.ordering).annotationOrdering
+  val ordering: ExtendedOrdering =
+    ExtendedOrdering.iterableOrdering(elementType.ordering)
 
   override def desc: String =
     """
@@ -1151,8 +1151,8 @@ final case class TSet(elementType: Type, override val required: Boolean = false)
     sb.append("]")
   }
 
-  val ordering: ExtendedOrdering[Annotation] =
-    ExtendedOrdering.setOrdering(elementType.ordering).annotationOrdering
+  val ordering: ExtendedOrdering =
+    ExtendedOrdering.setOrdering(elementType.ordering)
 
   override def str(a: Annotation): String = JsonMethods.compact(toJSON(a))
 
@@ -1240,8 +1240,8 @@ final case class TDict(keyType: Type, valueType: Type, override val required: Bo
 
   override def scalaClassTag: ClassTag[Map[_, _]] = classTag[Map[_, _]]
 
-  val ordering: ExtendedOrdering[Annotation] =
-    ExtendedOrdering.mapOrdering(elementType.ordering).annotationOrdering
+  val ordering: ExtendedOrdering =
+    ExtendedOrdering.mapOrdering(elementType.ordering)
 }
 
 sealed class TCall(override val required: Boolean) extends ComplexType {
@@ -1257,8 +1257,8 @@ sealed class TCall(override val required: Boolean) extends ComplexType {
 
   override def scalaClassTag: ClassTag[java.lang.Integer] = classTag[java.lang.Integer]
 
-  val ordering: ExtendedOrdering[Annotation] =
-    ExtendedOrdering.extendToNull(implicitly[Ordering[Int]]).annotationOrdering
+  val ordering: ExtendedOrdering =
+    ExtendedOrdering.extendToNull(implicitly[Ordering[Int]])
 }
 
 object TCall {
@@ -1284,8 +1284,8 @@ sealed class TAltAllele(override val required: Boolean) extends ComplexType {
 
   override def scalaClassTag: ClassTag[AltAllele] = classTag[AltAllele]
 
-  val ordering: ExtendedOrdering[Annotation] =
-    ExtendedOrdering.extendToNull(implicitly[Ordering[AltAllele]]).annotationOrdering
+  val ordering: ExtendedOrdering =
+    ExtendedOrdering.extendToNull(implicitly[Ordering[AltAllele]])
 
   val representation: TStruct = TAltAllele.representation(required)
 }
@@ -1340,8 +1340,8 @@ case class TVariant(gr: GRBase, override val required: Boolean = false) extends 
 
   override def scalaClassTag: ClassTag[Variant] = classTag[Variant]
 
-  val ordering: ExtendedOrdering[Annotation] =
-    ExtendedOrdering.extendToNull(variantOrdering).annotationOrdering
+  val ordering: ExtendedOrdering =
+    ExtendedOrdering.extendToNull(gr.variantOrdering)
 
   override val partitionKey: Type = TLocus(gr)
 
@@ -1435,8 +1435,8 @@ case class TLocus(gr: GRBase, override val required: Boolean = false) extends Co
 
   override def scalaClassTag: ClassTag[Locus] = classTag[Locus]
 
-  val ordering: ExtendedOrdering[Annotation] =
-    ExtendedOrdering.extendToNull(locusOrdering).annotationOrdering
+  val ordering: ExtendedOrdering =
+    ExtendedOrdering.extendToNull(gr.locusOrdering)
 
   // FIXME: Remove when representation of contig/position is a naturally-ordered Long
   override def unsafeOrdering(missingGreatest: Boolean): UnsafeOrdering = {
@@ -1462,8 +1462,6 @@ case class TLocus(gr: GRBase, override val required: Boolean = false) extends Co
   }
 
   val representation: TStruct = TLocus.representation(required)
-
-  def locusOrdering: Ordering[Locus] = gr.locusOrdering
 
   override def unify(concrete: Type): Boolean = concrete match {
     case TLocus(cgr, _) => gr.unify(cgr)
@@ -1506,8 +1504,8 @@ case class TInterval(pointType: Type, override val required: Boolean = false) ex
 
   override def scalaClassTag: ClassTag[Interval[Annotation]] = classTag[Interval[Annotation]]
 
-  val ordering: ExtendedOrdering[Annotation] =
-    ExtendedOrdering.extendToNull(Interval.ordering[Annotation]).annotationOrdering
+  val ordering: ExtendedOrdering =
+    ExtendedOrdering.extendToNull(Interval.ordering[Annotation])
 
   override def unsafeOrdering(missingGreatest: Boolean): UnsafeOrdering = representation.unsafeOrdering(missingGreatest)
 
@@ -2082,8 +2080,8 @@ final case class TStruct(fields: IndexedSeq[Field], override val required: Boole
 
   override def scalaClassTag: ClassTag[Row] = classTag[Row]
 
-  val ordering: ExtendedOrdering[Annotation] =
-    ExtendedOrdering.rowOrdering(fields.map(_.typ.ordering).toArray).annotationOrdering
+  val ordering: ExtendedOrdering =
+    ExtendedOrdering.rowOrdering(fields.map(_.typ.ordering).toArray)
 
   override def unsafeOrdering(missingGreatest: Boolean): UnsafeOrdering = {
     val fieldOrderings = fields.map(_.typ.unsafeOrdering(missingGreatest)).toArray
