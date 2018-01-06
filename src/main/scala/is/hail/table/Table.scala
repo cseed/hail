@@ -202,6 +202,8 @@ class Table(val hc: HailContext,
 
   def fields: Array[Field] = signature.fields.toArray
 
+  val keyFieldIdx: Array[Int] = key.map(signature.fieldIdx)
+
   def keyFields: Array[Field] = key.map(signature.fieldIdx).map(i => fields(i))
 
   def columns: Array[String] = fields.map(_.name)

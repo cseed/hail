@@ -412,7 +412,7 @@ class MatrixTable(val hc: HailContext, val metadata: VSMMetadata,
   val locusProjection: (Annotation) => Annotation = {
     vSignature match {
       case t: TVariant =>
-        (v: Annotation) =>   v.asInstanceOf[Variant].locus
+        (v: Annotation) => v.asInstanceOf[Variant].locus
       case _ =>
         (a: Annotation) => a
     }
@@ -848,12 +848,7 @@ class MatrixTable(val hc: HailContext, val metadata: VSMMetadata,
     root: String, expr: String, product: Boolean): MatrixTable =
     annotateVariantsTable(kt, if (vdsKey != null) vdsKey.asScala else null, root, expr, product)
 
-  def annotateVariantsTable(kt: Table, vdsKey: Seq[String] = null,
-    root: String = null, expr: String = null, product: Boolean = false): MatrixTable = {
-
-    if (root == null && expr == null || root != null && expr != null)
-      fatal("method `annotateVariantsTable' requires one of `root' or 'expr', but not both")
-
+  private def annotateVariantsTableOn(kt: Table, vdsKey: Seq[String], root: String, expr: String, product: Boolean): MatrixTable = {
     var (joinSignature, f): (Type, Annotation => Annotation) = kt.valueSignature.size match {
       case 0 => (TBoolean(), _ != null)
       case 1 => (kt.valueSignature.fields.head.typ, x => if (x != null) x.asInstanceOf[Row].get(0) else null)
@@ -886,88 +881,102 @@ class MatrixTable(val hc: HailContext, val metadata: VSMMetadata,
     val keyedRDD = kt.keyedRDD()
       .filter { case (k, v) => k.toSeq.forall(_ != null) }
 
-    if (vdsKey != null) {
-      val keyEC = EvalContext(Map("v" -> (0, vSignature), "va" -> (1, vaSignature)))
-      val (vdsKeyType, vdsKeyFs) = vdsKey.map(Parser.parseExpr(_, keyEC)).unzip
+    val keyEC = EvalContext(Map("v" -> (0, vSignature), "va" -> (1, vaSignature)))
+    val (vdsKeyType, vdsKeyFs) = vdsKey.map(Parser.parseExpr(_, keyEC)).unzip
 
-      if (!keyTypes.sameElements(vdsKeyType))
-        fatal(
-          s"""method `annotateVariantsTable' encountered a mismatch between table keys and computed keys.
+    if (!keyTypes.sameElements(vdsKeyType))
+      fatal(
+        s"""method `annotateVariantsTable' encountered a mismatch between table keys and computed keys.
              |  Computed keys:  [ ${ vdsKeyType.mkString(", ") } ]
              |  Key table keys: [ ${ keyTypes.mkString(", ") } ]""".stripMargin)
 
-      val thisRdd = rdd.map { case (v, (va, gs)) =>
-        keyEC.setAll(v, va)
-        (Row.fromSeq(vdsKeyFs.map(_ ())), v)
-      }
+    val thisRdd = rdd.map { case (v, (va, gs)) =>
+      keyEC.setAll(v, va)
+      (Row.fromSeq(vdsKeyFs.map(_ ())), v)
+    }
 
-      val joinedRDD = keyedRDD
-        .join(thisRdd)
-        .map { case (_, (table, v)) => (v, table: Annotation) }
-        .orderedRepartitionBy(rdd.orderedPartitioner)
+    val joinedRDD = keyedRDD
+      .join(thisRdd)
+      .map { case (_, (table, v)) => (v, table: Annotation) }
+      .orderedRepartitionBy(rdd.orderedPartitioner)
 
-      annotateVariants(joinedRDD, finalType, inserter, product = product)
+    annotateVariants(joinedRDD, finalType, inserter, product = product)
+  }
 
-    } else {
-      keyTypes match {
-        case Array(`vSignature`) =>
-          val ord = keyedRDD
-            .map { case (k, v) => (k.getAs[Annotation](0), v: Annotation) }
-            .toOrderedRDD(rdd.orderedPartitioner)
+  private def annotateVariantsVariantTable(kt: Table, root: String, expr: String, product: Boolean): MatrixTable = {
+    var (joinSignature, f): (Type, Annotation => Annotation) = kt.valueSignature.size match {
+      case 0 => (TBoolean(), _ != null)
+      case 1 => (kt.valueSignature.fields.head.typ, x => if (x != null) x.asInstanceOf[Row].get(0) else null)
+      case _ => (kt.valueSignature, identity[Annotation])
+    }
 
-          annotateVariants(ord, finalType, inserter, product = product)
-
-        case Array(vSignature.partitionKey) =>
-          val ord = keyedRDD
-            .map { case (k, v) => (k.asInstanceOf[Row].getAs[Annotation](0), v: Annotation) }
-            .toOrderedRDD(rdd.orderedPartitioner.projectToPartitionKey())
-
-          annotateLoci(ord, finalType, inserter, product = product)
-
-        case Array(TInterval(_, _)) if vSignature.isInstanceOf[TVariant] =>
-          val locusOrdering = genomeReference.locus.ordering
-          val partBc = sparkContext.broadcast(rdd.orderedPartitioner)
-          val partitionKeyedIntervals = keyedRDD
-            .flatMap { case (k, v) =>
-              val interval = k.getAs[Interval](0)
-              val start = partBc.value.getPartitionT(interval.start.asInstanceOf[Annotation])
-              val end = partBc.value.getPartitionT(interval.end.asInstanceOf[Annotation])
-              (start to end).view.map(i => (i, (interval, v)))
-            }
-
-          type IntervalT = (Interval, Annotation)
-          val nParts = rdd.partitions.length
-          val zipRDD = partitionKeyedIntervals.partitionBy(new Partitioner {
-            def getPartition(key: Any): Int = key.asInstanceOf[Int]
-
-            def numPartitions: Int = nParts
-          }).values
-
-          val res = rdd.zipPartitions(zipRDD, preservesPartitioning = true) { case (it, intervals) =>
-            val iTree = IntervalTree.annotationTree(locusOrdering, intervals.toArray)
-
-            it.map { case (v, (va, gs)) =>
-              val queries = iTree.queryValues(locusOrdering, v.asInstanceOf[Variant].locus)
-              val annot = if (product)
-                queries: IndexedSeq[Annotation]
-              else
-                queries.headOption.orNull
-
-              (v, (inserter(va, annot), gs))
-            }
-          }.asOrderedRDD
-
-          copy(rdd = res, vaSignature = finalType)
-
-        case other =>
-          fatal(
-            s"""method 'annotate_variants_table' expects a key table keyed by one of the following:
-               |  [ $vSignature ]
-               |  [ Locus ]
-               |  [ Interval ]
-               |  Found key [ ${ keyTypes.mkString(", ") } ] instead.""".stripMargin)
+    if (product) {
+      joinSignature = if (joinSignature.isInstanceOf[TBoolean]) TInt32(joinSignature.required) else TArray(joinSignature)
+      f = if (kt.valueSignature.size == 0)
+        _.asInstanceOf[IndexedSeq[_]].length
+      else {
+        val g = f
+        _.asInstanceOf[IndexedSeq[_]].map(g)
       }
     }
+
+    val (finalType, inserter): (Type, (Annotation, Annotation) => Annotation) = {
+      val (t, ins) = if (expr != null) {
+        val ec = EvalContext(Map(
+          "va" -> (0, vaSignature),
+          "table" -> (1, joinSignature)))
+        Annotation.buildInserter(expr, vaSignature, ec, Annotation.VARIANT_HEAD)
+      } else insertVA(joinSignature, Parser.parseAnnotationRoot(root, Annotation.VARIANT_HEAD))
+
+      (t, (a: Annotation, toIns: Annotation) => ins(a, f(toIns)))
+    }
+
+    val keyedRDD = kt.keyedRDD()
+      .filter { case (k, v) => k.toSeq.forall(_ != null) }
+
+    val ord = keyedRDD
+      .map { case (k, v) => (k.getAs[Annotation](0), v: Annotation) }
+      .toOrderedRDD(rdd.orderedPartitioner)
+
+    annotateVariants(ord, finalType, inserter, product = product)
+  }
+
+  private def annotateVariantsLocusTable(kt: Table, root: String, expr: String, product: Boolean): MatrixTable = {
+    var (joinSignature, f): (Type, Annotation => Annotation) = kt.valueSignature.size match {
+      case 0 => (TBoolean(), _ != null)
+      case 1 => (kt.valueSignature.fields.head.typ, x => if (x != null) x.asInstanceOf[Row].get(0) else null)
+      case _ => (kt.valueSignature, identity[Annotation])
+    }
+
+    if (product) {
+      joinSignature = if (joinSignature.isInstanceOf[TBoolean]) TInt32(joinSignature.required) else TArray(joinSignature)
+      f = if (kt.valueSignature.size == 0)
+        _.asInstanceOf[IndexedSeq[_]].length
+      else {
+        val g = f
+        _.asInstanceOf[IndexedSeq[_]].map(g)
+      }
+    }
+
+    val (finalType, inserter): (Type, (Annotation, Annotation) => Annotation) = {
+      val (t, ins) = if (expr != null) {
+        val ec = EvalContext(Map(
+          "va" -> (0, vaSignature),
+          "table" -> (1, joinSignature)))
+        Annotation.buildInserter(expr, vaSignature, ec, Annotation.VARIANT_HEAD)
+      } else insertVA(joinSignature, Parser.parseAnnotationRoot(root, Annotation.VARIANT_HEAD))
+
+      (t, (a: Annotation, toIns: Annotation) => ins(a, f(toIns)))
+    }
+
+    val keyedRDD = kt.keyedRDD()
+      .filter { case (k, v) => k.toSeq.forall(_ != null) }
+
+    val ord = keyedRDD
+      .map { case (k, v) => (k.asInstanceOf[Row].getAs[Annotation](0), v: Annotation) }
+      .toOrderedRDD(rdd.orderedPartitioner.projectToPartitionKey())
+
+    annotateLoci(ord, finalType, inserter, product = product)
   }
 
   def annotateLoci(lociRDD: OrderedRDD[Annotation, Annotation, Annotation], newSignature: Type,
@@ -992,6 +1001,99 @@ class MatrixTable(val hc: HailContext, val metadata: VSMMetadata,
           (va, a) => inserter(va, a.orNull))
 
     copy(rdd = newRDD, vaSignature = newSignature)
+  }
+
+  private def annotateVariantsIntervalTable(kt: Table, root: String, expr: String, product: Boolean): MatrixTable = {
+    var (joinSignature, f): (Type, Annotation => Annotation) = kt.valueSignature.size match {
+      case 0 => (TBoolean(), _ != null)
+      case 1 => (kt.valueSignature.fields.head.typ, x => if (x != null) x.asInstanceOf[Row].get(0) else null)
+      case _ => (kt.valueSignature, identity[Annotation])
+    }
+
+    if (product) {
+      joinSignature = if (joinSignature.isInstanceOf[TBoolean]) TInt32(joinSignature.required) else TArray(joinSignature)
+      f = if (kt.valueSignature.size == 0)
+        _.asInstanceOf[IndexedSeq[_]].length
+      else {
+        val g = f
+        _.asInstanceOf[IndexedSeq[_]].map(g)
+      }
+    }
+
+    val (finalType, inserter): (Type, (Annotation, Annotation) => Annotation) = {
+      val (t, ins) = if (expr != null) {
+        val ec = EvalContext(Map(
+          "va" -> (0, vaSignature),
+          "table" -> (1, joinSignature)))
+        Annotation.buildInserter(expr, vaSignature, ec, Annotation.VARIANT_HEAD)
+      } else insertVA(joinSignature, Parser.parseAnnotationRoot(root, Annotation.VARIANT_HEAD))
+
+      (t, (a: Annotation, toIns: Annotation) => ins(a, f(toIns)))
+    }
+
+    val keyedRDD = kt.keyedRDD()
+      .filter { case (k, v) => k.toSeq.forall(_ != null) }
+
+    val locusOrdering = genomeReference.locus.ordering
+    val partBc = sparkContext.broadcast(rdd.orderedPartitioner)
+    val partitionKeyedIntervals = keyedRDD
+      .flatMap { case (k, v) =>
+        val interval = k.getAs[Interval](0)
+        val start = partBc.value.getPartitionT(interval.start)
+        val end = partBc.value.getPartitionT(interval.end)
+        (start to end).view.map(i => (i, (interval, v)))
+      }
+
+    type IntervalT = (Interval, Annotation)
+    val nParts = rdd.partitions.length
+    val zipRDD = partitionKeyedIntervals.partitionBy(new Partitioner {
+      def getPartition(key: Any): Int = key.asInstanceOf[Int]
+
+      def numPartitions: Int = nParts
+    }).values
+
+    val res = rdd.zipPartitions(zipRDD, preservesPartitioning = true) { case (it, intervals) =>
+      val iTree = IntervalTree.annotationTree(locusOrdering, intervals.toArray)
+
+      it.map { case (v, (va, gs)) =>
+        val queries = iTree.queryValues(locusOrdering, v.asInstanceOf[Variant].locus)
+        val annot = if (product)
+          queries: IndexedSeq[Annotation]
+        else
+          queries.headOption.orNull
+
+        (v, (inserter(va, annot), gs))
+      }
+    }.asOrderedRDD
+
+    copy(rdd = res, vaSignature = finalType)
+  }
+
+  def annotateVariantsTable(kt: Table, vdsKey: Seq[String] = null, root: String = null, expr: String = null,
+    product: Boolean = false): MatrixTable = {
+    if (!((root != null) ^ (expr != null)))
+      fatal("method `annotateVariantsTable' requires one of `root' or 'expr', but not both")
+
+    if (vdsKey != null)
+      annotateVariantsTableOn(kt, vdsKey, root, expr, product)
+    else {
+      val keyTypes = kt.keyFields.map(_.typ)
+      keyTypes match {
+        case Array(`vSignature`) =>
+          annotateVariantsVariantTable(kt, root, expr, product)
+        case Array(`locusType`) =>
+          annotateVariantsLocusTable(kt, root, expr, product)
+        case Array(TInterval(`locusType`, _)) =>
+          annotateVariantsIntervalTable(kt, root, expr, product)
+        case _ =>
+          fatal(
+            s"""method 'annotate_variants_table' expects a key table keyed by one of the following:
+               |  [ $vSignature ]
+               |  [ Locus ]
+               |  [ Interval[$locusType ]
+               |  Found key [ ${ keyTypes.mkString(", ") } ] instead.""".stripMargin)
+      }
+    }
   }
 
   def nPartitions: Int = rdd2.partitions.length
