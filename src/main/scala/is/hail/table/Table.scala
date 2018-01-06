@@ -206,6 +206,8 @@ class Table(val hc: HailContext,
 
   def keyFields: Array[Field] = key.map(signature.fieldIdx).map(i => fields(i))
 
+  val valueFieldIdx: Array[Int] = signature.fields.filter(f => !key.contains(f.name)).map(_.index).toArray
+
   def columns: Array[String] = fields.map(_.name)
 
   def count(): Long = rvd.count()
