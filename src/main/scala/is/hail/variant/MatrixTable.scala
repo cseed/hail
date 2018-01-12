@@ -848,39 +848,7 @@ class MatrixTable(val hc: HailContext, val metadata: VSMMetadata,
     root: String, expr: String, product: Boolean): MatrixTable =
     annotateVariantsTable(kt, if (vdsKey != null) vdsKey.asScala else null, root, expr, product)
 
-  case class AnnotateVariantsInserter(
-    valueType: Type,
-    f: Inserter,
-    newVAType: Type)
-
-  private def annotateVariantsTableOn(kt: Table, vdsKey: Seq[String], root: String, expr: String, product: Boolean): MatrixTable = {
-    var (joinSignature, f): (Type, Annotation => Annotation) = kt.valueSignature.size match {
-      case 0 => (TBoolean(), _ != null)
-      case 1 => (kt.valueSignature.fields.head.typ, x => if (x != null) x.asInstanceOf[Row].get(0) else null)
-      case _ => (kt.valueSignature, identity[Annotation])
-    }
-
-    if (product) {
-      joinSignature = if (joinSignature.isInstanceOf[TBoolean]) TInt32(joinSignature.required) else TArray(joinSignature)
-      f = if (kt.valueSignature.size == 0)
-        _.asInstanceOf[IndexedSeq[_]].length
-      else {
-        val g = f
-        _.asInstanceOf[IndexedSeq[_]].map(g)
-      }
-    }
-
-    val (finalType, inserter): (Type, (Annotation, Annotation) => Annotation) = {
-      val (t, ins) = if (expr != null) {
-        val ec = EvalContext(Map(
-          "va" -> (0, vaSignature),
-          "table" -> (1, joinSignature)))
-        Annotation.buildInserter(expr, vaSignature, ec, Annotation.VARIANT_HEAD)
-      } else insertVA(joinSignature, Parser.parseAnnotationRoot(root, Annotation.VARIANT_HEAD))
-
-      (t, (a: Annotation, toIns: Annotation) => ins(a, f(toIns)))
-    }
-
+  private def annotateVariantsTableOn(kt: Table, vdsKey: Seq[String], product: Boolean, newVAType: Type, inserter: Inserter): MatrixTable = {
     val keyTypes = kt.keyFields.map(_.typ)
 
     val keyedRDD = kt.keyedRDD()
@@ -905,37 +873,10 @@ class MatrixTable(val hc: HailContext, val metadata: VSMMetadata,
       .map { case (_, (table, v)) => (v, table: Annotation) }
       .orderedRepartitionBy(rdd.orderedPartitioner)
 
-    annotateVariants(joinedRDD, finalType, inserter, product = product)
+    annotateVariants(joinedRDD, newVAType, inserter, product = product)
   }
 
-  private def annotateVariantsVariantTable(kt: Table, root: String, expr: String, product: Boolean): MatrixTable = {
-    var (joinSignature, f): (Type, Annotation => Annotation) = kt.valueSignature.size match {
-      case 0 => (TBoolean(), _ != null)
-      case 1 => (kt.valueSignature.fields.head.typ, x => if (x != null) x.asInstanceOf[Row].get(0) else null)
-      case _ => (kt.valueSignature, identity[Annotation])
-    }
-
-    if (product) {
-      joinSignature = if (joinSignature.isInstanceOf[TBoolean]) TInt32(joinSignature.required) else TArray(joinSignature)
-      f = if (kt.valueSignature.size == 0)
-        _.asInstanceOf[IndexedSeq[_]].length
-      else {
-        val g = f
-        _.asInstanceOf[IndexedSeq[_]].map(g)
-      }
-    }
-
-    val (finalType, inserter): (Type, (Annotation, Annotation) => Annotation) = {
-      val (t, ins) = if (expr != null) {
-        val ec = EvalContext(Map(
-          "va" -> (0, vaSignature),
-          "table" -> (1, joinSignature)))
-        Annotation.buildInserter(expr, vaSignature, ec, Annotation.VARIANT_HEAD)
-      } else insertVA(joinSignature, Parser.parseAnnotationRoot(root, Annotation.VARIANT_HEAD))
-
-      (t, (a: Annotation, toIns: Annotation) => ins(a, f(toIns)))
-    }
-
+  private def annotateVariantsVariantTable(kt: Table, product: Boolean, newVAType: Type, inserter: Inserter): MatrixTable = {
     val keyedRDD = kt.keyedRDD()
       .filter { case (k, v) => k.toSeq.forall(_ != null) }
 
@@ -943,37 +884,10 @@ class MatrixTable(val hc: HailContext, val metadata: VSMMetadata,
       .map { case (k, v) => (k.getAs[Annotation](0), v: Annotation) }
       .toOrderedRDD(rdd.orderedPartitioner)
 
-    annotateVariants(ord, finalType, inserter, product = product)
+    annotateVariants(ord, newVAType, inserter, product = product)
   }
 
-  private def annotateVariantsLocusTable(kt: Table, root: String, expr: String, product: Boolean): MatrixTable = {
-    var (joinSignature, f): (Type, Annotation => Annotation) = kt.valueSignature.size match {
-      case 0 => (TBoolean(), _ != null)
-      case 1 => (kt.valueSignature.fields.head.typ, x => if (x != null) x.asInstanceOf[Row].get(0) else null)
-      case _ => (kt.valueSignature, identity[Annotation])
-    }
-
-    if (product) {
-      joinSignature = if (joinSignature.isInstanceOf[TBoolean]) TInt32(joinSignature.required) else TArray(joinSignature)
-      f = if (kt.valueSignature.size == 0)
-        _.asInstanceOf[IndexedSeq[_]].length
-      else {
-        val g = f
-        _.asInstanceOf[IndexedSeq[_]].map(g)
-      }
-    }
-
-    val (finalType, inserter): (Type, (Annotation, Annotation) => Annotation) = {
-      val (t, ins) = if (expr != null) {
-        val ec = EvalContext(Map(
-          "va" -> (0, vaSignature),
-          "table" -> (1, joinSignature)))
-        Annotation.buildInserter(expr, vaSignature, ec, Annotation.VARIANT_HEAD)
-      } else insertVA(joinSignature, Parser.parseAnnotationRoot(root, Annotation.VARIANT_HEAD))
-
-      (t, (a: Annotation, toIns: Annotation) => ins(a, f(toIns)))
-    }
-
+  private def annotateVariantsLocusTable(kt: Table, product: Boolean, newVAType: Type, inserter: Inserter): MatrixTable = {
     val keyedRDD = kt.keyedRDD()
       .filter { case (k, v) => k.toSeq.forall(_ != null) }
 
@@ -981,7 +895,7 @@ class MatrixTable(val hc: HailContext, val metadata: VSMMetadata,
       .map { case (k, v) => (k.asInstanceOf[Row].getAs[Annotation](0), v: Annotation) }
       .toOrderedRDD(rdd.orderedPartitioner.projectToPartitionKey())
 
-    annotateLoci(ord, finalType, inserter, product = product)
+    annotateLoci(ord, newVAType, inserter, product = product)
   }
 
   def annotateLoci(lociRDD: OrderedRDD[Annotation, Annotation, Annotation], newSignature: Type,
@@ -1008,34 +922,7 @@ class MatrixTable(val hc: HailContext, val metadata: VSMMetadata,
     copy(rdd = newRDD, vaSignature = newSignature)
   }
 
-  private def annotateVariantsIntervalTable(kt: Table, root: String, expr: String, product: Boolean): MatrixTable = {
-    var (valueType, f): (Type, Annotation => Annotation) = kt.valueSignature.size match {
-      case 0 => (TBoolean(), _ != null)
-      case 1 => (kt.valueSignature.fields.head.typ, x => if (x != null) x.asInstanceOf[Row].get(0) else null)
-      case _ => (kt.valueSignature, identity[Annotation])
-    }
-
-    if (product) {
-      valueType = if (valueType.isInstanceOf[TBoolean]) TInt32(valueType.required) else TArray(valueType)
-      f = if (kt.valueSignature.size == 0)
-        _.asInstanceOf[IndexedSeq[_]].length
-      else {
-        val g = f
-        _.asInstanceOf[IndexedSeq[_]].map(g)
-      }
-    }
-
-    val (newVAType, inserter): (Type, (Annotation, Annotation) => Annotation) = {
-      val (t, ins) = if (expr != null) {
-        val ec = EvalContext(Map(
-          "va" -> (0, vaSignature),
-          "table" -> (1, valueType)))
-        Annotation.buildInserter(expr, vaSignature, ec, Annotation.VARIANT_HEAD)
-      } else insertVA(valueType, Parser.parseAnnotationRoot(root, Annotation.VARIANT_HEAD))
-
-      (t, (a: Annotation, toIns: Annotation) => ins(a, f(toIns)))
-    }
-
+  private def annotateVariantsIntervalTable(kt: Table, product: Boolean, newVAType: Type, inserter: Inserter): MatrixTable = {
     val newMatrixType = matrixType.copy(vaType = newVAType)
     val newRowType = newMatrixType.rowType
 
@@ -1072,7 +959,7 @@ class MatrixTable(val hc: HailContext, val metadata: VSMMetadata,
           val interval = ur.getAs[Interval](ktKeyFieldIdx(0))
           (interval, Row.fromSeq(ktValueFieldIdx.map(ur.get)))
         }
-        .toArray
+          .toArray
 
       val iTree = IntervalTree.annotationTree(locusOrdering, intervalAnnotations)
 
@@ -1098,7 +985,7 @@ class MatrixTable(val hc: HailContext, val metadata: VSMMetadata,
         rvb.startStruct()
         rvb.addField(localRowType, rv, 0) // pk
         rvb.addField(localRowType, rv, 1) // v
-        val newVA = inserter(va, value)
+      val newVA = inserter(va, value)
         assert(newVAType.typeCheck(newVA))
         rvb.addAnnotation(newVAType, newVA)
         rvb.addField(localRowType, rv, 3) // gs
@@ -1122,17 +1009,46 @@ class MatrixTable(val hc: HailContext, val metadata: VSMMetadata,
     if (!((root != null) ^ (expr != null)))
       fatal("method `annotateVariantsTable' requires one of `root' or 'expr', but not both")
 
+    val ktValueType = kt.valueSignature
+
+    var (valueType, f): (Type, Annotation => Annotation) = ktValueType.size match {
+      case 0 => (TBoolean(), _ != null)
+      case 1 => (ktValueType.fields.head.typ, x => if (x != null) x.asInstanceOf[Row].get(0) else null)
+      case _ => (ktValueType, identity[Annotation])
+    }
+
+    if (product) {
+      valueType = if (valueType.isInstanceOf[TBoolean]) TInt32(valueType.required) else TArray(valueType)
+      f = if (ktValueType.size == 0)
+        _.asInstanceOf[IndexedSeq[_]].length
+      else {
+        val g = f
+        _.asInstanceOf[IndexedSeq[_]].map(g)
+      }
+    }
+
+    val (newVAType, inserter) = {
+      val (t, ins) = if (expr != null) {
+        val ec = EvalContext(Map(
+          "va" -> (0, vaSignature),
+          "table" -> (1, valueType)))
+        Annotation.buildInserter(expr, vaSignature, ec, Annotation.VARIANT_HEAD)
+      } else insertVA(valueType, Parser.parseAnnotationRoot(root, Annotation.VARIANT_HEAD))
+
+      (t, (a: Annotation, toIns: Annotation) => ins(a, f(toIns)))
+    }
+
     if (vdsKey != null)
-      annotateVariantsTableOn(kt, vdsKey, root, expr, product)
+      annotateVariantsTableOn(kt, vdsKey, product, newVAType, inserter)
     else {
       val keyTypes = kt.keyFields.map(_.typ)
       keyTypes match {
         case Array(`vSignature`) =>
-          annotateVariantsVariantTable(kt, root, expr, product)
+          annotateVariantsVariantTable(kt, product, newVAType, inserter)
         case Array(`locusType`) =>
-          annotateVariantsLocusTable(kt, root, expr, product)
+          annotateVariantsLocusTable(kt, product, newVAType, inserter)
         case Array(TInterval(`locusType`, _)) =>
-          annotateVariantsIntervalTable(kt, root, expr, product)
+          annotateVariantsIntervalTable(kt, product, newVAType, inserter)
         case _ =>
           fatal(
             s"""method 'annotate_variants_table' expects a key table keyed by one of the following:
