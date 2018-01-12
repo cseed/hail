@@ -877,14 +877,103 @@ class MatrixTable(val hc: HailContext, val metadata: VSMMetadata,
   }
 
   private def annotateVariantsVariantTable(kt: Table, product: Boolean, newVAType: Type, inserter: Inserter): MatrixTable = {
-    val keyedRDD = kt.keyedRDD()
-      .filter { case (k, v) => k.toSeq.forall(_ != null) }
+    val ktType = kt.signature
+    val kIndex = kt.keyFieldIdx(0)
+    val orderedKTType = new OrderedRVType(
+      Array("pk"),
+      Array("pk", "v"),
+      TStruct(
+        "pk" -> locusType,
+        "v" -> vSignature,
+        "value" -> kt.valueSignature))
+    val localLocusType = locusType
+    val localLocusProjection = locusProjection
+    val localVType = vSignature
+    val ktValueFieldIdx = kt.valueFieldIdx
+    var orderedKT = OrderedRVD(
+      orderedKTType,
+      kt.rvd.rdd.mapPartitions { it =>
+        val rvb = new RegionValueBuilder()
+        val rv2 = RegionValue()
+        it.map { rv =>
+          val ur = new UnsafeRow(ktType, rv)
+          val k = ur.get(kIndex)
+          val pk = localLocusProjection(k)
 
-    val ord = keyedRDD
-      .map { case (k, v) => (k.getAs[Annotation](0), v: Annotation) }
-      .toOrderedRDD(rdd.orderedPartitioner)
+          rvb.set(rv.region)
+          rvb.start(orderedKTType.rowType)
+          rvb.startStruct()
+          rvb.addAnnotation(localLocusType, pk)
+          rvb.addAnnotation(localVType, k)
+          rvb.startStruct()
+          rvb.addFields(ktType, rv, ktValueFieldIdx)
+          rvb.endStruct()
+          rvb.endStruct()
+          rv2.set(rv.region, rvb.end())
+          rv2
+        }
+      }, None, Some(rdd2.partitioner))
 
-    annotateVariants(ord, newVAType, inserter, product = product)
+    if (product)
+      orderedKT = orderedKT.groupByKey()
+
+    val leftRowType = rowType
+    val rightRowType = orderedKT.rowType
+
+    val newMatrixType = matrixType.copy(vaType = newVAType)
+    val newRowType = newMatrixType.rowType
+
+    val newRDD2 = OrderedRVD(
+      newMatrixType.orderedRVType,
+      rdd2.partitioner,
+      rdd2.orderedJoinDistinct(orderedKT, "left")
+        .mapPartitions { it =>
+          val rvb = new RegionValueBuilder()
+          val rv = RegionValue()
+
+          it.map { jrv =>
+            val lrv = jrv.rvLeft
+            val lur = new UnsafeRow(leftRowType, lrv)
+            val rur =
+              if (jrv.rvRight != null)
+                new UnsafeRow(rightRowType, jrv.rvRight)
+              else
+                null
+
+            val va = lur.get(2)
+            val value = if (rur != null) {
+              var v = rur.get(2)
+              if (product)
+                v = v.asInstanceOf[IndexedSeq[Any]].map { x =>
+                  x.asInstanceOf[Row].get(0)
+                }
+              v
+            } else {
+              // FIXME just leave null here?
+              if (product)
+                IndexedSeq[Any]()
+              else
+                null
+            }
+
+            val newVA = inserter(va, value)
+            assert(newVAType.typeCheck(newVA))
+
+            rvb.set(lrv.region)
+            rvb.start(newRowType)
+            rvb.startStruct()
+            rvb.addField(leftRowType, lrv, 0)
+            rvb.addField(leftRowType, lrv, 1)
+            rvb.addAnnotation(newVAType, newVA)
+            rvb.addField(leftRowType, lrv, 3)
+            rvb.endStruct()
+            rv.set(lrv.region, rvb.end())
+
+            rv
+          }
+        })
+
+    copy2(rdd2 = newRDD2, vaSignature = newVAType)
   }
 
   private def annotateVariantsLocusTable(kt: Table, product: Boolean, newVAType: Type, inserter: Inserter): MatrixTable = {
