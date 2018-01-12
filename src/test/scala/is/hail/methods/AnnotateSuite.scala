@@ -198,11 +198,9 @@ class AnnotateSuite extends SparkSuite {
     val vds = SplitMulti(hc.importVCF("src/test/resources/sample.vcf"))
       .cache()
 
-    val kt = BedAnnotator(hc, "src/test/resources/example2.bed")
-
-    val bed1r = vds.annotateVariantsTable(BedAnnotator(hc, "src/test/resources/example1.bed"), expr = "va.test = isDefined(table)")
-    val bed2r = vds.annotateVariantsTable(BedAnnotator(hc, "src/test/resources/example2.bed"), expr = "va.test = table.target")
-    val bed3r = vds.annotateVariantsTable(BedAnnotator(hc, "src/test/resources/example3.bed"), expr = "va.test = table.target")
+    val bed1r = vds.annotateVariantsTable(BedAnnotator(hc, "src/test/resources/example1.bed"), root = "va.test")
+    val bed2r = vds.annotateVariantsTable(BedAnnotator(hc, "src/test/resources/example2.bed"), root = "va.test")
+    val bed3r = vds.annotateVariantsTable(BedAnnotator(hc, "src/test/resources/example3.bed"), root = "va.test")
 
     val q1 = bed1r.queryVA("va.test")._2
     val q2 = bed2r.queryVA("va.test")._2
@@ -245,10 +243,10 @@ class AnnotateSuite extends SparkSuite {
 
     val int1r = vds.annotateVariantsTable(IntervalList.read(hc,
       "src/test/resources/exampleAnnotation1.interval_list"),
-      expr = "va.test = isDefined(table)")
+      root = "va.test")
     val int2r = vds.annotateVariantsTable(
       IntervalList.read(hc, "src/test/resources/exampleAnnotation2.interval_list"),
-      expr = "va.test = table.target")
+      root = "va.test")
 
     assert(int1r.same(bed1r))
     assert(int2r.same(bed2r))
