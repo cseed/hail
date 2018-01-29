@@ -2447,13 +2447,13 @@ class MatrixTable(val hc: HailContext, val ast: MatrixIR) extends JoinAnnotator 
     else if (hadoopConf.exists(dirname))
       fatal(s"file already exists at `$dirname'")
 
-    val partitionCounts = rdd2.rdd.writeRows(dirname, rvRowType)
-
-    writeMetadata(dirname, partitionCounts)
-
     hadoopConf.writeTextFile(dirname + "/partitioner.json.gz") { out =>
       Serialization.write(rdd2.partitioner.toJSON, out)
     }
+
+    val partitionCounts = rdd2.rdd.writeRows(dirname, rvRowType)
+
+    writeMetadata(dirname, partitionCounts)
 
     hadoopConf.writeTextFile(dirname + "/_SUCCESS")(out => ())
   }
