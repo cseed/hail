@@ -565,6 +565,17 @@ class MatrixTests(unittest.TestCase):
         self.assertEqual(
             ds.filter_rows(ds.v.num_alleles() == 2).count_rows(), 0)
 
+    def test_filter_partitions(self):
+        ds = self.get_vds(min_partitions=8)
+        self.assertEqual(ds.num_partitions(), 8)
+        self.assertEqual(ds._filter_partitions([0, 1, 4]).num_partitions(), 3)
+        self.assertEqual(ds._filter_partitions([4, 5, 7], keep=False).num_partitions(), 5)
+        self.assertTrue(
+            ds._same(MatrixTable.union_rows(
+                ds._filter_partitions([0, 3, 7]),
+                ds._filter_partitions([0, 3, 7], keep=False))))
+            
+
 class FunctionsTests(unittest.TestCase):
     def test(self):
         schema = TStruct(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'],
