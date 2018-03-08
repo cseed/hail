@@ -485,10 +485,12 @@ object OrderedRVD {
     if (pkis.isEmpty)
       return (AS_IS, empty(sc, typ))
 
+    log.info(s"partition key info:\n  ${ pkis.map(pki => pki.pretty(typ.pkType)).mkString("\n  ") }")
+
     val partitionsSorted = (pkis, pkis.tail).zipped.forall { case (p, pnext) =>
       val r = typ.pkOrd.lteq(p.max, pnext.min)
       if (!r)
-        log.info(s"not sorted: p = $p, pnext = $pnext")
+        log.info(s"not sorted: p = ${ p.pretty(typ.pkType) }, pnext = ${ pnext.pretty(typ.pkType) }")
       r
     }
 
@@ -602,10 +604,12 @@ object OrderedRVD {
       partitioner,
       new ShuffledRDD[RegionValue, RegionValue, RegionValue](
         rdd.mapPartitions { it =>
+          val wrv = WritableRegionValue(typ.rowType)
           val wkrv = WritableRegionValue(typ.kType)
           it.map { rv =>
+            wrv.set(rv)
             wkrv.setSelect(typ.rowType, typ.kRowFieldIdx, rv)
-            (wkrv.value, rv)
+            (wkrv.value, wrv.value)
           }
         },
         partitioner)

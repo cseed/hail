@@ -11,15 +11,23 @@ case class OrderedRVPartitionInfo(
   // min, max: RegionValue[pkType]
   samples: Array[RegionValue],
   sortedness: Int) {
-  def pretty(t: Type): String = {
-    s"partitionIndex=$partitionIndex,size=$size,min=${min.pretty(t)},max=${max.pretty(t)},samples=${samples.map(_.pretty(t)).mkString(",")},sortedness=$sortedness"
-  }
+  def pretty(t: Type): String =
+    s"OrderedRVPartitionInfo { partitionIndex: $partitionIndex, size: $size, min: ${ min.pretty(t) }, max: ${ max.pretty(t) }, samples: [ ${ samples.map(_.pretty(t)).mkString(", ") } ], sortedness: ${ OrderedRVPartitionInfo.prettySortedness(sortedness) } }"
 }
 
 object OrderedRVPartitionInfo {
   final val UNSORTED = 0
   final val TSORTED = 1
   final val KSORTED = 2
+
+  def prettySortedness(sortedness: Int): String = {
+    sortedness match {
+      case UNSORTED => "unsorted"
+      case TSORTED => "tsorted"
+      case KSORTED => "ksorted"
+      case _ => sortedness.toString
+    }
+  }
 
   def apply(typ: OrderedRVDType, sampleSize: Int, partitionIndex: Int, it: Iterator[RegionValue], seed: Int): OrderedRVPartitionInfo = {
     val minF = WritableRegionValue(typ.pkType)
