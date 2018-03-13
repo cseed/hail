@@ -7,7 +7,7 @@ import is.hail.expr.types._
 import is.hail.methods.Aggregators
 import is.hail.rvd._
 import is.hail.table.TableSpec
-import is.hail.variant.MatrixTableSpec
+import is.hail.variant.{MatrixTable, MatrixTableSpec, RelationalSpec}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.Row
 import is.hail.utils._
@@ -186,6 +186,20 @@ case class MatrixLiteral(
   }
 
   override def toString: String = "MatrixLiteral(...)"
+}
+
+object MatrixRead {
+  def apply(hc: HailContext,
+    path: String,
+    dropCols: Boolean,
+    dropRows: Boolean): MatrixRead = {
+    val successFile = path + "/_SUCCESS"
+    if (!hc.hadoopConf.exists(successFile))
+      fatal(s"write failed: file not found: $successFile")
+
+    val spec = RelationalSpec.read(hc, path).asInstanceOf[MatrixTableSpec]
+    MatrixRead(path, spec, dropCols, dropRows)
+  }
 }
 
 case class MatrixRead(
@@ -434,6 +448,17 @@ case class TableLiteral(value: TableValue) extends TableIR {
   }
 
   def execute(hc: HailContext): TableValue = value
+}
+
+object TableRead {
+  def apply(hc: HailContext, path: String, dropRows: Boolean): TableRead = {
+    val successFile = path + "/_SUCCESS"
+    if (!hc.hadoopConf.exists(successFile))
+      fatal(s"write failed: file not found: $successFile")
+
+    val spec = RelationalSpec.read(hc, path).asInstanceOf[TableSpec]
+    TableRead(path, spec, dropRows = dropRows)
+  }
 }
 
 case class TableRead(path: String, spec: TableSpec, dropRows: Boolean) extends TableIR {

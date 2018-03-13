@@ -68,13 +68,8 @@ object Table {
       signature, key)
   }
 
-  def read(hc: HailContext, path: String): Table = {
-    val successFile = path + "/_SUCCESS"
-    if (!hc.hadoopConf.exists(path + "/_SUCCESS"))
-      fatal(s"write failed: file not found: $successFile")
-
-    val spec = RelationalSpec.read(hc, path).asInstanceOf[TableSpec]
-    new Table(hc, TableRead(path, spec, dropRows = false))
+  def read(hc: HailContext, path: String, dropRows: Boolean = false): Table = {
+    new Table(hc, TableRead(hc, path, dropRows = dropRows))
   }
 
   def parallelize(hc: HailContext, rows: java.util.ArrayList[Row], signature: TStruct,

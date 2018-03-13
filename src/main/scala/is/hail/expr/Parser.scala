@@ -1,12 +1,13 @@
 package is.hail.expr
 
+import is.hail.HailContext
 import is.hail.expr.types._
 import is.hail.rvd.OrderedRVDType
 import is.hail.utils.StringEscapeUtils._
 import is.hail.utils._
 import is.hail.variant._
-import org.apache.spark.sql.Row
 
+import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.reflect.ClassTag
 import scala.util.parsing.combinator.JavaTokenParsers
@@ -132,7 +133,7 @@ object Parser extends JavaTokenParsers {
           fs(i) = f
       }
     }
-    (names, types, () => fs.map(_()))
+    (names, types, () => fs.map(_ ()))
   }
 
   def parseAnnotationExprs(code: String, ec: EvalContext, expectedHead: Option[String]): (
@@ -148,7 +149,7 @@ object Parser extends JavaTokenParsers {
       }
     }, ts, f)
   }
-  
+
   def parseAnnotationExprsToAST(code: String, ec: EvalContext): Array[(String, AST)] = {
     val as = named_exprs(identifier).parse(code)
     as.foreach { case (_, ast) => ast.typecheck(ec) }
@@ -188,7 +189,7 @@ object Parser extends JavaTokenParsers {
     val tf = asts.map(eval(_, ec))
     val types = tf.map(_._1)
     val fs = tf.map(_._2)
-    val f = () => fs.map(_())
+    val f = () => fs.map(_ ())
 
     (names, types, f)
   }
@@ -429,7 +430,7 @@ object Parser extends JavaTokenParsers {
 
   def primary_expr: Parser[AST] =
     withPos("f32#" ~> """-?\d+(\.\d+)?[eE][+-]?\d+""".r) ^^ (r => Const(r.pos, r.x.toFloat, TFloat32())) |
-    withPos("f64#" ~> """-?\d+(\.\d+)?[eE][+-]?\d+""".r) ^^ (r => Const(r.pos, r.x.toDouble, TFloat64())) |
+      withPos("f64#" ~> """-?\d+(\.\d+)?[eE][+-]?\d+""".r) ^^ (r => Const(r.pos, r.x.toDouble, TFloat64())) |
       withPos("f32#" ~> """-?\d*(\.\d+)?""".r) ^^ (r => Const(r.pos, r.x.toFloat, TFloat32())) |
       withPos("f64#" ~> """-?\d*(\.\d+)?""".r) ^^ (r => Const(r.pos, r.x.toDouble, TFloat64())) |
       withPos("""-?\d+(\.\d+)?[eE][+-]?\d+[dD]?""".r) ^^ (r => Const(r.pos, r.x.toDouble, TFloat64())) |
@@ -564,9 +565,13 @@ object Parser extends JavaTokenParsers {
 
   def _struct_expr: Parser[TStruct] = ("Struct" ~ "{") ~> type_fields <~ "}" ^^ { fields => TStruct(fields) }
 
-  def key: Parser[Array[String]] = "[" ~> (repsep(identifier, ",") ^^ { _.toArray }) <~ "]"
+  def key: Parser[Array[String]] = "[" ~> (repsep(identifier, ",") ^^ {
+    _.toArray
+  }) <~ "]"
 
-  def trailing_keys: Parser[Array[String]] = rep("," ~> identifier) ^^ { _.toArray }
+  def trailing_keys: Parser[Array[String]] = rep("," ~> identifier) ^^ {
+    _.toArray
+  }
 
   def ordered_rvd_type_expr: Parser[OrderedRVDType] =
     (("OrderedRVDType" ~ "{" ~ "key" ~ ":" ~ "[") ~> key) ~ (trailing_keys <~ "]") ~
@@ -635,9 +640,11 @@ object Parser extends JavaTokenParsers {
 
   def call: Parser[Call] = {
     wholeNumber ~ "/" ~ rep1sep(wholeNumber, "/") ^^ { case a0 ~ _ ~ arest =>
-      CallN(coerceInt(a0) +: arest.map(coerceInt).toArray, phased = false) } |
+      CallN(coerceInt(a0) +: arest.map(coerceInt).toArray, phased = false)
+    } |
       wholeNumber ~ "|" ~ rep1sep(wholeNumber, "|") ^^ { case a0 ~ _ ~ arest =>
-        CallN(coerceInt(a0) +: arest.map(coerceInt).toArray, phased = true) } |
+        CallN(coerceInt(a0) +: arest.map(coerceInt).toArray, phased = true)
+      } |
       wholeNumber ^^ { a => Call1(coerceInt(a), phased = false) } |
       "|" ~ wholeNumber ^^ { case _ ~ a => Call1(coerceInt(a), phased = true) } |
       "-" ^^ { _ => Call0(phased = false) } |
@@ -650,8 +657,8 @@ object Parser extends JavaTokenParsers {
     val start = ("[" ^^^ true) | ("(" ^^^ false)
     val end = ("]" ^^^ true) | (")" ^^^ false)
 
-    start ~ bounds ~ end ^^ {case istart ~ int ~ iend => Interval(int._1, int._2, istart, iend)} |
-      bounds ^^ {int => Interval(int._1, int._2, true, false)}
+    start ~ bounds ~ end ^^ { case istart ~ int ~ iend => Interval(int._1, int._2, istart, iend) } |
+      bounds ^^ { int => Interval(int._1, int._2, true, false) }
   }
 
   def locusInterval(rg: RGBase): Parser[Interval] = {
@@ -660,7 +667,7 @@ object Parser extends JavaTokenParsers {
       locus(rg) ~ "-" ~ pos ^^ { case l1 ~ _ ~ p2 => (l1, l1.copyChecked(rg, position = p2.getOrElse(rg.contigLength(l1.contig)))) } |
       contig ~ "-" ~ contig ^^ { case c1 ~ _ ~ c2 => (Locus(c1, 1, rg), Locus(c2, rg.contigLength(c2), rg)) } |
       contig ^^ { c => (Locus(c, 1), Locus(c, rg.contigLength(c))) }
-      intervalWithEndpoints(valueParser)
+    intervalWithEndpoints(valueParser)
   }
 
   def locus(rg: RGBase): Parser[Locus] =
@@ -691,4 +698,53 @@ object Parser extends JavaTokenParsers {
       "\\d+".r ~ "." ~ "\\d{1,6}".r ~ "[Mm]".r ^^ { case lft ~ _ ~ rt ~ _ => Some(coerceInt(lft + rt) * exp10(6 - rt.length)) } |
       "\\d+".r ^^ { i => Some(coerceInt(i)) }
   }
+
+  def ir_type: Parser[Type] = "[" ~> type_expr <~ "]"
+
+  def ir_id: Parser[String] = identifier
+
+  def ir_unary_op: Parser[ir.UnaryOp] = identifier ^^ { op => ir.UnaryOp.fromString(op) }
+
+  def ir_binary_op: Parser[ir.BinaryOp] = identifier ^^ { op => ir.BinaryOp.fromString(op) }
+
+  def ir_bool: Parser[Boolean] = "true" ^^ { _ => true } | "false" ^^ { _ => false }
+
+  def matrix_table_ir_expr(hc: HailContext): Parser[MatrixIR] =
+    ("(" ~ "MatrixRead") ~> stringLiteral ~ ir_bool ~ ir_bool <~ ")" ^^ { case path ~ dropRows ~ dropCols =>
+      MatrixRead(hc, path, dropRows, dropCols)
+    }
+
+  def table_ir_expr(hc: HailContext, tableIRs: mutable.Map[String, TableIR]): Parser[TableIR] =
+    ("(" ~ "TableRead") ~> stringLiteral ~ ir_bool <~ ")" ^^ { case path ~ dropRows =>
+      TableRead(hc, path, dropRows)
+    } |
+      ("(" ~ "TableFilter") ~> table_ir_expr(hc, tableIRs) ~ ir_expr <~ ")" ^^ { case t ~ p =>
+        TableFilter(t, p)
+      } |
+      ("(" ~ "JavaTableIR") ~> ir_id <~ ")" ^^ { id => tableIRs(id) }
+
+  def ir_expr: Parser[ir.IR] =
+    ("(" ~ "I32") ~> wholeNumber <~ ")" ^^ { x => ir.I32(x.toInt) } |
+      ("(" ~ "I64") ~> wholeNumber <~ ")" ^^ { x => ir.I64(x.toLong) } |
+      ("(" ~ "F32") ~> """-?\d+(\.\d+)?[eE][+-]?\d+""".r <~ ")" ^^ { x => ir.F32(x.toFloat) } |
+      ("(" ~ "F64") ~> """-?\d+(\.\d+)?[eE][+-]?\d+""".r <~ ")" ^^ { x => ir.F64(x.toDouble) } |
+      "(" ~> "True" <~ ")" ^^ { _ => ir.True() } |
+      "(" ~> "False" <~ ")" ^^ { _ => ir.False() } |
+      ("(" ~> "Cast") ~> ir_expr ~ ir_type <~ ")" ^^ { case v ~ typ => ir.Cast(v, typ) } |
+      ("(" ~> "NA") ~> ir_type <~ ")" ^^ { typ => ir.NA(typ) } |
+      ("(" ~> "MapNA") ~> ir_id ~ ir_expr ~ ir_expr <~ ")" ^^ { case id ~ v ~ body => ir.MapNA(id, v, body) } |
+      ("(" ~> "IsNA") ~> ir_expr <~ ")" ^^ { v => ir.IsNA(v) } |
+      ("(" ~> "If") ~> ir_expr ~ ir_expr ~ ir_expr <~ ")" ^^ { case cond ~ thenir ~ elseir => ir.If(cond, thenir, elseir) } |
+      ("(" ~> "Let") ~> ir_id ~ ir_expr ~ ir_expr <~ ")" ^^ { case id ~ v ~ body => ir.Let(id, v, body) } |
+      ("(" ~> "ApplyBinaryPrimOp") ~> ir_binary_op ~ ir_expr ~ ir_expr <~ ")" ^^ { case op ~ l ~ r => ir.ApplyBinaryPrimOp(op, l, r) } |
+      ("(" ~> "ApplyUnaryPrimOp") ~> ir_unary_op ~ ir_expr <~ ")" ^^ { case op ~ x => ir.ApplyUnaryPrimOp(op, x) } |
+      ("(" ~> "Ref") ~> ir_id <~ ")" ^^ { id => ir.Ref(id) } |
+      ("(" ~> "GetField") ~> ir_expr ~ ir_id <~ ")" ^^ { case v ~ id => ir.GetField(v, id) }
+
+
+  def parseIR(expr: String): ir.IR = parse(ir_expr, expr)
+
+  def parseTableIR(hc: HailContext, expr: String, tableIRs: java.util.HashMap[String, TableIR]): TableIR = parse(table_ir_expr(hc, tableIRs.asScala), expr)
+
+  def parseMatrixTableIR(hc: HailContext, expr: String): MatrixIR = parse(matrix_table_ir_expr(hc), expr)
 }

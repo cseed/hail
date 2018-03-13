@@ -2826,6 +2826,10 @@ def construct_expr(ast: AST,
                    indices: Indices = Indices(),
                    aggregations: LinkedList = LinkedList(Aggregation),
                    joins: LinkedList = LinkedList(Join)):
+    if ast.typ is None:
+        ast.typ = type
+    else:
+        assert ast.typ == type
     if isinstance(type, tarray) and is_numeric(type.element_type):
         return ArrayNumericExpression(ast, type, indices, aggregations, joins)
     elif type in scalars:

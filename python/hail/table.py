@@ -3,6 +3,7 @@ import hail
 from hail.expr.expressions import *
 from hail.expr.expr_ast import *
 from hail.expr.types import *
+from hail.expr.tableir import *
 from hail.typecheck import *
 from hail.utils import wrap_to_list, storage_level, LinkedList
 from hail.utils.java import *
@@ -266,9 +267,15 @@ class Table(ExprContainer):
     >>> table1.show()
     """
 
-    def __init__(self, jt):
+    def __init__(self, table_ir):
         super(Table, self).__init__()
 
+        if isinstance(table_ir, py4j.java_gateway.JavaObject):
+            table_ir = JavaTableIR(table_ir.ir())
+
+        jt = Env.hail().table.Table(Env.hc()._jhc, table_ir._jir)
+
+        self._table_ir = table_ir
         self._jt = jt
 
         self._row_axis = 'row'
@@ -276,6 +283,7 @@ class Table(ExprContainer):
         self._global_indices = Indices(axes=set(), source=self)
         self._row_indices = Indices(axes={self._row_axis}, source=self)
 
+        # FIXME we need the types always
         self._global_type = HailType._from_java(jt.globalSignature())
         self._row_type = HailType._from_java(jt.signature())
 
@@ -293,7 +301,6 @@ class Table(ExprContainer):
         for k, v in itertools.chain(self._globals.items(),
                                     self._row.items()):
             self._set_field(k, v)
-
 
     @typecheck_method(item=oneof(str, Expression, slice, tupleof(Expression)))
     def __getitem__(self, item):
@@ -695,7 +702,12 @@ class Table(ExprContainer):
             raise TypeError("method 'filter' expects an expression of type 'bool', found '{}'"
                             .format(expr.dtype))
 
-        return cleanup(Table(base._jt.filter(expr._ast.to_hql(), keep)))
+        try:
+            # make sure it can be evaluated
+            _ = expr._ast.to_ir()
+            return cleanup(Table(TableFilter(self._table_ir, expr._ast)))
+        except NotImplementedError:
+            return cleanup(Table(base._jt.filter(expr._ast.to_hql(), keep)))
 
     @typecheck_method(exprs=oneof(Expression, str),
                       named_exprs=anytype)

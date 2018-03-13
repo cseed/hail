@@ -118,11 +118,12 @@ object FileFormat {
 }
 
 object MatrixTable {
-  def read(hc: HailContext, path: String,
-    dropCols: Boolean = false, dropRows: Boolean = false): MatrixTable = {
-    val spec = RelationalSpec.read(hc, path).asInstanceOf[MatrixTableSpec]
+  def read(hc: HailContext,
+    path: String,
+    dropCols: Boolean = false,
+    dropRows: Boolean = false): MatrixTable = {
     new MatrixTable(hc,
-      MatrixRead(path, spec, dropCols, dropRows))
+      MatrixRead(hc, path, dropCols, dropRows))
   }
 
   def fromLegacy[T](hc: HailContext,

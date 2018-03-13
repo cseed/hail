@@ -1,3 +1,4 @@
+import hail
 from hail.typecheck import *
 from hail.utils.java import Env, escape_str, escape_id
 from .expressions.indices import Indices
@@ -6,14 +7,17 @@ import abc
 
 asttype = lazy()
 
-
 class AST(object):
     @typecheck_method(children=asttype)
     def __init__(self, *children):
+        self.typ = None
         self.children = children
 
     def to_hql(self):
         pass
+
+    def to_ir(self):
+        raise NotImplementedError()
 
     def expand(self):
         return self.search(lambda _: True)
@@ -45,6 +49,9 @@ class _Reference(AST):
     def to_hql(self):
         return escape_id(self.name)
 
+    def to_ir(self):
+        return '(Ref {})'.format(escape_id(self.name))
+
 
 class VariableReference(_Reference):
     @typecheck_method(name=str)
@@ -68,6 +75,11 @@ class UnaryOperation(AST):
     def to_hql(self):
         return '({}({}))'.format(self.operation, self.parent.to_hql())
 
+    def to_ir(self):
+        return '(ApplyUnaryPrimOp {} {})'.format(
+            escape_id(self.operation),
+            self.parent.to_ir())
+
 
 class BinaryOperation(AST):
     @typecheck_method(left=AST, right=AST, operation=str)
@@ -79,6 +91,12 @@ class BinaryOperation(AST):
 
     def to_hql(self):
         return '({} {} {})'.format(self.left.to_hql(), self.operation, self.right.to_hql())
+
+    def to_ir(self):
+        return '(ApplyBinaryPrimOp {} {} {})'.format(
+            escape_id(self.operation),
+            self.left.to_ir(),
+            self.right.to_ir())
 
 
 class Select(AST):
@@ -92,6 +110,11 @@ class Select(AST):
 
     def to_hql(self):
         return '{}.{}'.format(self.parent.to_hql(), escape_id(self.name))
+
+    def to_ir(self):
+        return '(GetField {} {})'.format(
+            self.parent.to_ir(),
+            escape_id(self.name))
 
 
 class ApplyMethod(AST):
@@ -145,6 +168,19 @@ class Index(AST):
     def to_hql(self):
         return '{}[{}]'.format(self.parent.to_hql(), self.key.to_hql())
 
+    def to_ir(self):
+        if isinstance(self.typ, hail.tarray):
+            return '(ArrayRef {} {})'.format(
+                self.parent.to_ir(),
+                self.key.to_ir())
+        elif isinstance(self.typ, hail.ttuple):
+            assert isinstance(self.key, int)
+            return '(GetTupleElement {} {})'.format(
+                self.parent.to_ir(),
+                self.key.to_ir())
+        else:
+            raise NotImplementedError()
+
 
 class Literal(AST):
     @typecheck_method(value=str)
@@ -154,6 +190,34 @@ class Literal(AST):
 
     def to_hql(self):
         return '({})'.format(self.value)
+
+    def to_ir(self):
+        print('value', self.value)
+        if self.value is None:
+            return '(NA [{}]'.format(
+                self.typ._jtype.parsableString())
+        elif self.typ == hail.tint32:
+            return '(I32 {})'.format(int(self.value[4:]))
+        elif self.typ == hail.tint64:
+            assert isinstance(self.value, int)
+            return '(I64 {})'.format(int(self.value[4:]))
+        elif self.typ == hail.tfloat32:
+            assert isinstance(self.value, float)
+            return '(F32 {})'.format(float(self.value[4:]))
+        elif self.typ == hail.tfloat64:
+            assert isinstance(self.value, float)
+            return '(F64 {})'.format(float(self.value[4:]))
+        elif self.typ == hail.tbool:
+            assert isinstance(self.value, bool)
+            if self.value:
+                return 'true'
+            else:
+                return 'false'
+        elif self.typ == hail.tstr:
+            assert isinstance(self.value, str)
+            return self.value
+        else:
+            raise NotImplementedError()
 
 
 class ArrayDeclaration(AST):
@@ -165,6 +229,9 @@ class ArrayDeclaration(AST):
     def to_hql(self):
         return '[ {} ]'.format(', '.join(c.to_hql() for c in self.values))
 
+    def to_ir(self):
+        return '(MakeArray {})'.format(
+            ' '.join(v.to_ir() for v in self.values))
 
 class StructDeclaration(AST):
     @typecheck_method(keys=listof(str), values=listof(AST))
@@ -176,6 +243,11 @@ class StructDeclaration(AST):
     def to_hql(self):
         return '{' + ', '.join('{}: {}'.format(escape_id(k), v.to_hql()) for k, v in zip(self.keys, self.values)) + '}'
 
+    def to_ir(self):
+        return '(MakeStruct {})'.format(
+            ' '.join('({} {})'.format(escape_id(k), v.to_ir())
+                     for k, v in zip(self.keys, self.values)))
+
 
 class TupleDeclaration(AST):
     @typecheck_method(values=AST)
@@ -185,6 +257,10 @@ class TupleDeclaration(AST):
 
     def to_hql(self):
         return 'Tuple(' + ', '.join(v.to_hql() for v in self.values) + ')'
+
+    def to_ir(self):
+        return '(MakeTuple {})'.format(
+            ' '.join(v.to_ir() for v in self.values))
 
 
 class StructOp(AST):
@@ -214,6 +290,12 @@ class Condition(AST):
                                                   b1=self.branch1.to_hql(),
                                                   b2=self.branch2.to_hql())
 
+    def to_ir(self):
+        return '(If {} {} {})'.format(
+            self.predicate.to_ir(),
+            self.branch1.to_ir(),
+            self.branch2.to_ir())
+
 
 class Slice(AST):
     @typecheck_method(start=nullable(AST), stop=nullable(AST))
@@ -242,6 +324,12 @@ class Bind(AST):
             right_expr=self.expression.to_hql()
         )
 
+    def to_ir(self):
+        return '(Let {} {} {})'.format(
+            escape_id(self.uid),
+            self.left_expr.to_ir(),
+            self.right_expr.to_ir())
+
 
 class RegexMatch(AST):
     @typecheck_method(string=AST, regex=str)
@@ -261,6 +349,9 @@ class AggregableReference(AST):
     def to_hql(self):
         return 'AGG'
 
+    def to_ir(self):
+        return 'AggIn'
+
 
 class GlobalJoinReference(AST):
     def __init__(self, uid):
@@ -269,3 +360,7 @@ class GlobalJoinReference(AST):
 
     def to_hql(self):
         return 'global.{}'.format(escape_id(self.uid))
+
+    def to_ir(self):
+        return '(GetField (Ref global) {})'.format(
+            escape_id(self.uid))
