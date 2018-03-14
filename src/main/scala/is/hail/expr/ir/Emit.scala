@@ -247,15 +247,6 @@ private class Emit(
           xmv := xma || xmi || !tarray.isElementDefined(region, xa, xi))
 
         (setup, xmv, region.loadIRIntermediate(typ)(tarray.loadElement(region, xa, xi)))
-      case ArrayMissingnessRef(a, i) =>
-        val tarray = coerce[TArray](a.typ)
-        val ati = coerce[Long](typeToTypeInfo(tarray))
-        val (doa, ma, va) = emit(a)
-        val (doi, mi, vi) = emit(i)
-        present(Code(
-          doa,
-          doi,
-          ma || mi || !tarray.isElementDefined(region, coerce[Long](va), coerce[Int](vi))))
       case ArrayLen(a) =>
         val (doa, ma, va) = emit(a)
         (doa, ma, TContainer.loadLength(region, coerce[Long](va)))
@@ -414,12 +405,6 @@ private class Emit(
         (setup,
           xmo || !t.isFieldDefined(region, xo, fieldIdx),
           region.loadIRIntermediate(t.types(fieldIdx))(t.fieldOffset(xo, fieldIdx)))
-      case GetFieldMissingness(o, name) =>
-        val t = coerce[TStruct](o.typ)
-        val fieldIdx = t.fieldIdx(name)
-        val (doo, mo, vo) = emit(o)
-        present(Code(doo, mo || !t.isFieldDefined(region, coerce[Long](vo), fieldIdx)))
-
       case x@MakeTuple(types, _) =>
         val initializers = types.map { v => (v.typ, emit(v)) }
         val srvb = new StagedRegionValueBuilder(fb, x.typ)
@@ -451,8 +436,6 @@ private class Emit(
         (Code._empty,
           fb.getArg[Boolean](normalArgumentPosition(i) + 1),
           fb.getArg(normalArgumentPosition(i))(typeToTypeInfo(typ)))
-      case InMissingness(i) =>
-        present(fb.getArg[Boolean](i*2 + 3))
       case Die(m) =>
         present(Code._throw(Code.newInstance[RuntimeException, String](m)))
       case ApplyFunction(impl, args) =>
@@ -547,8 +530,6 @@ private class Emit(
                   i ++)))) }
       case _: ApplyAggOp =>
         throw new RuntimeException(s"No nested aggregations allowed: $ir")
-      case In(_, _) | InMissingness(_) =>
-        throw new RuntimeException(s"No inputs may be referenced inside an aggregator: $ir")
       case _ =>
         throw new RuntimeException(s"Expected an aggregator, but found: $ir")
     }

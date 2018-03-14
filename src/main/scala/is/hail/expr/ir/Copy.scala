@@ -50,9 +50,6 @@ object Copy {
       case ArrayRef(_, _, typ) =>
         val IndexedSeq(a, i) = children
         ArrayRef(a, i, typ)
-      case ArrayMissingnessRef(_, _) =>
-        val IndexedSeq(a, i) = children
-        ArrayMissingnessRef(a, i)
       case ArrayLen(_) =>
         val IndexedSeq(a) = children
         ArrayLen(a)
@@ -68,9 +65,6 @@ object Copy {
       case GetField(_, name, typ) =>
         val IndexedSeq(o) = children
         GetField(o, name, typ)
-      case GetFieldMissingness(_, name) =>
-        val IndexedSeq(o) = children
-        GetFieldMissingness(o, name)
       case AggIn(_) =>
         same
       case AggMap(_, name, _, typ) =>
@@ -86,8 +80,6 @@ object Copy {
         val a +: args = children
         ApplyAggOp(a, op, args, typ)
       case In(_, _) =>
-        same
-      case InMissingness(_) =>
         same
       case Die(message) =>
         same

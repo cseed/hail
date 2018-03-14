@@ -21,21 +21,18 @@ object Recur {
     case MakeArray(args, typ) => MakeArray(args map f, typ)
     case MakeArrayN(len, elementType) => MakeArrayN(f(len), elementType)
     case ArrayRef(a, i, typ) => ArrayRef(f(a), f(i), typ)
-    case ArrayMissingnessRef(a, i) => ArrayMissingnessRef(f(a), f(i))
     case ArrayLen(a) => ArrayLen(f(a))
     case ArrayMap(a, name, body, elementTyp) => ArrayMap(f(a), name, f(body), elementTyp)
     case ArrayFold(a, zero, accumName, valueName, body, typ) => ArrayFold(f(a), f(zero), accumName, valueName, f(body), typ)
     case MakeStruct(fields, _) => MakeStruct(fields map { case (n,a) => (n,f(a)) })
     case InsertFields(old, fields, _) => InsertFields(f(old), fields map { case (n,a) => (n,f(a)) } )
     case GetField(o, name, typ) => GetField(f(o), name, typ)
-    case GetFieldMissingness(o, name) => GetFieldMissingness(f(o), name)
     case AggIn(typ) => ir
     case AggMap(a, name, body, typ) => AggMap(f(a), name, f(body), typ)
     case AggFilter(a, name, body, typ) => AggFilter(f(a), name, f(body), typ)
     case AggFlatMap(a, name, body, typ) => AggFlatMap(f(a), name, f(body), typ)
     case ApplyAggOp(a, op, args, typ) => ApplyAggOp(f(a), op, args.map(f), typ)
     case In(i, typ) => ir
-    case InMissingness(i) => ir
     case Die(message) => ir
     case ApplyFunction(impl, args) => ApplyFunction(impl, args.map(f))
   }

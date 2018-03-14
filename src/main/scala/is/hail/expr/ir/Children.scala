@@ -35,8 +35,6 @@ object Children {
       Array(len)
     case ArrayRef(a, i, typ) =>
       Array(a, i)
-    case ArrayMissingnessRef(a, i) =>
-      Array(a, i)
     case ArrayLen(a) =>
       Array(a)
     case ArrayMap(a, name, body, elementTyp) =>
@@ -59,11 +57,7 @@ object Children {
       (a +: args).toIndexedSeq
     case GetField(o, name, typ) =>
       Array(o)
-    case GetFieldMissingness(o, name) =>
-      Array(o)
     case In(i, typ) =>
-      none
-    case InMissingness(i) =>
       none
     case Die(message) =>
       none
