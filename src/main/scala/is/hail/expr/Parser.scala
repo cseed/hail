@@ -729,6 +729,7 @@ object Parser extends JavaTokenParsers {
       ("(" ~ "I64") ~> wholeNumber <~ ")" ^^ { x => ir.I64(x.toLong) } |
       ("(" ~ "F32") ~> """-?\d+(\.\d+)?[eE][+-]?\d+""".r <~ ")" ^^ { x => ir.F32(x.toFloat) } |
       ("(" ~ "F64") ~> """-?\d+(\.\d+)?[eE][+-]?\d+""".r <~ ")" ^^ { x => ir.F64(x.toDouble) } |
+      ("(" ~ "StringLiteral") ~> stringLiteral <~ ")" ^^ { x => ir.StringLiteral(x) } |
       "(" ~> "True" <~ ")" ^^ { _ => ir.True() } |
       "(" ~> "False" <~ ")" ^^ { _ => ir.False() } |
       ("(" ~> "Cast") ~> ir_expr ~ ir_type <~ ")" ^^ { case v ~ typ => ir.Cast(v, typ) } |

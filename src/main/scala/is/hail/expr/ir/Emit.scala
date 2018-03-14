@@ -124,6 +124,8 @@ private class Emit(
         present(const(x))
       case F64(x) =>
         present(const(x))
+      case StringLiteral(s) =>
+        present(region.appendString(s))
       case True() =>
         present(const(true))
       case False() =>

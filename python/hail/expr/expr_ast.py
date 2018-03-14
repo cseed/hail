@@ -215,7 +215,7 @@ class Literal(AST):
                 return 'false'
         elif self.typ == hail.tstr:
             assert isinstance(self.value, str)
-            return self.value
+            return '(StringLiteral {})'.format(self.value)
         else:
             raise NotImplementedError()
 

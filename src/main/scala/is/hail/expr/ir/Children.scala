@@ -9,6 +9,7 @@ object Children {
     case I64(x) => none
     case F32(x) => none
     case F64(x) => none
+    case StringLiteral(_) => none
     case True() => none
     case False() => none
     case Cast(v, typ) =>

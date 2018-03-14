@@ -33,6 +33,7 @@ final case class I32(x: Int) extends IR { val typ = TInt32() }
 final case class I64(x: Long) extends IR { val typ = TInt64() }
 final case class F32(x: Float) extends IR { val typ = TFloat32() }
 final case class F64(x: Double) extends IR { val typ = TFloat64() }
+final case class StringLiteral(x: String) extends IR { val typ = TString() }
 final case class True() extends IR { val typ = TBoolean() }
 final case class False() extends IR { val typ = TBoolean() }
 

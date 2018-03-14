@@ -6,6 +6,7 @@ object Recur {
     case I64(x) => ir
     case F32(x) => ir
     case F64(x) => ir
+    case StringLiteral(x) => ir
     case True() => ir
     case False() => ir
     case Cast(v, typ) => Cast(f(v), typ)
