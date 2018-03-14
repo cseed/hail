@@ -11,7 +11,7 @@ import is.hail.variant.{MatrixTable, MatrixTableSpec, RelationalSpec}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.Row
 import is.hail.utils._
-import org.apache.spark.SparkContext
+import org.apache.spark.{Partition, SparkContext, TaskContext}
 import org.apache.spark.broadcast.Broadcast
 
 object BaseIR {
@@ -433,7 +433,7 @@ abstract sealed class TableIR extends BaseIR {
   def typ: TableType
 
   def partitionCounts: Option[Array[Long]] = None
-  
+
   def execute(hc: HailContext): TableValue
 }
 
@@ -458,6 +458,44 @@ object TableRead {
 
     val spec = RelationalSpec.read(hc, path).asInstanceOf[TableSpec]
     TableRead(path, spec, dropRows = dropRows)
+  }
+}
+
+class RangeRDDPartition
+
+case class TableRange(n: Int, name: String, nPartitions: Option[Int]) extends TableIR {
+  val typ: TableType = TableType(
+    TStruct(name -> TInt32()),
+    Array(name),
+    TStruct.empty())
+
+  val children: IndexedSeq[BaseIR] = Array.empty[BaseIR]
+
+  def copy(newChildren: IndexedSeq[BaseIR]): TableRange = {
+    assert(newChildren.isEmpty)
+    this
+  }
+
+  def execute(hc: HailContext): TableValue = {
+    TableValue(typ,
+      Row(),
+      new UnpartitionedRVD(typ.rowType,
+        hc.sc.parallelize(0 until n, nPartitions.getOrElse(hc.sc.defaultParallelism))
+          .mapPartitions { it =>
+            val region = Region()
+            val rvb = new RegionValueBuilder(region)
+            val rv = RegionValue(region)
+
+            it.map { i =>
+              region.clear()
+              rvb.start(typ.rowType)
+              rvb.startStruct()
+              rvb.addInt(i)
+              rvb.endStruct()
+              rv.setOffset(rvb.end())
+              rv
+            }
+          }))
   }
 }
 

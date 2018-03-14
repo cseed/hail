@@ -709,18 +709,19 @@ object Parser extends JavaTokenParsers {
 
   def ir_bool: Parser[Boolean] = "true" ^^ { _ => true } | "false" ^^ { _ => false }
 
+  def ir_int: Parser[Int] = wholeNumber ^^ {
+    _.toInt
+  }
+
+  def ir_opt[T](p: Parser[T]): Parser[Option[T]] = "None" ^^ { _ => None } | p ^^ { Some(_) }
+
   def matrix_table_ir_expr(hc: HailContext): Parser[MatrixIR] =
-    ("(" ~ "MatrixRead") ~> stringLiteral ~ ir_bool ~ ir_bool <~ ")" ^^ { case path ~ dropRows ~ dropCols =>
-      MatrixRead(hc, path, dropRows, dropCols)
-    }
+    ("(" ~ "MatrixRead") ~> stringLiteral ~ ir_bool ~ ir_bool <~ ")" ^^ { case path ~ dropRows ~ dropCols => MatrixRead(hc, path, dropRows, dropCols) }
 
   def table_ir_expr(hc: HailContext, tableIRs: mutable.Map[String, TableIR]): Parser[TableIR] =
-    ("(" ~ "TableRead") ~> stringLiteral ~ ir_bool <~ ")" ^^ { case path ~ dropRows =>
-      TableRead(hc, path, dropRows)
-    } |
-      ("(" ~ "TableFilter") ~> table_ir_expr(hc, tableIRs) ~ ir_expr <~ ")" ^^ { case t ~ p =>
-        TableFilter(t, p)
-      } |
+    ("(" ~ "TableRead") ~> stringLiteral ~ ir_bool <~ ")" ^^ { case path ~ dropRows => TableRead(hc, path, dropRows) } |
+      ("(" ~ "TableRange") ~> ir_int ~ ir_id ~ ir_opt(ir_int) <~ ")" ^^ { case n ~ id ~ nPartitions => TableRange(n, id, nPartitions) } |
+      ("(" ~ "TableFilter") ~> table_ir_expr(hc, tableIRs) ~ ir_expr <~ ")" ^^ { case t ~ p => TableFilter(t, p) } |
       ("(" ~ "JavaTableIR") ~> ir_id <~ ")" ^^ { id => tableIRs(id) }
 
   def ir_expr: Parser[ir.IR] =

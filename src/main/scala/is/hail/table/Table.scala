@@ -47,14 +47,8 @@ case class TableSpec(
 }
 
 object Table {
-  def range(hc: HailContext, n: Int, name: String = "index", partitions: Option[Int] = None): Table = {
-    val range = Range(0, n).view.map(Row(_))
-    val rdd = partitions match {
-      case Some(parts) => hc.sc.parallelize(range, numSlices = parts)
-      case None => hc.sc.parallelize(range)
-    }
-    Table(hc, rdd, TStruct(name -> TInt32()), IndexedSeq(name))
-  }
+  def range(hc: HailContext, n: Int, name: String = "index", nPartitions: Option[Int] = None): Table =
+    new Table(hc, TableRange(n, name, nPartitions))
 
   def fromDF(hc: HailContext, df: DataFrame, key: java.util.ArrayList[String]): Table = {
     fromDF(hc, df, key.asScala.toArray.toFastIndexedSeq)

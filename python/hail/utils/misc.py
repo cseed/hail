@@ -81,7 +81,8 @@ def range_table(n, n_partitions=None) -> 'hail.Table':
     -------
     :class:`.Table`
     """
-    return hail.Table(Env.hail().table.Table.range(Env.hc()._jhc, n, 'idx', joption(n_partitions)))
+    from hail.expr.tableir import TableRange
+    return hl.Table(TableRange(n, 'idx', n_partitions))
 
 def wrap_to_list(s):
     if isinstance(s, list):

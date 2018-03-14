@@ -6,6 +6,7 @@ from hail.matrixtable import MatrixTable
 from hail.table import Table
 from hail.expr.types import *
 from hail.expr.expressions import analyze, expr_any
+from hail.expr.tableir import *
 from hail.genetics.reference_genome import reference_genome_type
 from hail.methods.misc import require_biallelic, require_row_key_variant
 
@@ -1529,8 +1530,9 @@ def index_bgen(path):
     Env.hc()._jhc.indexBgen(jindexed_seq_args(path))
 
 
-@typecheck(path=str)
-def read_table(path):
+@typecheck(path=str,
+           _drop_rows=bool)
+def read_table(path, _drop_rows=False):
     """Read in a :class:`.Table` written with :meth:`.Table.write`.
 
     Parameters
@@ -1542,4 +1544,4 @@ def read_table(path):
     -------
     :class:`.Table`
     """
-    return Table(Env.hc()._jhc.readTable(path))
+    return Table(TableRead(path, _drop_rows))
