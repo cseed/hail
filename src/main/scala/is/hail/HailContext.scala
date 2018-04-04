@@ -31,6 +31,10 @@ case class FilePartition(index: Int, file: String) extends Partition
 
 object HailContext {
 
+  private var cachedContext: HailContext = _
+
+  def get: HailContext = cachedContext
+
   val tera: Long = 1024L * 1024L * 1024L * 1024L
 
   val logFormat: String = "%d{yyyy-MM-dd HH:mm:ss} %c{1}: %p: %m%n"
@@ -134,6 +138,7 @@ object HailContext {
     minBlockSize: Long = 1L,
     branchingFactor: Int = 50,
     tmpDir: String = "/tmp"): HailContext = {
+    require(cachedContext == null)
 
     val javaVersion = System.getProperty("java.version")
     if (!javaVersion.startsWith("1.8"))
@@ -171,6 +176,7 @@ object HailContext {
     sparkContext.uiWebUrl.foreach(ui => info(s"SparkUI: $ui"))
 
     info(s"Running Hail version ${ hc.version }")
+    cachedContext = hc
     hc
   }
 
@@ -653,5 +659,6 @@ class HailContext private(val sc: SparkContext,
 
   def stop() {
     sc.stop()
+    HailContext.cachedContext = null
   }
 }
