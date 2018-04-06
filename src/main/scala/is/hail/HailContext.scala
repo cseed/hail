@@ -31,9 +31,9 @@ case class FilePartition(index: Int, file: String) extends Partition
 
 object HailContext {
 
-  private var cachedContext: HailContext = _
+  private var theContext: HailContext = _
 
-  def get: HailContext = cachedContext
+  def get: HailContext = theContext
 
   val tera: Long = 1024L * 1024L * 1024L * 1024L
 
@@ -138,7 +138,7 @@ object HailContext {
     minBlockSize: Long = 1L,
     branchingFactor: Int = 50,
     tmpDir: String = "/tmp"): HailContext = {
-    require(cachedContext == null)
+    require(theContext == null)
 
     val javaVersion = System.getProperty("java.version")
     if (!javaVersion.startsWith("1.8"))
@@ -176,11 +176,15 @@ object HailContext {
     sparkContext.uiWebUrl.foreach(ui => info(s"SparkUI: $ui"))
 
     info(s"Running Hail version ${ hc.version }")
-    cachedContext = hc
+    theContext = hc
     hc
   }
 
-  def startProgressBar(sc: SparkContext): Unit = {
+  def clear() {
+    theContext = null
+  }
+
+  def startProgressBar(sc: SparkContext) {
     ProgressBarBuilder.build(sc)
   }
 
@@ -655,10 +659,5 @@ class HailContext private(val sc: SparkContext,
         val (t, f) = Parser.eval(ast, ec)
         (f(), t)
     }
-  }
-
-  def stop() {
-    sc.stop()
-    HailContext.cachedContext = null
   }
 }
