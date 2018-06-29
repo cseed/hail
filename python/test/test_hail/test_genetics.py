@@ -1,12 +1,13 @@
 import unittest
 import hail as hl
 from hail.genetics import *
-from .utils import resource, startTestHailContext, stopTestHailContext
+from test.utils import resource, startTestHailContext, stopTestHailContext
 
 setUpModule = startTestHailContext
 tearDownModule = stopTestHailContext
 
-class Tests(unittest.TestCase):
+
+class Test(unittest.TestCase):
     def test_classes(self):
         l = Locus.parse('1:100')
 

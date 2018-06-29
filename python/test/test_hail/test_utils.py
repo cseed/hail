@@ -2,14 +2,14 @@ import unittest
 
 from hail.utils import *
 from hail.utils.linkedlist import LinkedList
-from .utils import resource, startTestHailContext, stopTestHailContext
+from test.utils import resource, startTestHailContext, stopTestHailContext
 from hail.genetics import Locus
 import hail as hl
 
 setUpModule = startTestHailContext
 tearDownModule = stopTestHailContext
 
-class Tests(unittest.TestCase):
+class Test(unittest.TestCase):
     def test_hadoop_methods(self):
         data = ['foo', 'bar', 'baz']
         data.extend(map(str, range(100)))

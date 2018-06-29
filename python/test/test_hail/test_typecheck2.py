@@ -3,7 +3,7 @@ import unittest
 from typing import *
 
 
-class Tests(unittest.TestCase):
+class Test(unittest.TestCase):
 
     def test_noargs(self):
         def f_noargs():

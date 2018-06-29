@@ -2,7 +2,7 @@ import unittest
 from hail.typecheck.check import *
 
 
-class TypeCheckTests(unittest.TestCase):
+class Test(unittest.TestCase):
     def test_varargs(self):
         @typecheck(x=int, y=int)
         def f1(x, y):

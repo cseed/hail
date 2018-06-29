@@ -43,3 +43,16 @@ def doctest_resource(filename):
         _doctest_dir = os.path.join(path, 'python', 'hail', 'docs', 'data')
 
     return os.path.join(_doctest_dir, filename)
+
+
+def convert_struct_to_dict(x):
+    if isinstance(x, hl.Struct):
+        return {k: convert_struct_to_dict(v) for k, v in x._fields.items()}
+    elif isinstance(x, list):
+        return [convert_struct_to_dict(elt) for elt in x]
+    elif isinstance(x, tuple):
+        return tuple([convert_struct_to_dict(elt) for elt in x])
+    elif isinstance(x, dict):
+        return {k: convert_struct_to_dict(v) for k, v in x.items()}
+    else:
+        return x

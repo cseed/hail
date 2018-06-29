@@ -8,7 +8,7 @@ from struct import unpack
 import hail.utils as utils
 from hail.linalg import BlockMatrix
 from math import sqrt
-from .utils import resource, doctest_resource, startTestHailContext, stopTestHailContext
+from test.utils import resource, doctest_resource, startTestHailContext, stopTestHailContext
 
 setUpModule = startTestHailContext
 tearDownModule = stopTestHailContext

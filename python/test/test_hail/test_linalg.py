@@ -3,7 +3,7 @@ import unittest
 import hail as hl
 from hail.linalg import BlockMatrix
 from hail.utils import new_temp_file, new_local_temp_dir, local_path_uri, FatalError
-from .utils import resource, startTestHailContext, stopTestHailContext
+from test.utils import resource, startTestHailContext, stopTestHailContext
 import numpy as np
 import tempfile
 
@@ -11,7 +11,7 @@ setUpModule = startTestHailContext
 tearDownModule = stopTestHailContext
 
 
-class Tests(unittest.TestCase):
+class Test(unittest.TestCase):
     _dataset = None
 
     @staticmethod
