@@ -61,6 +61,8 @@ public:
     pos_(kChunkCap),
     chunks_used_(0) {
   }
+
+  ~Region();
   
   // clear_but_keep_mem() will make the Region empty without free'ing chunks
   void clear_but_keep_mem();
@@ -79,6 +81,7 @@ public:
   }
   
   inline char* allocate(ssize_t a, ssize_t n) {
+    // fprintf(stderr, "DEBUG: Region::alloc %zx %zx\n", a, n);
     ssize_t mask = (a-1);
     ssize_t apos = ((pos_ + mask) & ~mask);
     if (apos+n <= kChunkCap) {
@@ -90,6 +93,7 @@ public:
   }
     
   inline char* allocate(ssize_t n) {
+    // fprintf(stderr, "DEBUG: Region::alloc %zx\n", n);
     ssize_t apos = pos_;
     if (apos+n <= kChunkCap) {
       char* p = (buf_ + apos);

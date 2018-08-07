@@ -198,6 +198,10 @@ object HailContext {
     sparkContext.uiWebUrl.foreach(ui => info(s"SparkUI: $ui"))
 
     info(s"Running Hail version ${ hc.version }")
+
+    val runtime = Runtime.getRuntime
+    info(s"maxMemory: ${ formatSpace(runtime.maxMemory()) }, totalMemory: ${ formatSpace(runtime.totalMemory()) }, freeMemory: ${ formatSpace(runtime.freeMemory()) }")
+
     theContext = hc
     hc
   }

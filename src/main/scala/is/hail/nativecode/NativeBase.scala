@@ -1,6 +1,7 @@
 package is.hail.nativecode
 
 import com.sun.jna.Native
+import is.hail.utils._
 
 //
 // NativeBase is a Scala object which stores a C++ std::shared_ptr<NativeObj>
@@ -41,11 +42,14 @@ class NativeBase() extends AutoCloseable {
 
   final def close() {
     if (addrA != 0) {
+      val runtime = Runtime.getRuntime
+      info(s"closing NativeObject ${ addrA.toHexString }: maxMemory: ${ formatSpace(runtime.maxMemory()) }, totalMemory: ${ formatSpace(runtime.totalMemory()) }, freeMemory: ${ formatSpace(runtime.freeMemory()) }")
+
       val tmpA = addrA
       val tmpB = addrB
       addrA = 0
       addrB = 0
-      nativeReset(tmpA, tmpB);
+      nativeReset(tmpA, tmpB)
     }
   }
   

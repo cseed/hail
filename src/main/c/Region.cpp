@@ -9,6 +9,17 @@ constexpr ssize_t Region::kChunkCap;
 constexpr ssize_t Region::kMaxSmall;
 constexpr ssize_t Region::kNumBigToKeep;
 
+Region::~Region() {
+  size_t size = 0;
+  for (const auto &c : chunks_)
+      size += c.size_;
+  for (const auto &c : big_free_)
+      size += c.size_;
+  for (const auto &c : big_used_)
+      size += c.size_;
+  fprintf(stderr, "DEBUG: ~Region %p: size = 0x%zx\n", this, size);
+}
+
 void Region::clear_but_keep_mem() {
   buf_ = nullptr;
   pos_ = kChunkCap;
