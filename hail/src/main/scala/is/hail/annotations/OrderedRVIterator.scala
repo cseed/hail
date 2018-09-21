@@ -4,6 +4,22 @@ import is.hail.rvd.{OrderedRVDType, RVDContext}
 import is.hail.utils._
 
 import scala.collection.generic.Growable
+import scala.reflect.ClassTag
+
+object OrderedRVIterator {
+  def multiZipJoin[A: ClassTag](
+    its: IndexedSeq[OrderedRVIterator]
+  ): Iterator[Array[RegionValue]] = {
+    require(its.length > 0)
+    val first = its(0)
+    val flipbooks = its.map(_.iterator.toFlipbookIterator)
+    FlipbookIterator.multiZipJoin(
+      flipbooks,
+      null,
+      first.t.joinComp(first.t).compare
+    )
+  }
+}
 
 case class OrderedRVIterator(
   t: OrderedRVDType,
