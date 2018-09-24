@@ -41,8 +41,10 @@ def transform_one(mt: MatrixTable) -> MatrixTable:
     )
     # This collects all fields with median combiners into arrays so we can calculate medians
     # when needed
-    mt = mt.annotate_rows(info=mt.info.annotate(
-        SB=hl.agg.array_sum(mt.entry.SB)).select(
+    mt = mt.annotate_rows(
+        info=mt.info.annotate(
+            SB=hl.agg.array_sum(mt.entry.SB)
+        ).select(
             "DP",
             "MQ_DP",
             "QUALapprox",
