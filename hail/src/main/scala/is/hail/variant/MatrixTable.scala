@@ -1617,4 +1617,28 @@ class MatrixTable(val hc: HailContext, val ast: MatrixIR) {
       rvd = rvd.copy(typ = newType.orvdType, crdd = newRDD),
       matrixType = newType)
   }
+
+  def scratchPartitioner(path: String): OrderedRVDPartitioner = {
+    val tab = TableIR.read(hc, path, false, None)
+    val data = tab.execute(hc).rdd.collect.map { r =>
+      val int = r(0).asInstanceOf[Interval]
+      val start = int.start
+      val end = int.end
+      int.copy(start=Row(start), end=Row(end))
+    }
+    OrderedRVDPartitioner.generate(TStruct("locus" -> TLocus(ReferenceGenome.GRCh38)), data)
+  }
+
+  def oneOffRepartition(path: String): MatrixTable = {
+    val tab = TableIR.read(hc, path, false, None)
+    val data = tab.execute(hc).rdd.collect.map { r =>
+      val int = r(0).asInstanceOf[Interval]
+      val start = int.start
+      val end = int.end
+      int.copy(start=Row(start), end=Row(end))
+    }
+    val partitioner = OrderedRVDPartitioner.generate(rvd.typ.kType, data)
+    val newRVD = rvd.constrainToOrderedPartitioner(partitioner)
+    copyMT(rvd = newRVD)
+  }
 }
