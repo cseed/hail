@@ -56,15 +56,21 @@ def transform_one(mt: MatrixTable) -> MatrixTable:
     return mt.drop('SB', 'qual').key_rows_by('locus')
 
 
-def merge_alleles(left, right) -> ArrayExpression:
-    tmp = left.filter(lambda e: e != '<NON-REF>')
-    return tmp.extend(right.filter(lambda e: ~tmp.contains(e)))
+def merge_alleles(alleles) -> ArrayExpression:
+    ref = hl.find(hl.is_defined, alleles)[0]
+    s = hl.array(hl.set(hl.flatten(alleles)).difference(hl.set([ref, '<NON_REF>'])))
+    # TODO: handle cases where there is no NON_REF
+    alen = hl.len(s) + 2
+    return hl.range(0, alen).map(lambda i: hl.cond(i != 0, hl.cond(i != alen-1, s[i-1], '<NON_REF>'), ref))
 
 
 def shuffle_pl(pl) -> ArrayExpression:
+    # shuffling is only meaningful in our case when the GT order changes
+    # the order will only change when a het-non-ref allele is called,
+    # at least for the data I am currently working with
+    shuf = [0, 3, 5, 1, 4, 2, 6, 8, 7, 9]
     return hl.cond(pl.length() == 10,
-                   pl[:1].append(pl[3]).append(pl[5]).append(pl[1]).append(pl[4]).append(pl[2])
-                         .append(pl[6]).append(pl[8]).append(pl[7]).append(pl[9]),
+                   hl.range(0, 10).map(lambda i: pl[shuf[i]]),
                    pl)
 
 
@@ -74,18 +80,16 @@ def renumber_gt(format_field, old, new) -> StructExpression:
        of new, and the 5th element of old is the 2nd element of new, then this function returns
        a format struct with a GT of 2/8 and will rearrange the PL array to account for switching
        up the order of the alleles in the GT"""
-    def help1(call, old, new):
-        al_0 = old[call[0]]
-        new_ind_0 = position(new, lambda e: e == al_0)
-        al_1 = old[call[1]]
-        new_ind_1 = position(new, lambda e: e == al_1)
-        return hl.call(new_ind_0, new_ind_1, phased=False), new_ind_1 < new_ind_0
-
-    def help2(fld, old, new):
-        ncall, flipped = help1(fld['GT'], old, new)
-        fld = fld.annotate(GT=ncall)
-        return hl.cond(flipped, fld.annotate(PL=shuffle_pl(fld['PL'])), fld)
-    return hl.cond(format_field['GT'] == REF_CALL, format_field, help2(format_field, old, new))
+    call = format_field['GT']
+    al_0 = old[call[0]]
+    new_ind_0 = position(new, lambda e: e == al_0)
+    al_1 = old[call[1]]
+    new_ind_1 = position(new, lambda e: e == al_1)
+    ncall = hl.call(new_ind_0, new_ind_1, phased=False)
+    flipped = new_ind_1 < new_ind_0
+    fld = format_field.annotate(GT=ncall)
+    return hl.cond(flipped, fld.annotate(PL=shuffle_pl(fld['PL'])), fld)
+    # return hl.cond(format_field['GT'] == REF_CALL, format_field, help2(format_field, old, new))
 
 
 def combine_vcfs_mw(mts):
@@ -96,12 +100,29 @@ def combine_vcfs_mw(mts):
 
     cols = None
     for mt in mts:
+        mt = mt.annotate_globals(ncol=mt.cols().count())
         if cols is None:
             cols = mt.key_cols_by().cols()
         else:
             cols = cols.union(mt.key_cols_by().cols())
     ts = hl.Table._multi_way_zip_join([localize(mt.annotate_globals(cc=mt.cols().count())) for mt in mts], 'data', 'g')
-    combined = ts
+    ts_promoted = ts.annotate(
+        alleles=merge_alleles(ts.data.map(lambda d: d.alleles)),
+        filters=hl.set(hl.flatten(ts.data.map(lambda d: hl.array(d.filters)))),
+        rsid=hl.find(hl.is_defined, ts.data.map(lambda d: d.rsid)),
+        info=hl.struct(
+            DP=hl.sum(ts.data.map(lambda d: d.info.DP)),
+            MQ_DP=hl.sum(ts.data.map(lambda d: d.info.MQ_DP)),
+            QUALapprox=hl.sum(ts.data.map(lambda d: d.info.QUALapprox)),
+            RAW_MQ=hl.sum(ts.data.map(lambda d: d.info.RAW_MQ)),
+            VarDP=hl.sum(ts.data.map(lambda d: d.info.VarDP)),
+            SB=hl.fold(lambda a, b: mappend(operator.add, a, b),
+                       hl.null(hl.tarray(hl.tint64)),
+                       ts.data.map(lambda d: d.info.SB)),
+        ),
+    )
+
+    combined = ts_promoted
     return combined._unlocalize_entries(cols, '__entries')
 
 # NOTE: these are just @chrisvittal's notes on how gVCF fields are combined
