@@ -4,7 +4,6 @@ import operator
 
 import hail as hl
 from hail.matrixtable import MatrixTable
-from hail.table import Table
 from hail.expr import ArrayExpression, Expression, NumericExpression, StructExpression
 
 REF_CALL = hl.call(0, 0, phased=False)
@@ -30,6 +29,7 @@ def position(arr, pred) -> NumericExpression:
 
 def transform_one(mt: MatrixTable) -> MatrixTable:
     """transforms a gvcf into a form suitable for combining"""
+    mt = mt.key_rows_by('locus')
     mt = mt.annotate_entries(
         END=mt.info.END,
         PL=mt['PL'][0:],
@@ -53,7 +53,7 @@ def transform_one(mt: MatrixTable) -> MatrixTable:
             "SB",
         ))
     # NOTE until joins are improved, we only key by locus for now
-    return mt.drop('SB', 'qual').key_rows_by('locus')
+    return mt.drop('SB', 'qual')
 
 
 def merge_alleles(alleles) -> ArrayExpression:
@@ -92,6 +92,32 @@ def renumber_gt(format_field, old, new) -> StructExpression:
     # return hl.cond(format_field['GT'] == REF_CALL, format_field, help2(format_field, old, new))
 
 
+def combine(ts):
+    # pylint: disable=protected-access
+    return ts.transmute(
+        alleles=merge_alleles(ts.data.map(lambda d: d.alleles)),
+        filters=hl.set(hl.flatten(ts.data.map(lambda d: hl.array(d.filters)))),
+        rsid=hl.find(hl.is_defined, ts.data.map(lambda d: d.rsid)),
+        info=hl.struct(
+            DP=hl.sum(ts.data.map(lambda d: d.info.DP)),
+            MQ_DP=hl.sum(ts.data.map(lambda d: d.info.MQ_DP)),
+            QUALapprox=hl.sum(ts.data.map(lambda d: d.info.QUALapprox)),
+            RAW_MQ=hl.sum(ts.data.map(lambda d: d.info.RAW_MQ)),
+            VarDP=hl.sum(ts.data.map(lambda d: d.info.VarDP)),
+            SB=hl.fold(lambda a, b: mappend(operator.add, a, b),
+                       hl.null(hl.tarray(hl.tint64)),
+                       ts.data.map(lambda d: d.info.SB)),
+        ),
+        __entries=hl.flatten(
+            hl.range(0, hl.len(ts.data)).map(
+                lambda i: hl.cond(hl.is_missing(ts.data[i].__entries),
+                                  hl.range(0, ts.g[i].ncol).map(lambda _: hl.null(ts.data[i].__entries[0].dtype)),
+                                  ts.data[i].__entries)
+                )
+        )
+    )
+
+
 def combine_vcfs_mw(mts):
     """merges vcfs using multi way join"""
     # pylint: disable=protected-access
@@ -106,23 +132,7 @@ def combine_vcfs_mw(mts):
         else:
             cols = cols.union(mt.key_cols_by().cols())
     ts = hl.Table._multi_way_zip_join([localize(mt.annotate_globals(cc=mt.cols().count())) for mt in mts], 'data', 'g')
-    ts_promoted = ts.annotate(
-        alleles=merge_alleles(ts.data.map(lambda d: d.alleles)),
-        filters=hl.set(hl.flatten(ts.data.map(lambda d: hl.array(d.filters)))),
-        rsid=hl.find(hl.is_defined, ts.data.map(lambda d: d.rsid)),
-        info=hl.struct(
-            DP=hl.sum(ts.data.map(lambda d: d.info.DP)),
-            MQ_DP=hl.sum(ts.data.map(lambda d: d.info.MQ_DP)),
-            QUALapprox=hl.sum(ts.data.map(lambda d: d.info.QUALapprox)),
-            RAW_MQ=hl.sum(ts.data.map(lambda d: d.info.RAW_MQ)),
-            VarDP=hl.sum(ts.data.map(lambda d: d.info.VarDP)),
-            SB=hl.fold(lambda a, b: mappend(operator.add, a, b),
-                       hl.null(hl.tarray(hl.tint64)),
-                       ts.data.map(lambda d: d.info.SB)),
-        ),
-    )
-
-    combined = ts_promoted
+    combined = combine(ts)
     return combined._unlocalize_entries(cols, '__entries')
 
 # NOTE: these are just @chrisvittal's notes on how gVCF fields are combined
@@ -142,17 +152,17 @@ def combine_vcfs_mw(mts):
 #   Operations for the fields
 #   QUAL: set to missing
 #   INFO {
-#       BaseQRankSum: median,
-#       ClippingRankSum: median,
+#       BaseQRankSum: median, # NOTE : move to format for combine
+#       ClippingRankSum: median, # NOTE : move to format for combine
 #       DP: sum
 #       ExcessHet: median, # NOTE : this can also be dropped
-#       MQ: median,
+#       MQ: median, # NOTE : move to format for combine
 #       MQ_DP: sum,
 #       MQ0: median,
-#       MQRankSum: median,
+#       MQRankSum: median, # NOTE : move to format for combine
 #       QUALApprox: sum,
 #       RAW_MQ: sum
-#       ReadPosRankSum: median,
+#       ReadPosRankSum: median, # NOTE : move to format for combine
 #       SB: elementwise sum, # NOTE: after being moved from FORMAT
 #       VarDP: sum
 #   }
