@@ -5,7 +5,7 @@ import is.hail.annotations._
 import is.hail.expr._
 import is.hail.expr.ir.{TableLiteral, TableValue}
 import is.hail.expr.types._
-import is.hail.rvd.{OrderedRVD, RVDContext}
+import is.hail.rvd.{RVD, RVDContext}
 import is.hail.sparkextras.ContextRDD
 import is.hail.table.Table
 import is.hail.utils._
@@ -52,8 +52,12 @@ object VEP {
   }
 
   def variantFromInput(input: String): (Locus, IndexedSeq[String]) = {
-    val a = input.split("\t")
-    (Locus(a(0), a(1).toInt), a(3) +: a(4).split(","))
+    try {
+      val a = input.split("\t")
+      (Locus(a(0), a(1).toInt), a(3) +: a(4).split(","))
+    } catch {
+      case e: Throwable => fatal(s"VEP returned invalid variant '$input'", e)
+    }
   }
 
   def getCSQHeaderDefinition(cmd: Array[String], confEnv: Map[String, String]): Option[String] = {
@@ -158,7 +162,12 @@ object VEP {
                       null
                   }
                   val a = JSONAnnotationImpex.importAnnotation(jv, vepSignature)
-                  val vepv@(vepLocus, vepAlleles) = variantFromInput(inputQuery(a).asInstanceOf[String])
+                  val variantString = inputQuery(a).asInstanceOf[String]
+                  if (variantString == null)
+                    fatal(s"VEP generated null variant string" +
+                      s"\n  json:   $s" +
+                      s"\n  parsed: $a")
+                  val vepv@(vepLocus, vepAlleles) = variantFromInput(variantString)
 
                   nonStarToOriginalVariant.get(vepv) match {
                     case Some(v@(locus, alleles)) =>
@@ -182,12 +191,12 @@ object VEP {
 
     val vepType: Type = if (csq) TArray(TString()) else vepSignature
 
-    val vepORVDType = prev.typ.copy(rowType = prev.rowType ++ TStruct("vep" -> vepType))
+    val vepRVDType = prev.typ.copy(rowType = prev.rowType ++ TStruct("vep" -> vepType))
 
-    val vepRowType = vepORVDType.rowType
+    val vepRowType = vepRVDType.rowType
 
-    val vepRVD: OrderedRVD = OrderedRVD(
-      vepORVDType,
+    val vepRVD: RVD = RVD(
+      vepRVDType,
       prev.partitioner,
       ContextRDD.weaken[RVDContext](annotations).cmapPartitions { (ctx, it) =>
         val region = ctx.region

@@ -6,13 +6,13 @@ import is.hail.utils.fatal
 
 import scala.collection.generic.Growable
 
-class KeyedOrderedRVD(val rvd: OrderedRVD, val key: Int) {
+class KeyedRVD(val rvd: RVD, val key: Int) {
   require(key <= rvd.typ.key.length && key >= 0)
-  val realType: OrderedRVDType = rvd.typ
-  val virtType = OrderedRVDType(realType.rowType, realType.key.take(key))
+  val realType: RVDType = rvd.typ
+  val virtType = RVDType(realType.rowType, realType.key.take(key))
   val (kType, _) = rvd.rowType.select(virtType.key)
 
-  private def checkJoinCompatability(right: KeyedOrderedRVD) {
+  private def checkJoinCompatability(right: KeyedRVD) {
     if (!(kType isIsomorphicTo right.kType))
       fatal(
         s"""Incompatible join keys. Keys must have same length and types, in order:
@@ -26,11 +26,11 @@ class KeyedOrderedRVD(val rvd: OrderedRVD, val key: Int) {
   // these 'joinedType.key' fields from the corresponding fields in the
   // JoinedRegionValue.
   def orderedJoin(
-    right: KeyedOrderedRVD,
+    right: KeyedRVD,
     joinType: String,
     joiner: (RVDContext, Iterator[JoinedRegionValue]) => Iterator[RegionValue],
-    joinedType: OrderedRVDType
-  ): OrderedRVD = {
+    joinedType: RVDType
+  ): RVD = {
     checkJoinCompatability(right)
 
     val newPartitioner = {
@@ -40,12 +40,12 @@ class KeyedOrderedRVD(val rvd: OrderedRVD, val key: Int) {
         case "left" => leftPart
         case "right" => rightPart
         case "inner" => leftPart.intersect(rightPart)
-        case "outer" => OrderedRVDPartitioner.generate(
+        case "outer" => RVDPartitioner.generate(
           realType.kType,
           leftPart.rangeBounds ++ rightPart.rangeBounds)
       }
     }
-    val repartitionedLeft = rvd.constrainToOrderedPartitioner(newPartitioner)
+    val repartitionedLeft = rvd.repartition(newPartitioner)
     val compute: (OrderedRVIterator, OrderedRVIterator, Iterable[RegionValue] with Growable[RegionValue]) => Iterator[JoinedRegionValue] =
       (joinType: @unchecked) match {
         case "inner" => _.innerJoin(_, _)
@@ -60,7 +60,7 @@ class KeyedOrderedRVD(val rvd: OrderedRVD, val key: Int) {
     repartitionedLeft.alignAndZipPartitions(
       joinedType.copy(key = joinedType.key.take(realType.key.length)),
       right.rvd,
-      kType
+      key
     ) { (ctx, leftIt, rightIt) =>
       val sideBuffer = ctx.freshContext.region
       joiner(
@@ -73,11 +73,11 @@ class KeyedOrderedRVD(val rvd: OrderedRVD, val key: Int) {
   }
 
   def orderedJoinDistinct(
-    right: KeyedOrderedRVD,
+    right: KeyedRVD,
     joinType: String,
     joiner: (RVDContext, Iterator[JoinedRegionValue]) => Iterator[RegionValue],
-    joinedType: OrderedRVDType
-  ): OrderedRVD = {
+    joinedType: RVDType
+  ): RVD = {
     checkJoinCompatability(right)
     val lTyp = virtType
     val rTyp = right.virtType
@@ -91,7 +91,7 @@ class KeyedOrderedRVD(val rvd: OrderedRVD, val key: Int) {
     rvd.alignAndZipPartitions(
       joinedType,
       right.rvd,
-      kType
+      key
     ) { (ctx, leftIt, rightIt) =>
       joiner(
         ctx,
@@ -101,14 +101,14 @@ class KeyedOrderedRVD(val rvd: OrderedRVD, val key: Int) {
     }
   }
 
-  def orderedZipJoin(right: KeyedOrderedRVD): ContextRDD[RVDContext, JoinedRegionValue] = {
+  def orderedZipJoin(right: KeyedRVD): ContextRDD[RVDContext, JoinedRegionValue] = {
     checkJoinCompatability(right)
     val ranges = this.rvd.partitioner.coarsenedRangeBounds(key) ++
       right.rvd.partitioner.coarsenedRangeBounds(key)
-    val newPartitioner = OrderedRVDPartitioner.generate(virtType.key, kType, ranges)
+    val newPartitioner = RVDPartitioner.generate(virtType.key, kType, ranges)
 
-    val repartitionedLeft = this.rvd.constrainToOrderedPartitioner(newPartitioner)
-    val repartitionedRight = right.rvd.constrainToOrderedPartitioner(newPartitioner)
+    val repartitionedLeft = this.rvd.repartition(newPartitioner)
+    val repartitionedRight = right.rvd.repartition(newPartitioner)
 
     val leftType = this.virtType
     val rightType = right.virtType
@@ -119,12 +119,12 @@ class KeyedOrderedRVD(val rvd: OrderedRVD, val key: Int) {
       }
   }
 
-  def orderedMerge(right: KeyedOrderedRVD): OrderedRVD = {
+  def orderedMerge(right: KeyedRVD): RVD = {
     checkJoinCompatability(right)
     require(this.realType.rowType == right.realType.rowType)
 
     if (key == 0)
-      return OrderedRVD.unkeyed(
+      return RVD.unkeyed(
         this.realType.rowType,
         ContextRDD.union(
           rvd.sparkContext,
@@ -132,17 +132,17 @@ class KeyedOrderedRVD(val rvd: OrderedRVD, val key: Int) {
 
     val ranges = this.rvd.partitioner.coarsenedRangeBounds(key) ++
       right.rvd.partitioner.coarsenedRangeBounds(key)
-    val newPartitioner = OrderedRVDPartitioner.generate(virtType.key, kType, ranges)
+    val newPartitioner = RVDPartitioner.generate(virtType.key, kType, ranges)
 
     val repartitionedLeft =
-      this.rvd.constrainToOrderedPartitioner(newPartitioner)
+      this.rvd.repartition(newPartitioner)
     val lType = this.virtType
     val rType = right.virtType
 
     repartitionedLeft.alignAndZipPartitions(
       this.virtType,
       right.rvd,
-      kType
+      key
     ) { (ctx, leftIt, rightIt) =>
       OrderedRVIterator(lType, leftIt, ctx)
         .merge(OrderedRVIterator(rType, rightIt, ctx))

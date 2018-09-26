@@ -3,7 +3,7 @@ package is.hail.expr.ir
 import is.hail.SparkSuite
 import is.hail.expr.ir.TestUtils._
 import is.hail.expr.types._
-import is.hail.rvd.{OrderedRVD, OrderedRVDPartitioner}
+import is.hail.rvd.{RVD, RVDPartitioner}
 import is.hail.table.Table
 import is.hail.utils._
 import org.apache.spark.sql.Row
@@ -35,7 +35,7 @@ class TableIRSuite extends SparkSuite {
     val oldRow = Ref("row", t.typ.rowType)
 
     val newRow = InsertFields(oldRow, Seq("idx2" -> IRScanCount))
-    val newTable = TableMapRows(t, newRow, Some(FastIndexedSeq()))
+    val newTable = TableMapRows(t, newRow)
     val rows = Interpret[IndexedSeq[Row]](TableAggregate(newTable, IRAggCollect(Ref("row", newRow.typ))), optimize = false)
     assert(rows.forall { case Row(row_idx, idx) => row_idx == idx})
   }
@@ -45,7 +45,7 @@ class TableIRSuite extends SparkSuite {
     val oldRow = Ref("row", t.typ.rowType)
 
     val newRow = InsertFields(oldRow, Seq("range" -> IRScanCollect(GetField(oldRow, "idx"))))
-    val newTable = TableMapRows(t, newRow, Some(FastIndexedSeq()))
+    val newTable = TableMapRows(t, newRow)
     val rows = Interpret[IndexedSeq[Row]](TableAggregate(newTable, IRAggCollect(Ref("row", newRow.typ))), optimize = false)
     assert(rows.forall { case Row(row_idx: Int, range: IndexedSeq[_]) => range sameElements Array.range(0, row_idx)})
   }
@@ -169,7 +169,7 @@ class TableIRSuite extends SparkSuite {
 //      Interval(Row(0, 0), Row(10), true, false),
 //      Interval(Row(10), Row(44, 0), true, true)),
 //    IndexedSeq(Interval(Row(), Row(), true, true))
-  ).map(new OrderedRVDPartitioner(kType, _))
+  ).map(new RVDPartitioner(kType, _))
 
   val rightPartitioners = Array(
     IndexedSeq(
@@ -181,7 +181,7 @@ class TableIRSuite extends SparkSuite {
 //      Interval(Row(0, 0), Row(10), true, false),
 //      Interval(Row(10), Row(44, 0), true, true)),
 //    IndexedSeq(Interval(Row(), Row(), true, true))
-  ).map(new OrderedRVDPartitioner(kType, _))
+  ).map(new RVDPartitioner(kType, _))
 
   val joinTypes = Array(
     ("outer", (row: Row) => true),
@@ -203,8 +203,8 @@ class TableIRSuite extends SparkSuite {
 
   @Test(dataProvider = "join")
   def testTableJoin(
-    leftPart: OrderedRVDPartitioner,
-    rightPart: OrderedRVDPartitioner,
+    leftPart: RVDPartitioner,
+    rightPart: RVDPartitioner,
     joinType: String,
     pred: Row => Boolean,
     leftProject: Set[Int],
@@ -218,7 +218,7 @@ class TableIRSuite extends SparkSuite {
       if (!leftProject.contains(1)) IndexedSeq("A", "B") else IndexedSeq("A")))
     val partitionedLeft = left.copy2(
       rvd = left.value.rvd
-        .constrainToOrderedPartitioner(if (!leftProject.contains(1)) leftPart else leftPart.coarsen(1)))
+        .repartition(if (!leftProject.contains(1)) leftPart else leftPart.coarsen(1)))
 
     val (rightType, rightProjectF) = rowType.filter(f => !rightProject.contains(f.index))
     val right = new Table(hc, TableKeyBy(
@@ -228,7 +228,7 @@ class TableIRSuite extends SparkSuite {
       if (!rightProject.contains(1)) IndexedSeq("A", "B") else IndexedSeq("A")))
     val partitionedRight = right.copy2(
       rvd = right.value.rvd
-        .constrainToOrderedPartitioner(if (!rightProject.contains(1)) rightPart else rightPart.coarsen(1)))
+        .repartition(if (!rightProject.contains(1)) rightPart else rightPart.coarsen(1)))
 
     val (_, joinProjectF) = joinedType.filter(f => !leftProject.contains(f.index) && !rightProject.contains(f.index - 2))
     val joined = TableJoin(
@@ -254,8 +254,7 @@ class TableIRSuite extends SparkSuite {
         TableMapRows(
           TableRange(50000, 1),
           InsertFields(row,
-            FastIndexedSeq("k" -> (I32(49999)-GetField(row, "idx")))),
-          Some(IndexedSeq("idx"))),
+            FastIndexedSeq("k" -> (I32(49999)-GetField(row, "idx"))))),
         FastIndexedSeq("k"))
 
     TableJoin(t1, t2, "left").execute(hc).rvd.count()

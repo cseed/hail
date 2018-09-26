@@ -438,8 +438,8 @@ def logistic_regression(test, y, x, covariates, root='logreg') -> MatrixTable:
 
     .. _sigmoid function: https://en.wikipedia.org/wiki/Sigmoid_function
 
-    The resulting variant annotations depend on the test statistic as shown
-    in the tables below.
+    The structure of the emitted row field depends on the test statistic as
+    shown in the tables below.
 
     ========== ======================= ======= ============================================
     Test       Field                   Type    Value
@@ -461,11 +461,11 @@ def logistic_regression(test, y, x, covariates, root='logreg') -> MatrixTable:
     ========== ======================= ======= ============================================
 
     For the Wald and likelihood ratio tests, Hail fits the logistic model for
-    each row using Newton iteration and only emits the above annotations
+    each row using Newton iteration and only emits the above fields
     when the maximum likelihood estimate of the coefficients converges. The
     Firth test uses a modified form of Newton iteration. To help diagnose
-    convergence issues, Hail also emits three variant annotations which
-    summarize the iterative fitting process:
+    convergence issues, Hail also emits three fields which summarize the
+    iterative fitting process:
 
     ================ ========================= ======= ===============================
     Test             Field                     Type    Value
@@ -1354,7 +1354,6 @@ def pc_relate(call_expr, min_individual_maf, *, k=None, scores_expr=None,
     """Compute relatedness estimates between individuals using a variant of the
     PC-Relate method.
 
-    .. include:: ../_templates/experimental.rst
     .. include:: ../_templates/req_diploid_gt.rst
 
     Examples
@@ -1694,9 +1693,8 @@ def split_multi(ds, keep_star=False, left_aligned=False):
     Example
     -------
 
-    :func:`.split_multi_hts`, which splits
-    multiallelic variants for the HTS genotype schema and updates
-    the genotype annotations by downcoding the genotype, is
+    :func:`.split_multi_hts`, which splits multiallelic variants for the HTS
+    genotype schema and updates the entry fields by downcoding the genotype, is
     implemented as:
 
     >>> sm = hl.split_multi(ds)
@@ -1774,6 +1772,10 @@ def split_multi(ds, keep_star=False, left_aligned=False):
             assert isinstance(ds, Table)
             ht = (ds.annotate(**{new_id: expr})
                   .explode(new_id))
+            if rekey:
+                ht = ht.key_by()
+            else:
+                ht = ht.key_by('locus')
             new_row_expr = ht.row.annotate(locus=ht[new_id]['locus'],
                                            alleles=ht[new_id]['alleles'],
                                            a_index=ht[new_id]['a_index'],
@@ -1781,10 +1783,14 @@ def split_multi(ds, keep_star=False, left_aligned=False):
                                            old_locus=ht.locus,
                                            old_alleles=ht.alleles).drop(new_id)
 
-            return ht._select_scala(new_row_expr,
-                                    preserved_key=['locus'] if not rekey else [],
-                                    preserved_key_new=['locus'] if not rekey else [],
-                                    new_key=['locus', 'alleles'])
+            ht = ht._select('split_multi', new_row_expr)
+            if rekey:
+                return ht.key_by('locus', 'alleles')
+            else:
+                return Table(ht._jt.keyBy(
+                    ['locus', 'alleles'],
+                    True # isSorted
+                ))
 
 
     if left_aligned:
@@ -1792,7 +1798,7 @@ def split_multi(ds, keep_star=False, left_aligned=False):
             def error_on_moved(v):
                 return (hl.case()
                         .when(v.locus == old_row.locus, new_struct(v, i))
-                        .or_error("Found non-left-aligned variant in SplitMulti"))
+                        .or_error("Found non-left-aligned variant in split_multi"))
             return hl.bind(error_on_moved,
                            hl.min_rep(old_row.locus, [old_row.alleles[0], old_row.alleles[i]]))
         return split_rows(hl.sorted(kept_alleles.map(make_struct)), False)
@@ -1833,7 +1839,8 @@ def split_multi_hts(ds, keep_star=False, left_aligned=False, vep_root='vep'):
         PID: str,
       }
 
-    For other entry fields, use :class:`.SplitMulti`.
+    For other entry fields, write your own splitting logic using
+    :meth:`.MatrixTable.annotate_entries`.
 
     Examples
     --------
@@ -1938,6 +1945,10 @@ def split_multi_hts(ds, keep_star=False, left_aligned=False, vep_root='vep'):
        only alternate allele in a biallelic variant). For example, 1:100:A:T,C
        splits into two variants: 1:100:A:T with ``a_index = 1`` and 1:100:A:C
        with ``a_index = 2``.
+
+    See Also
+    --------
+    :func:`.split_multi`
 
     Parameters
     ----------

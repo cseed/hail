@@ -4,7 +4,7 @@ import is.hail.SparkSuite
 import is.hail.asm4s.Code
 import is.hail.expr.ir.functions.{IRRandomness, RegistryFunctions}
 import is.hail.expr.types._
-import is.hail.rvd.OrderedRVD
+import is.hail.rvd.RVD
 import is.hail.TestUtils._
 import is.hail.table.Table
 import is.hail.utils._
@@ -59,8 +59,7 @@ class RandomFunctionsSuite extends SparkSuite {
     InsertFields(Ref("row", TableRange(1, 1).typ.rowType),
       FastSeq(
         "pi" -> partitionIdx,
-        "counter" -> counter)),
-    Some(FastIndexedSeq("idx")))
+        "counter" -> counter)))
 
   @BeforeClass def registerFunctions() {
     TestRandomFunctions.registerAll()
@@ -91,8 +90,8 @@ class RandomFunctionsSuite extends SparkSuite {
       Interval(Row(10), Row(14), false, true))
     val newPartitioner = mapped.partitioner.copy(rangeBounds=newRangeBounds)
 
-    val repartitioned = mapped.constrainToOrderedPartitioner(newPartitioner)
-    val cachedAndRepartitioned = mapped.cache().constrainToOrderedPartitioner(newPartitioner)
+    val repartitioned = mapped.repartition(newPartitioner)
+    val cachedAndRepartitioned = mapped.cache().repartition(newPartitioner)
 
     assert(mapped.toRows.collect() sameElements repartitioned.toRows.collect())
     assert(mapped.toRows.collect() sameElements cachedAndRepartitioned.toRows.collect())
