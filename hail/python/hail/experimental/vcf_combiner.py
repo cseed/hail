@@ -7,6 +7,8 @@ from hail.matrixtable import MatrixTable
 from hail.expr import ArrayExpression, Expression, NumericExpression, StructExpression
 
 REF_CALL = hl.call(0, 0, phased=False)
+SHUF = None
+SHUF_ARR = [0, 3, 5, 1, 4, 2, 6, 8, 7, 9]
 
 
 def mappend(fun, left, right) -> Expression:
@@ -68,9 +70,8 @@ def shuffle_pl(pl) -> ArrayExpression:
     # shuffling is only meaningful in our case when the GT order changes
     # the order will only change when a het-non-ref allele is called,
     # at least for the data I am currently working with
-    shuf = [0, 3, 5, 1, 4, 2, 6, 8, 7, 9]
     return hl.cond(pl.length() == 10,
-                   hl.range(0, 10).map(lambda i: pl[shuf[i]]),
+                   hl.range(0, 10).map(lambda i: pl[SHUF[i]]),
                    pl)
 
 
@@ -94,10 +95,10 @@ def renumber_gt(format_field, old, new) -> StructExpression:
 
 def combine(ts):
     # pylint: disable=protected-access
-    return ts.transmute(
+    tmp = ts.annotate(
         alleles=merge_alleles(ts.data.map(lambda d: d.alleles)),
-        filters=hl.set(hl.flatten(ts.data.map(lambda d: hl.array(d.filters)))),
         rsid=hl.find(hl.is_defined, ts.data.map(lambda d: d.rsid)),
+        filters=hl.set(hl.flatten(ts.data.map(lambda d: hl.array(d.filters)))),
         info=hl.struct(
             DP=hl.sum(ts.data.map(lambda d: d.info.DP)),
             MQ_DP=hl.sum(ts.data.map(lambda d: d.info.MQ_DP)),
@@ -108,31 +109,40 @@ def combine(ts):
                        hl.null(hl.tarray(hl.tint64)),
                        ts.data.map(lambda d: d.info.SB)),
         ),
+    )
+    return tmp.transmute(
         __entries=hl.flatten(
-            hl.range(0, hl.len(ts.data)).map(
-                lambda i: hl.cond(hl.is_missing(ts.data[i].__entries),
-                                  hl.range(0, ts.g[i].ncol).map(lambda _: hl.null(ts.data[i].__entries[0].dtype)),
-                                  ts.data[i].__entries)
-                )
+            hl.range(0, hl.len(tmp.data)).map(
+                lambda i: hl.cond(hl.is_missing(tmp.data[i].__entries),
+                                  hl.range(0, tmp.g[i].ncol).map(lambda _: hl.null(tmp.data[i].__entries[0].dtype)),
+                                  tmp.data[i].__entries.map(lambda e: renumber_gt(e, tmp.data[i].alleles, tmp.alleles)))
+            )
         )
     )
 
 
 def combine_vcfs_mw(mts):
     """merges vcfs using multi way join"""
+    # pylint: disable=global-statement
+    global SHUF
+    if SHUF is None:
+        SHUF = hl.array(SHUF_ARR)
+
     # pylint: disable=protected-access
     def localize(mt):
         return mt._localize_entries('__entries')
 
     cols = None
     for mt in mts:
-        mt = mt.annotate_globals(ncol=mt.cols().count())
         if cols is None:
             cols = mt.key_cols_by().cols()
         else:
             cols = cols.union(mt.key_cols_by().cols())
-    ts = hl.Table._multi_way_zip_join([localize(mt.annotate_globals(cc=mt.cols().count())) for mt in mts], 'data', 'g')
-    combined = combine(ts)
+    ts = hl.Table._multi_way_zip_join(
+        [localize(mt.annotate_globals(ncol=mt.cols().count())) for mt in mts],
+        'data',
+        'g')
+    combined = combine(ts).drop('g')
     return combined._unlocalize_entries(cols, '__entries')
 
 # NOTE: these are just @chrisvittal's notes on how gVCF fields are combined
