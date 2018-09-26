@@ -21,21 +21,6 @@ object OrderedRVIterator {
   }
 }
 
-object OrderedRVIterator {
-  def multiZipJoin(
-    its: IndexedSeq[OrderedRVIterator]
-  ): Iterator[Array[RegionValue]] = {
-    require(its.length > 0)
-    val first = its(0)
-    val flipbooks = its.map(_.iterator.toFlipbookIterator)
-    FlipbookIterator.multiZipJoin(
-      flipbooks,
-      null,
-      first.t.joinComp(first.t).compare
-    )
-  }
-}
-
 case class OrderedRVIterator(
   t: RVDType,
   iterator: Iterator[RegionValue],
