@@ -348,6 +348,12 @@ object Simplify {
       case MatrixColsTable(MatrixFilterRows(child, _)) => MatrixColsTable(child)
       case MatrixColsTable(MatrixAggregateRowsByKey(child, _)) => MatrixColsTable(child)
 
+        // FIXME hack
+      case MatrixColsTable(MatrixMapCols(MatrixMapEntries(child, _), newCol, newKey)) if !Mentions(newCol, "g") =>
+        MatrixColsTable(MatrixMapCols(child, newCol, newKey))
+      case MatrixColsTable(MatrixMapCols(MatrixMapRows(child, _, _), newCol, newKey)) if !Mentions(newCol, "g") =>
+        MatrixColsTable(MatrixMapCols(child, newCol, newKey))
+
       case TableHead(TableMapRows(child, newRow), n) =>
         TableMapRows(TableHead(child, n), newRow)
       case t@TableHead(TableRepartition(child, nPar, shuffle), n) if canRepartition(t) =>

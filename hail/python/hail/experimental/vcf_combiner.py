@@ -31,7 +31,7 @@ def position(arr, pred) -> NumericExpression:
 
 def transform_one(mt: MatrixTable) -> MatrixTable:
     """transforms a gvcf into a form suitable for combining"""
-    mt = mt.key_rows_by('locus')
+    # mt = mt.key_rows_by('locus')
     mt = mt.annotate_entries(
         END=mt.info.END,
         PL=mt['PL'][0:],
