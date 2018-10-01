@@ -1,18 +1,16 @@
 package is.hail.io.vcf
 
-import java.nio.charset.StandardCharsets
-import java.nio.file.{FileSystemAlreadyExistsException, FileSystems, Files}
+import java.nio.file.{FileSystemAlreadyExistsException, FileSystems}
 
-import com.google.cloud.storage.contrib.nio.CloudStorageFileSystem
-import htsjdk.tribble.readers.TabixReader
+import is.hail.io._
 import htsjdk.variant.vcf._
 import is.hail.HailContext
 import is.hail.annotations._
 import is.hail.expr.JSONAnnotationImpex
 import is.hail.expr.ir.{MatrixRead, MatrixReader, MatrixValue, PruneDeadFields}
 import is.hail.expr.types._
+import is.hail.io.tabix._
 import is.hail.io.vcf.LoadVCF.{getHeaderLines, parseHeader, parseLines}
-import is.hail.io.{VCFAttributes, VCFMetadata}
 import is.hail.rvd.{RVD, RVDContext, RVDPartitioner}
 import is.hail.sparkextras.ContextRDD
 import is.hail.utils._
@@ -24,6 +22,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.Row
 import org.json4s.jackson.JsonMethods
 
+import scala.annotation.meta.param
 import scala.collection.JavaConversions._
 import scala.collection.JavaConverters._
 import scala.collection.mutable
@@ -636,20 +635,9 @@ class ParseLineContext(typ: MatrixType, val infoFlagFieldNames: Set[String], hea
 
 object LoadVCF {
   private lazy val gsFileSystemLoaded: Boolean = {
-    // make sure it works
-    val fs = CloudStorageFileSystem.forBucket("hail-cseed")
-    try {
-      val path = fs.getPath("test.txt")
-      val contents = new String(Files.readAllBytes(path))
-      log.info(s"gs://hail-cseed/test.txt: $contents")
-    } finally {
-      fs.close()
-    }
-
-    // load provider
     val em = Map.empty[String, AnyRef].asJava
     try {
-      FileSystems.newFileSystem(new java.net.URI("gs://hail-cseed/test.txt"), em, LoadVCF.getClass.getClassLoader)
+      FileSystems.newFileSystem(new java.net.URI("gs://bucket/path/to/file"), em, LoadVCF.getClass.getClassLoader)
     } catch {
       case e: FileSystemAlreadyExistsException =>
         log.info("gs:// file system provider already exists")
@@ -660,6 +648,11 @@ object LoadVCF {
 
   def loadGSFileSystem() {
     log.info(s"gs:// file system loaded: $gsFileSystemLoaded")
+  }
+
+  def loadFileSystemForFile(file: String) {
+    if (file.startsWith("gs://"))
+      loadGSFileSystem()
   }
 
   def warnDuplicates(ids: Array[String]) {
@@ -959,21 +952,33 @@ object LoadVCF {
   }
 }
 
-case class PartitionedVCFPartition(index: Int, chrom: String, start: Int, end: Int) extends Partition
+case class PartitionedVCFPartition(index: Int, chrom: String, start: Int, end: Int, reg: Array[TPair64]) extends Partition
 
 class PartitionedVCFRDD(
-  @transient sc: SparkContext,
+  @(transient @param) sc: SparkContext,
   file: String,
-  @transient rangeBounds: IndexedSeq[Interval]
+  @(transient @param) rangeBounds: IndexedSeq[Interval]
 ) extends RDD[String](sc, Seq()) {
   protected def getPartitions: Array[Partition] = {
+    LoadVCF.loadFileSystemForFile(file)
+    val r = new TabixReader(file)
+
     rangeBounds.zipWithIndex.map { case (b, i) =>
       assert(b.includesStart, b.includesEnd)
+
       val start = b.start.asInstanceOf[Row].getAs[Locus](0)
       val end = b.end.asInstanceOf[Row].getAs[Locus](0)
       assert(start.contig == end.contig)
 
-      PartitionedVCFPartition(i, start.contig, start.position, end.position)
+      val contig = start.contig
+      val startPos = start.position
+      val endPos = end.position
+
+      val tid = r.chr2tid(contig)
+      val reg = r.queryPairs(tid, startPos - 1, endPos)
+      println("reg.length", reg.length)
+
+      PartitionedVCFPartition(i, start.contig, start.position, end.position, reg)
     }
       .toArray
   }
@@ -981,13 +986,10 @@ class PartitionedVCFRDD(
   def compute(split: Partition, context: TaskContext): Iterator[String] = {
     val p = split.asInstanceOf[PartitionedVCFPartition]
 
-    LoadVCF.loadGSFileSystem()
-    val r = new TabixReader(file)
+    LoadVCF.loadFileSystemForFile(file)
 
     val it = new Iterator[String] {
-      // [a, b] => a-1, b for TabixReader
-      // expand since we filter and we're not picking up all the variants...
-      private val it = r.query(p.chrom, p.start - 1, p.end)
+      private val it = new TabixLineIteratorImpl(file, p.reg)
       private var l = it.next()
 
       def hasNext: Boolean = l != null

@@ -62,8 +62,8 @@ class StagingIterator[A] private (sm: StateMachine[A]) extends FlipbookIterator[
   }
   def consumedValue: A = { assert(isValid && isConsumed); sm.value }
 
-  // (Buffered)Iterator interface, not intended to be used directly, only for
-  // passing a StagingIterator where an Iterator is expected
+  // (Buffered)TabixLineIterator interface, not intended to be used directly, only for
+  // passing a StagingIterator where an TabixLineIterator is expected
   def head: A = { stage(); sm.value }
   def hasNext: Boolean = {
     if (isValid) {
@@ -464,7 +464,7 @@ abstract class FlipbookIterator[A] extends BufferedIterator[A] { self =>
   }
 
   // head, next, and hasNext are not meant to be used directly, only to enable
-  // FlipbookIterator to be used where an Iterator is expected.
+  // FlipbookIterator to be used where an TabixLineIterator is expected.
   def head: A
   def next(): A
   def hasNext: Boolean
