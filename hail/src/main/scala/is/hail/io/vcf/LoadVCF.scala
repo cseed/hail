@@ -1,5 +1,9 @@
 package is.hail.io.vcf
 
+import java.nio.charset.StandardCharsets
+import java.nio.file.{FileSystemAlreadyExistsException, FileSystems, Files}
+
+import com.google.cloud.storage.contrib.nio.CloudStorageFileSystem
 import htsjdk.tribble.readers.TabixReader
 import htsjdk.variant.vcf._
 import is.hail.HailContext
@@ -631,6 +635,33 @@ class ParseLineContext(typ: MatrixType, val infoFlagFieldNames: Set[String], hea
 }
 
 object LoadVCF {
+  private lazy val gsFileSystemLoaded: Boolean = {
+    // make sure it works
+    val fs = CloudStorageFileSystem.forBucket("hail-cseed")
+    try {
+      val path = fs.getPath("test.txt")
+      val contents = new String(Files.readAllBytes(path))
+      log.info(s"gs://hail-cseed/test.txt: $contents")
+    } finally {
+      fs.close()
+    }
+
+    // load provider
+    val em = Map.empty[String, AnyRef].asJava
+    try {
+      FileSystems.newFileSystem(new java.net.URI("gs://hail-cseed/test.txt"), em, LoadVCF.getClass.getClassLoader)
+    } catch {
+      case e: FileSystemAlreadyExistsException =>
+        log.info("gs:// file system provider already exists")
+    }
+
+    true
+  }
+
+  def loadGSFileSystem() {
+    log.info(s"gs:// file system loaded: $gsFileSystemLoaded")
+  }
+
   def warnDuplicates(ids: Array[String]) {
     val duplicates = ids.counter().filter(_._2 > 1)
     if (duplicates.nonEmpty) {
@@ -949,6 +980,8 @@ class PartitionedVCFRDD(
 
   def compute(split: Partition, context: TaskContext): Iterator[String] = {
     val p = split.asInstanceOf[PartitionedVCFPartition]
+
+    LoadVCF.loadGSFileSystem()
     val r = new TabixReader(file)
 
     val it = new Iterator[String] {

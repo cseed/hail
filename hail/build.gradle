@@ -161,6 +161,8 @@ dependencies {
     compile 'org.scalanlp:breeze-natives_' + scalaMajorVersion + ':' + breezeVersion
     compile 'com.github.samtools:htsjdk:2.14.2'
 
+    compile 'com.google.cloud:google-cloud-nio:0.64.0-alpha'
+
     compile group: 'org.slf4j', name: 'slf4j-api', version: '1.7.25'
 
     compile 'org.http4s:http4s-core_' + scalaMajorVersion + ':0.12.3'
@@ -305,6 +307,8 @@ shadowJar {
 
         include(dependency('com.github.samtools:htsjdk:.*'))
 
+        include(dependency('com.google.cloud:google-cloud-nio:.*'))
+
         include(dependency('org.json4s:json4s-core_' + scalaMajorVersion + ':.*'))
         // include(dependency('org.json4s:json4s-native_' + scalaMajorVersion + ':.*'))
         include(dependency('org.json4s:json4s-jackson_' + scalaMajorVersion + ':.*'))
@@ -358,6 +362,8 @@ task shadowTestJar(type: ShadowJar) {
 	include(dependency('com.github.fommil.netlib:netlib-native_ref-osx-x86_64:1.1'))
 
         include(dependency('com.github.samtools:htsjdk:.*'))
+
+        include(dependency('com.google.cloud:google-cloud-nio:.*'))
 
         include(dependency('org.json4s:json4s-core_' + scalaMajorVersion + ':.*'))
         // include(dependency('org.json4s:json4s-native_' + scalaMajorVersion + ':.*'))

@@ -244,6 +244,8 @@ object HailContext {
     val hc = new HailContext(sparkContext, sqlContext, hailTempDir, branchingFactor)
     sparkContext.uiWebUrl.foreach(ui => info(s"SparkUI: $ui"))
 
+    LoadVCF.loadGSFileSystem()
+    
     info(s"Running Hail version ${ hc.version }")
     theContext = hc
     hc
