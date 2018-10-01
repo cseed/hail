@@ -976,7 +976,6 @@ class PartitionedVCFRDD(
 
       val tid = r.chr2tid(contig)
       val reg = r.queryPairs(tid, startPos - 1, endPos)
-      println("reg.length", reg.length)
 
       PartitionedVCFPartition(i, start.contig, start.position, end.position, reg)
     }
