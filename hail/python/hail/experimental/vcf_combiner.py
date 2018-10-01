@@ -50,7 +50,7 @@ def transform_one(mt: MatrixTable) -> MatrixTable:
             "DP",
             "MQ_DP",
             "QUALapprox",
-            "RAW_MQ",
+            # "RAW_MQ",
             "VarDP",
             "SB",
         ))
@@ -103,7 +103,7 @@ def combine(ts):
             DP=hl.sum(ts.data.map(lambda d: d.info.DP)),
             MQ_DP=hl.sum(ts.data.map(lambda d: d.info.MQ_DP)),
             QUALapprox=hl.sum(ts.data.map(lambda d: d.info.QUALapprox)),
-            RAW_MQ=hl.sum(ts.data.map(lambda d: d.info.RAW_MQ)),
+            # RAW_MQ=hl.sum(ts.data.map(lambda d: d.info.RAW_MQ)),
             VarDP=hl.sum(ts.data.map(lambda d: d.info.VarDP)),
             SB=hl.fold(lambda a, b: mappend(operator.add, a, b),
                        hl.null(hl.tarray(hl.tint64)),
