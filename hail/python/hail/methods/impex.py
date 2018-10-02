@@ -11,6 +11,7 @@ from hail.methods.misc import require_biallelic, require_row_key_variant, requir
 import hail as hl
 
 _cached_loadvcf = None
+_cached_importgvcfs = None
 
 
 def locus_interval_expr(contig, start, end, includes_start, includes_end,
@@ -1875,6 +1876,44 @@ def import_vcf(path,
         _partitions
     )
     return MatrixTable(jmt)
+
+@typecheck(path=sequenceof(str),
+           _partitions=str,
+           force=bool,
+           force_bgz=bool,
+           call_fields=oneof(str, sequenceof(str)),
+           reference_genome=nullable(reference_genome_type),
+           contig_recoding=nullable(dictof(str, str)),
+           array_elements_required=bool,
+           skip_invalid_loci=bool)
+def import_gvcfs(path,
+                 _partitions,
+                 force=False,
+                 force_bgz=False,
+                 call_fields=[],
+                 reference_genome='default',
+                 contig_recoding=None,
+                 array_elements_required=True,
+                 skip_invalid_loci=False) -> MatrixTable:
+    """Experimental."""
+
+    rg = reference_genome.name if reference_genome else None
+
+    global _cached_importgvcfs
+    if _cached_importgvcfs is None:
+        _cached_importgvcfs = Env.hail().io.vcf.ImportGVCFs
+
+    jmts = _cached_importgvcfs.pyApply(
+        wrap_to_list(path),
+        wrap_to_list(call_fields),
+        rg,
+        contig_recoding,
+        array_elements_required,
+        skip_invalid_loci,
+        force_bgz,
+        force,
+        _partitions)
+    return [MatrixTable(jmt) for jmt in jmts]
 
 
 @typecheck(path=oneof(str, sequenceof(str)),
