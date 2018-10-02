@@ -74,7 +74,7 @@ def combine(ts):
                 hl.sum(ts.data.map(lambda d: d.info.SB[2])),
                 hl.sum(ts.data.map(lambda d: d.info.SB[3]))
             ])))
-    tmp = tmp.transmute(
+    tmp = tmp.annotate(
         __entries=hl.bind(
             lambda combined_allele_index:
             hl.range(0, hl.len(tmp.data)).flatmap(
@@ -87,6 +87,8 @@ def combine(ts):
                                 lambda j: combined_allele_index[tmp.data[i].alleles[j]])))),
             hl.dict(hl.range(0, hl.len(tmp.alleles)).map(
                 lambda j: hl.tuple([tmp.alleles[j], j])))))
+
+    tmp = tmp.drop('data', 'g')
     
     # tmp.describe()
     
@@ -110,7 +112,7 @@ def combine_vcfs_mw(mts):
         [localize(mt.annotate_globals(ncol=mt.cols().count())) for mt in mts],
         'data',
         'g')
-    combined = combine(ts).drop('g')
+    combined = combine(ts)
     return combined._unlocalize_entries(cols, '__entries')
 
 # NOTE: these are just @chrisvittal's notes on how gVCF fields are combined
