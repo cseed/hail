@@ -646,13 +646,9 @@ object LoadVCF {
     true
   }
 
-  def loadGSFileSystem() {
-    log.info(s"gs:// file system loaded: $gsFileSystemLoaded")
-  }
-
   def loadFileSystemForFile(file: String) {
     if (file.startsWith("gs://"))
-      loadGSFileSystem()
+      gsFileSystemLoaded
   }
 
   def warnDuplicates(ids: Array[String]) {
@@ -961,25 +957,26 @@ class PartitionedVCFRDD(
 ) extends RDD[String](sc, Seq()) {
   protected def getPartitions: Array[Partition] = {
     LoadVCF.loadFileSystemForFile(file)
-    val r = new TabixReader(file)
 
-    rangeBounds.zipWithIndex.map { case (b, i) =>
-      assert(b.includesStart, b.includesEnd)
+    using(new TabixReader(file)) { r =>
+      rangeBounds.zipWithIndex.map { case (b, i) =>
+        assert(b.includesStart, b.includesEnd)
 
-      val start = b.start.asInstanceOf[Row].getAs[Locus](0)
-      val end = b.end.asInstanceOf[Row].getAs[Locus](0)
-      assert(start.contig == end.contig)
+        val start = b.start.asInstanceOf[Row].getAs[Locus](0)
+        val end = b.end.asInstanceOf[Row].getAs[Locus](0)
+        assert(start.contig == end.contig)
 
-      val contig = start.contig
-      val startPos = start.position
-      val endPos = end.position
+        val contig = start.contig
+        val startPos = start.position
+        val endPos = end.position
 
-      val tid = r.chr2tid(contig)
-      val reg = r.queryPairs(tid, startPos - 1, endPos)
+        val tid = r.chr2tid(contig)
+        val reg = r.queryPairs(tid, startPos - 1, endPos)
 
-      PartitionedVCFPartition(i, start.contig, start.position, end.position, reg)
+        PartitionedVCFPartition(i, start.contig, start.position, end.position, reg)
+      }
+        .toArray
     }
-      .toArray
   }
 
   def compute(split: Partition, context: TaskContext): Iterator[String] = {
@@ -987,16 +984,25 @@ class PartitionedVCFRDD(
 
     LoadVCF.loadFileSystemForFile(file)
 
+    val lines = new TabixLineIteratorImpl(file, p.reg)
+
+    // clean up
+    val context = TaskContext.get
+    context.addTaskCompletionListener { context =>
+      lines.close()
+    }
+
     val it = new Iterator[String] {
-      private val it = new TabixLineIteratorImpl(file, p.reg)
-      private var l = it.next()
+      private var l = lines.next()
 
       def hasNext: Boolean = l != null
 
       def next(): String = {
         assert(l != null)
         val n = l
-        l = it.next()
+        l = lines.next()
+        if (l == null)
+          lines.close()
         n
       }
     }

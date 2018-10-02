@@ -7,7 +7,7 @@ import htsjdk.samtools.util.BlockCompressedInputStream;
 
 import java.io.IOException;
 
-public class TabixLineIteratorImpl implements TabixLineIterator {
+public class TabixLineIteratorImpl implements TabixLineIterator, AutoCloseable {
     private static final int DEFAULT_BUFFER_SIZE = 1000;
 
     private BlockCompressedInputStream mFp;
@@ -55,5 +55,13 @@ public class TabixLineIteratorImpl implements TabixLineIterator {
         }
         iseof = true;
         return null;
+    }
+
+    public void close() throws IOException {
+        off = null;
+        if (mFp != null) {
+            mFp.close();
+            mFp = null;
+        }
     }
 }

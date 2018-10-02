@@ -17,10 +17,10 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
-public class TabixReader {
+public class TabixReader implements AutoCloseable {
     private final String mFilePath;
     private final String mIndexPath;
-    private final BlockCompressedInputStream mFp;
+    private BlockCompressedInputStream mFp;
 
     private int mPreset;
     private int mSc;
@@ -310,14 +310,13 @@ public class TabixReader {
         return ret;
     }
 
-    // ADDED BY JTR
-    public void close() {
-        if(mFp != null) {
-            try {
-                mFp.close();
-            } catch (IOException e) {
-
-            }
+    public void close() throws IOException {
+        mSeq = null;
+        mChr2tid = null;
+        mIndex = null;
+        if (mFp != null) {
+            mFp.close();
+            mFp = null;
         }
     }
 
