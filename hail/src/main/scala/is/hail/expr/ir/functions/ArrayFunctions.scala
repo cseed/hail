@@ -63,10 +63,6 @@ object ArrayFunctions extends RegistryFunctions {
   }
 
   def registerAll() {
-    registerIR("size", TArray(tv("T")))(ArrayLen)
-
-    registerIR("length", TArray(tv("T")))(ArrayLen)
-
     registerIR("isEmpty", TArray(tv("T")))(isEmpty)
 
     registerIR("sort", TArray(tv("T")), TBoolean())(ArraySort(_, _, false))
@@ -300,11 +296,6 @@ object ArrayFunctions extends RegistryFunctions {
           I32(1)),
         idx,
         ArrayRef(a, Ref(idx, TInt32())))
-    }
-
-    registerIR("flatten", TArray(tv("T"))) { a =>
-      val elt = Ref(genUID(), coerce[TArray](a.typ).elementType)
-      ArrayFlatMap(a, elt.name, elt)
     }
   }
 }

@@ -1092,8 +1092,7 @@ case class MatrixVCFReader(
     colType = TStruct("s" -> TString()),
     colKey = Array("s"),
     rowType = kType ++ vaSignature,
-    rowKey = Array("locus" // , "alleles"
-    ),
+    rowKey = Array("locus", "alleles"),
     entryType = genotypeSignature)
 
   val partitioner = if (partitionsJSON != null) {

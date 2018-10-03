@@ -263,19 +263,4 @@ class ArrayFunctionsSuite extends TestNGSuite {
     assertEvalsTo(invoke("[*:*]", a, NA(TInt32()), I32(1)), null)
     assertEvalsTo(invoke("[*:*]", a, I32(3), I32(2)), IndexedSeq())
   }
-
-  @DataProvider(name = "flatten")
-  def flattenData(): Array[Array[Any]] = Array(
-    Array(FastIndexedSeq(FastIndexedSeq(3, 9, 7), FastIndexedSeq(3, 7, 9)), FastIndexedSeq(3, 9, 7, 3, 7, 9)),
-    Array(FastIndexedSeq(null, FastIndexedSeq(1)), FastIndexedSeq(1)),
-    Array(FastIndexedSeq(null, null), FastIndexedSeq()),
-    Array(FastIndexedSeq(FastIndexedSeq(null), FastIndexedSeq(), FastIndexedSeq(7)), FastIndexedSeq(null, 7)),
-    Array(FastIndexedSeq(FastIndexedSeq(), FastIndexedSeq()), FastIndexedSeq())
-  )
-
-  @Test(dataProvider = "flatten")
-  def flatten(in: IndexedSeq[IndexedSeq[Integer]], expected: IndexedSeq[Int]) {
-    assertEvalsTo(invoke("flatten", MakeArray(in.map(toIRArray(_)), TArray(TArray(TInt32())))), expected)
-
-  }
 }
