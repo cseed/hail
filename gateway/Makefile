@@ -2,7 +2,7 @@
 
 PROJECT = $(shell gcloud config get-value project)
 DOMAIN ?= hail.is
-IP ?= 35.224.105.117
+IP ?= 35.224.105.117 # broad-ctsa
 
 IMAGE = gcr.io/$(PROJECT)/gateway:$(shell docker images -q --no-trunc gateway | sed -e 's,[^:]*:,,')
 
