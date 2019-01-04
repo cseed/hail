@@ -3,7 +3,7 @@ package is.hail.expr.types.physical
 import is.hail.annotations.{CodeOrdering, _}
 import is.hail.asm4s.Code
 import is.hail.check.Gen
-import is.hail.expr.ir.EmitMethodBuilder
+import is.hail.expr.ir.{EmitMethodBuilder, I}
 import is.hail.expr.types.virtual.TInterval
 import is.hail.utils._
 
@@ -62,10 +62,10 @@ case class PInterval(pointType: PType, override val required: Boolean = false) e
 
   val representation: PStruct = PStruct(
       required,
-      "start" -> pointType,
-      "end" -> pointType,
-      "includesStart" -> PBooleanRequired,
-      "includesEnd" -> PBooleanRequired)
+      I("start") -> pointType,
+      I("end") -> pointType,
+      I("includesStart") -> PBooleanRequired,
+      I("includesEnd") -> PBooleanRequired)
 
   def startOffset(off: Code[Long]): Code[Long] = representation.fieldOffset(off, 0)
 

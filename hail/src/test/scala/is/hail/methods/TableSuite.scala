@@ -2,6 +2,7 @@ package is.hail.methods
 
 import is.hail.{SparkSuite, TestUtils}
 import is.hail.expr._
+import is.hail.expr.ir.I
 import is.hail.expr.types.{virtual, _}
 import is.hail.expr.types.virtual._
 import is.hail.rvd.RVD
@@ -15,8 +16,8 @@ class TableSuite extends SparkSuite {
   def sampleKT1: Table = {
     val data = Array(Array("Sample1", 9, 5), Array("Sample2", 3, 5), Array("Sample3", 2, 5), Array("Sample4", 1, 5))
     val rdd = sc.parallelize(data.map(Row.fromSeq(_)))
-    val signature = TStruct(("Sample", TString()), ("field1", TInt32()), ("field2", TInt32()))
-    val keyNames = IndexedSeq("Sample")
+    val signature = TStruct((I("Sample"), TString()), (I("field1"), TInt32()), (I("field2"), TInt32()))
+    val keyNames = IndexedSeq(I("Sample"))
 
     val kt = Table(hc, rdd, signature, keyNames)
     kt.typeCheck()
@@ -103,9 +104,9 @@ class TableSuite extends SparkSuite {
     val vds = TestUtils.importVCF(hc, "src/test/resources/sample.vcf")
     val gkt = vds.entriesTable()
 
-    val reVDS = gkt.toMatrixTable(Array("locus", "alleles"),
+    val reVDS = gkt.toMatrixTable(Array(I("locus"), I("alleles")),
       Array("s"),
-      vds.rowType.fieldNames.filter(x => x != "locus" && x != "alleles"),
+      vds.rowType.fieldNames.filter(x => x != I("locus") && x != I("alleles")),
       vds.colType.fieldNames.filter(_ != "s"))
 
     val sampleOrder = vds.colKeys.toArray

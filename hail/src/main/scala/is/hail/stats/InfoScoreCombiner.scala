@@ -1,13 +1,14 @@
 package is.hail.stats
 
 import is.hail.annotations.{Annotation, Region, RegionValueBuilder}
+import is.hail.expr.ir.Identifier
 import is.hail.expr.types._
 import is.hail.expr.types.physical.{PArray, PFloat64, PType}
 import is.hail.expr.types.virtual.{TFloat64, TInt32, TStruct}
 import is.hail.utils._
 
 object InfoScoreCombiner {
-  def signature = TStruct("score" -> TFloat64(), "n_included" -> TInt32())
+  def signature = TStruct(Identifier("score") -> TFloat64(), Identifier("n_included") -> TInt32())
 }
 
 class InfoScoreCombiner(t: PType) extends Serializable {

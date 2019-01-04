@@ -1,6 +1,7 @@
 package is.hail.stats
 
 import is.hail.annotations.{Annotation, RegionValueBuilder}
+import is.hail.expr.ir.Identifier
 import is.hail.expr.types._
 import is.hail.expr.types.virtual.{TArray, TFloat64, TInt32, TStruct}
 import is.hail.utils._
@@ -10,10 +11,10 @@ import scala.annotation.switch
 
 object CallStats {
   def schema = TStruct(
-    "AC" -> TArray(TInt32()),
-    "AF" -> TArray(TFloat64()),
-    "AN" -> TInt32(),
-    "homozygote_count" -> TArray(TInt32()))
+    Identifier("AC") -> TArray(TInt32()),
+    Identifier("AF") -> TArray(TFloat64()),
+    Identifier("AN") -> TInt32(),
+    Identifier("homozygote_count") -> TArray(TInt32()))
 }
 
 case class CallStats(alleleCount: IndexedSeq[Int], alleleFrequency: Option[IndexedSeq[Double]], alleleNumber: Int,

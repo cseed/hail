@@ -3,7 +3,7 @@ package is.hail.methods
 import com.fasterxml.jackson.core.JsonParseException
 import is.hail.annotations._
 import is.hail.expr._
-import is.hail.expr.ir.{TableLiteral, TableValue}
+import is.hail.expr.ir.{I, TableLiteral, TableValue}
 import is.hail.expr.types._
 import is.hail.expr.types.virtual._
 import is.hail.rvd.{RVD, RVDContext}
@@ -87,7 +87,7 @@ object VEP {
   }
 
   def annotate(ht: Table, config: String, csq: Boolean, blockSize: Int): Table = {
-    assert(ht.key == FastIndexedSeq("locus", "alleles"))
+    assert(ht.key == FastIndexedSeq(I("locus"), I("alleles")))
     assert(ht.typ.rowType.size == 2)
 
     val conf = readConfiguration(ht.hc.hadoopConf, config)
@@ -101,7 +101,7 @@ object VEP {
 
     val csqHeader = if (csq) getCSQHeaderDefinition(cmd, conf.env) else None
 
-    val inputQuery = vepSignature.query("input")
+    val inputQuery = vepSignature.query(I("input"))
 
     val csqRegex = "CSQ=[^;^\\t]+".r
 
@@ -193,7 +193,7 @@ object VEP {
 
     val vepType: Type = if (csq) TArray(TString()) else vepSignature
 
-    val vepRVDType = prev.typ.copy(rowType = (prev.rowType ++ TStruct("vep" -> vepType)).physicalType)
+    val vepRVDType = prev.typ.copy(rowType = (prev.rowType ++ TStruct(I("vep") -> vepType)).physicalType)
 
     val vepRowType = vepRVDType.rowType
 
@@ -219,12 +219,12 @@ object VEP {
 
     val (globalValue, globalType) =
       if (csq)
-        (Row(csqHeader.getOrElse("")), TStruct("vep_csq_header" -> TString()))
+        (Row(csqHeader.getOrElse("")), TStruct(I("vep_csq_header") -> TString()))
       else
         (Row(), TStruct())
 
     new Table(ht.hc, TableLiteral(TableValue(
-      TableType(vepRowType.virtualType, FastIndexedSeq("locus", "alleles"), globalType),
+      TableType(vepRowType.virtualType, FastIndexedSeq(I("locus"), I("alleles")), globalType),
       BroadcastRow(globalValue, globalType, ht.hc.sc),
       vepRVD)))
   }

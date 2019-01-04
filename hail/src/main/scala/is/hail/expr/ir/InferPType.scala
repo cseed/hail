@@ -124,7 +124,8 @@ object InferPType {
       case _: MatrixWrite => PVoid
       case _: TableExport => PVoid
       case TableGetGlobals(child) => PType.canonical(child.typ.globalType)
-      case TableCollect(child) => PStruct("rows" -> PArray(PType.canonical(child.typ.rowType)), "global" -> PType.canonical(child.typ.globalType))
+      case TableCollect(child) => PStruct(Identifier("rows") -> PArray(PType.canonical(child.typ.rowType)),
+        Identifier("global") -> PType.canonical(child.typ.globalType))
     }
   }
 }

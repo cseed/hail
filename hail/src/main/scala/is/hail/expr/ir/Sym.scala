@@ -14,6 +14,10 @@ object Sym {
 
 abstract class Sym
 
+object I {
+  def apply(name: String): Sym = Identifier(name)
+}
+
 case class Identifier(name: String) extends Sym {
   override def toString: String = {
     if (name.matches("""\p{javaJavaIdentifierStart}\p{javaJavaIdentifierPart}*"""))
@@ -28,16 +32,21 @@ case class Generated(lang: String, base: String, i: Int) extends Sym {
   override def toString: String = s":$lang$base-$i"
 }
 
-case object GlobalSym {
+case object GlobalSym extends Sym {
   override def toString: String = ":global"
 }
 
-case object ColSym {
+case object ColSym extends Sym {
   override def toString: String = ":col"
 }
 
-case object RowSym {
+case object RowSym extends Sym {
   override def toString: String = ":row"
+}
+
+// used by TableParallelize
+case object RowsSym extends Sym {
+  override def toString: String = ":rows"
 }
 
 case object EntrySym extends Sym {
@@ -54,4 +63,12 @@ case object GlobalAndColsSym extends Sym {
 
 case object EntriesSym extends Sym {
   override def toString: String = ":entries"
+}
+
+case object AGGRSym extends Sym {
+  override def toString: String = ":AGGR"
+}
+
+case object SCANRSym extends Sym {
+  override def toString: String = ":SCANR"
 }

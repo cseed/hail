@@ -1,6 +1,7 @@
 package is.hail.io.annotators
 
 import is.hail.HailContext
+import is.hail.expr.ir.I
 import is.hail.expr.types.virtual.{TInterval, TLocus, TString, TStruct}
 import is.hail.table.Table
 import is.hail.utils.{Interval, _}
@@ -37,9 +38,9 @@ object IntervalList {
     val locusSchema = TLocus.schemaFromRG(rg)
 
     val schema = if (hasValue)
-      TStruct("interval" -> TInterval(locusSchema), "target" -> TString())
+      TStruct(I("interval") -> TInterval(locusSchema), I("target") -> TString())
     else
-      TStruct("interval" -> TInterval(locusSchema))
+      TStruct(I("interval") -> TInterval(locusSchema))
 
     implicit val ord = locusSchema.ordering
 
@@ -76,6 +77,6 @@ object IntervalList {
         }.value
       }
 
-    Table(hc, rdd, schema, IndexedSeq("interval"))
+    Table(hc, rdd, schema, IndexedSeq(I("interval")))
   }
 }

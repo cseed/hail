@@ -1,7 +1,7 @@
 package is.hail.methods
 
 import is.hail.annotations._
-import is.hail.expr.ir.MatrixValue
+import is.hail.expr.ir.{I, MatrixValue}
 import is.hail.expr.ir.functions.MatrixToMatrixFunction
 import is.hail.expr.types.MatrixType
 import is.hail.expr.types.physical.{PLocus, PStruct}
@@ -19,8 +19,8 @@ case class WindowByLocus(basePairs: Int) extends MatrixToMatrixFunction {
 
   def typeInfo(childType: MatrixType, childRVDType: RVDType): (MatrixType, RVDType) = {
     val newType = childType.copyParts(
-      rowType = childType.rowType ++ TStruct("prev_rows" -> TArray(childType.rowType)),
-      entryType = childType.entryType ++ TStruct("prev_entries" -> TArray(childType.entryType))
+      rowType = childType.rowType ++ TStruct(I("prev_rows") -> TArray(childType.rowType)),
+      entryType = childType.entryType ++ TStruct(I("prev_entries") -> TArray(childType.entryType))
     )
 
     newType -> newType.canonicalRVDType
@@ -37,7 +37,7 @@ case class WindowByLocus(basePairs: Int) extends MatrixToMatrixFunction {
     }
 
     val localRVRowType = mv.rvd.rowPType
-    val locusIndex = localRVRowType.fieldIdx("locus")
+    val locusIndex = localRVRowType.fieldIdx(I("locus"))
     val keyOrdering = mv.typ.rowKeyStruct.ordering
     val localKeyFieldIdx = mv.rvd.typ.kFieldIdx
     val entriesIndex = MatrixType.getEntriesIndex(localRVRowType)

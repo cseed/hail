@@ -2,6 +2,7 @@ package is.hail.expr.types.virtual
 
 import is.hail.annotations.{Annotation, ExtendedOrdering}
 import is.hail.check.Gen
+import is.hail.expr.ir.I
 import is.hail.expr.types.physical.PDict
 import is.hail.utils._
 import org.json4s.jackson.JsonMethods
@@ -11,7 +12,7 @@ import scala.reflect.{ClassTag, classTag}
 final case class TDict(keyType: Type, valueType: Type, override val required: Boolean = false) extends TContainer {
   lazy val physicalType: PDict = PDict(keyType.physicalType, valueType.physicalType, required)
 
-  val elementType: Type = +TStruct("key" -> keyType, "value" -> valueType)
+  val elementType: Type = +TStruct(I("key") -> keyType, I("value") -> valueType)
 
   override val fundamentalType: TArray = TArray(elementType.fundamentalType, required)
 

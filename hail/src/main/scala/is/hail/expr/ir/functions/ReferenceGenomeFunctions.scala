@@ -128,7 +128,7 @@ class ReferenceGenomeFunctions(rg: ReferenceGenome) extends RegistryFunctions {
 
   val tlocus = TLocus(rg)
   val talleles = TArray(TString())
-  val tvariant = TStruct("locus" -> tlocus, "alleles" -> talleles)
+  val tvariant = TStruct(I("locus") -> tlocus, I("alleles") -> talleles)
   val tinterval = TInterval(tlocus)
 
   def removeRegisteredFunctions(): Unit =
@@ -301,7 +301,7 @@ class LiftoverFunctions(rg: ReferenceGenome, destRG: ReferenceGenome) extends Re
 
   override def registerAll() {
 
-    registerLiftoverCode("liftoverLocus", tlocus, TFloat64(), TStruct("result" -> TLocus(destRG), "is_negative_strand" -> TBoolean())) {
+    registerLiftoverCode("liftoverLocus", tlocus, TFloat64(), TStruct(Identifier("result") -> TLocus(destRG), I("is_negative_strand") -> TBoolean())) {
       (mb, loc, minMatch) =>
         val locus = Code.checkcast[Locus](asm4s.coerce[AnyRef](wrapArg(mb, TLocus(rg))(loc.value[Long])))
         val tlocal = mb.newLocal[(Locus, Boolean)]
@@ -314,7 +314,7 @@ class LiftoverFunctions(rg: ReferenceGenome, destRG: ReferenceGenome) extends Re
         )
     }
 
-    registerLiftoverCode("liftoverLocusInterval", tinterval, TFloat64(), TStruct("result" -> TInterval(TLocus(destRG)), "is_negative_strand" -> TBoolean())) {
+    registerLiftoverCode("liftoverLocusInterval", tinterval, TFloat64(), TStruct(I("result") -> TInterval(TLocus(destRG)), I("is_negative_strand") -> TBoolean())) {
       (mb, i, minMatch) =>
         val interval = Code.checkcast[Interval](asm4s.coerce[AnyRef](wrapArg(mb, tinterval)(i.value[Long])))
         val tlocal = mb.newLocal[(Interval, Boolean)]

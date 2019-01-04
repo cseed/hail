@@ -4,6 +4,7 @@ import java.io.{InputStream, OutputStream}
 
 import is.hail.HailContext
 import is.hail.expr.JSONAnnotationImpex
+import is.hail.expr.ir.Sym
 import is.hail.expr.types.virtual.Type
 import is.hail.table.Table
 import is.hail.variant.MatrixTable
@@ -133,19 +134,19 @@ trait Py4jUtils {
     error(msg)
   }
 
-  def joinGlobals(left: Table, right: Table, identifier: String): Table = {
+  def joinGlobals(left: Table, right: Table, identifier: Sym): Table = {
     left.annotateGlobal(right.globals.value, right.globalSignature, identifier)
   }
 
-  def joinGlobals(left: Table, right: MatrixTable, identifier: String): Table = {
+  def joinGlobals(left: Table, right: MatrixTable, identifier: Sym): Table = {
     left.annotateGlobal(right.globals.value, right.globalType, identifier)
   }
 
-  def joinGlobals(left: MatrixTable, right: Table, identifier: String): MatrixTable = {
+  def joinGlobals(left: MatrixTable, right: Table, identifier: Sym): MatrixTable = {
     left.annotateGlobal(right.globals.value, right.globalSignature, identifier)
   }
 
-  def joinGlobals(left: MatrixTable, right: MatrixTable, identifier: String): MatrixTable = {
+  def joinGlobals(left: MatrixTable, right: MatrixTable, identifier: Sym): MatrixTable = {
     left.annotateGlobal(right.globals.value, right.globalType, identifier)
   }
 

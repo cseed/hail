@@ -1,15 +1,14 @@
 package is.hail.stats
 
 import is.hail.annotations.{Annotation, RegionValueBuilder}
-import is.hail.expr.types._
+import is.hail.expr.ir.Identifier
 import is.hail.expr.types.virtual.{TFloat64, TStruct}
-import is.hail.utils._
 import is.hail.variant.Call
 
 import scala.annotation.switch
 
 object HWECombiner {
-  def signature = TStruct("het_freq_hwe" -> TFloat64(), "p_value" -> TFloat64())
+  def signature = TStruct(Identifier("het_freq_hwe") -> TFloat64(), Identifier("p_value") -> TFloat64())
 }
 
 class HWECombiner extends Serializable {

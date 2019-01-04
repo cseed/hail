@@ -1,17 +1,18 @@
 package is.hail.io.index
 
 import is.hail.annotations.RegionValueBuilder
+import is.hail.expr.ir.I
 import is.hail.expr.types.virtual.{TArray, TInt64, TStruct, Type}
 import is.hail.utils.ArrayBuilder
 
 object InternalNodeBuilder {
   def typ(keyType: Type, annotationType: Type) = TStruct(
-    "children" -> +TArray(+TStruct(
-      "index_file_offset" -> +TInt64(),
-      "first_idx" -> +TInt64(),
-      "first_key" -> keyType,
-      "first_record_offset" -> +TInt64(),
-      "first_annotation" -> annotationType
+    I("children") -> +TArray(+TStruct(
+      I("index_file_offset") -> +TInt64(),
+      I("first_idx") -> +TInt64(),
+      I("first_key") -> keyType,
+      I("first_record_offset") -> +TInt64(),
+      I("first_annotation") -> annotationType
     ), required = true)
   )
 }

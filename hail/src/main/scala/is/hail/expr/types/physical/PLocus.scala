@@ -3,7 +3,7 @@ package is.hail.expr.types.physical
 import is.hail.annotations._
 import is.hail.asm4s.Code
 import is.hail.check._
-import is.hail.expr.ir.EmitMethodBuilder
+import is.hail.expr.ir.{EmitMethodBuilder, I}
 import is.hail.expr.types.virtual.TLocus
 import is.hail.utils._
 import is.hail.variant._
@@ -13,8 +13,8 @@ import scala.reflect.{ClassTag, classTag}
 object PLocus {
   def representation(required: Boolean = false): PStruct = PStruct(
       required,
-      "contig" -> PString(required = true),
-      "position" -> PInt32(required = true))
+      I("contig") -> PString(required = true),
+      I("position") -> PInt32(required = true))
 
   def schemaFromRG(rg: Option[ReferenceGenome], required: Boolean = false): PType = rg match {
     case Some(ref) => PLocus(ref)

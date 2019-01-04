@@ -50,7 +50,7 @@ object LocalLDPruneSuite {
   val rvRowType = TStruct(
     "locus" -> ReferenceGenome.GRCh37.locusType,
     "alleles" -> TArray(TString()),
-    MatrixType.entriesIdentifier -> TArray(Genotype.htsGenotypeType)
+    MatrixType.EntriesSym -> TArray(Genotype.htsGenotypeType)
   )
 
   val bitPackedVectorViewType = BitPackedVectorView.rvRowType(rvRowType.field("locus").typ,

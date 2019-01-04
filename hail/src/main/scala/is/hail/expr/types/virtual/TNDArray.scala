@@ -1,6 +1,7 @@
 package is.hail.expr.types.virtual
 
 import is.hail.annotations.ExtendedOrdering
+import is.hail.expr.ir.I
 import is.hail.expr.types.physical.PNDArray
 import org.apache.spark.sql.Row
 
@@ -8,11 +9,11 @@ import scala.reflect.{ClassTag, classTag}
 
 final case class TNDArray(elementType: Type, override val required: Boolean = false) extends ComplexType {
   val representation: Type = TStruct(
-    "flags" -> TInt64Required,           // encodes data layout
-    "shape" -> TArray(TInt64Required),   // length is ndim
-    "offset" ->  TInt64Required,         // offset into data
-    "strides" -> TArray(TInt64Required), // stride in each dim, length is 1
-    "data" -> TArray(elementType)
+    I("flags") -> TInt64Required,           // encodes data layout
+    I("shape") -> TArray(TInt64Required),   // length is ndim
+    I("offset") ->  TInt64Required,         // offset into data
+    I("strides") -> TArray(TInt64Required), // stride in each dim, length is 1
+    I("data") -> TArray(elementType)
   )
 
   lazy val physicalType: PNDArray = PNDArray(elementType.physicalType, required)

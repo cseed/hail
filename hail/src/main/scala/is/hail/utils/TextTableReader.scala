@@ -4,7 +4,7 @@ import java.util.regex.Pattern
 
 import is.hail.HailContext
 import is.hail.expr._
-import is.hail.expr.ir.TableImport
+import is.hail.expr.ir.{I, Sym, TableImport}
 import is.hail.expr.types._
 import is.hail.expr.types.virtual._
 import is.hail.table.Table
@@ -194,8 +194,8 @@ object TextTableReader {
   }
 
   def read(hc: HailContext)(files: Array[String],
-    types: Map[String, Type] = Map.empty[String, Type],
-    comment: Array[String] = Array.empty[String],
+    types: Map[Sym, Type] = Map.empty,
+    comment: Array[String] = Array.empty,
     separator: String = "\t",
     missing: String = "NA",
     noHeader: Boolean = false,
@@ -229,7 +229,7 @@ object TextTableReader {
         .indices
         .map(i => s"f$i")
         .toArray
-    } else splitHeader.map(unescapeString)
+    } else splitHeader.map(f => unescapeString(f))
 
     val (columns, duplicates) = mangle(preColumns)
     if (duplicates.nonEmpty) {
@@ -253,18 +253,18 @@ object TextTableReader {
         sb.append("Finished type imputation")
         val imputedTypes = imputeTypes(rdd, columns, separator, missing, quote)
         columns.zip(imputedTypes).map { case (name, imputedType) =>
-          types.get(name) match {
+          types.get(I(name)) match {
             case Some(t) =>
               sb.append(s"\n  Loading column '$name' as type '$t' (user-specified)")
-              (name, t)
+              (I(name), t)
             case None =>
               imputedType match {
                 case Some(t) =>
                   sb.append(s"\n  Loading column '$name' as type '$t' (imputed)")
-                  (name, t)
+                  (I(name), t)
                 case None =>
                   sb.append(s"\n  Loading column '$name' as type 'str' (no non-missing values for imputation)")
-                  (name, TString())
+                  (I(name), TString())
               }
           }
         }
@@ -272,13 +272,13 @@ object TextTableReader {
       else {
         sb.append("Reading table with no type imputation\n")
         columns.map { c =>
-          types.get(c) match {
+          types.get(I(c)) match {
             case Some(t) =>
               sb.append(s"  Loading column '$c' as type '$t' (user-specified)\n")
-              (c, t)
+              (I(c), t)
             case None =>
               sb.append(s"  Loading column '$c' as type 'str' (type not specified)\n")
-              (c, TString())
+              (I(c), TString())
           }
         }
       }

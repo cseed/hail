@@ -2,11 +2,12 @@ package is.hail.variant
 
 import is.hail.utils._
 import is.hail.annotations._
+import is.hail.expr.ir.I
 import is.hail.expr.types.physical.{PArray, PString, PStruct}
 
 class RegionValueVariant(rowType: PStruct) extends View {
-  private val locusField = rowType.fieldByName("locus")
-  private val allelesField = rowType.fieldByName("alleles")
+  private val locusField = rowType.fieldByName(I("locus"))
+  private val allelesField = rowType.fieldByName(I("alleles"))
   private val locusIdx = locusField.index
   private val allelesIdx = allelesField.index
   private val tl: PStruct = locusField.typ.fundamentalType.asInstanceOf[PStruct]

@@ -1,7 +1,7 @@
 package is.hail.expr.types.physical
 
 import is.hail.annotations.{CodeOrdering, ExtendedOrdering}
-import is.hail.expr.ir.EmitMethodBuilder
+import is.hail.expr.ir.{EmitMethodBuilder, I}
 import is.hail.expr.types.virtual.TTuple
 import is.hail.utils._
 
@@ -11,7 +11,7 @@ final case class PTuple(_types: IndexedSeq[PType], override val required: Boolea
   val types = _types.toArray
   val fieldRequired: Array[Boolean] = types.map(_.required)
 
-  val fields: IndexedSeq[PField] = types.zipWithIndex.map { case (t, i) => PField(s"$i", t, i) }
+  val fields: IndexedSeq[PField] = types.zipWithIndex.map { case (t, i) => PField(I(s"$i"), t, i) }
 
   def codeOrdering(mb: EmitMethodBuilder, other: PType): CodeOrdering = {
     assert(other isOfType this)

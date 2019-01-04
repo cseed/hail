@@ -1,9 +1,9 @@
 package is.hail.stats
 
 import breeze.linalg._
-import breeze.numerics._
+import is.hail.expr.ir.I
+import breeze.numerics.{exp, sigmoid, abs}
 import is.hail.annotations.Annotation
-import is.hail.expr.types._
 import is.hail.expr.types.virtual.{TFloat64, TStruct}
 
 
@@ -14,8 +14,8 @@ object PoissonRegressionTest {
 
 object PoissonScoreTest extends GLMTest {
   val schema: TStruct = TStruct(
-    ("chi_sq_stat", TFloat64()),
-    ("p_value", TFloat64()))
+    (I("chi_sq_stat"), TFloat64()),
+    (I("p_value"), TFloat64()))
 
   def test(X: DenseMatrix[Double], y: DenseVector[Double], nullFit: GLMFit, link: String):
     GLMTestResult[ScoreStats] = {

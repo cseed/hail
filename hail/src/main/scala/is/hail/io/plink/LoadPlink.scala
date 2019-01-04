@@ -2,7 +2,7 @@ package is.hail.io.plink
 
 import is.hail.HailContext
 import is.hail.annotations._
-import is.hail.expr.ir.{MatrixRead, MatrixReader, MatrixValue, PruneDeadFields}
+import is.hail.expr.ir.{I, MatrixRead, MatrixReader, MatrixValue, PruneDeadFields, Sym}
 import is.hail.expr.types._
 import is.hail.expr.types.virtual._
 import is.hail.io.vcf.LoadVCF
@@ -48,10 +48,10 @@ object LoadPlink {
 
     val delimiter = unescapeString(ffConfig.delimiter)
 
-    val phenoSig = if (ffConfig.isQuantPheno) ("quant_pheno", TFloat64()) else ("is_case", TBoolean())
+    val phenoSig = if (ffConfig.isQuantPheno) (I("quant_pheno"), TFloat64()) else (I("is_case"), TBoolean())
 
-    val signature = TStruct(("id", TString()), ("fam_id", TString()), ("pat_id", TString()),
-      ("mat_id", TString()), ("is_female", TBoolean()), phenoSig)
+    val signature = TStruct((I("id"), TString()), (I("fam_id"), TString()), (I("pat_id"), TString()),
+      (I("mat_id"), TString()), (I("is_female"), TBoolean()), phenoSig)
 
     val idBuilder = new ArrayBuilder[String]
     val structBuilder = new ArrayBuilder[Row]
@@ -140,7 +140,7 @@ case class MatrixPLINKReader(
 
   val (sampleInfo, signature) = LoadPlink.parseFam(fam, ffConfig, hc.hadoopConf)
 
-  val nameMap = Map("id" -> "s")
+  val nameMap = Map(I("id") -> I("s"))
   val saSignature = signature.copy(fields = signature.fields.map(f => f.copy(name = nameMap.getOrElse(f.name, f.name))))
 
   val nSamples = sampleInfo.length
@@ -180,15 +180,15 @@ case class MatrixPLINKReader(
 
   val fullType: MatrixType = MatrixType.fromParts(
     globalType = TStruct.empty(),
-    colKey = Array("s"),
+    colKey = Array(I("s")),
     colType = saSignature,
     rowType = TStruct(
-      "locus" -> TLocus.schemaFromRG(referenceGenome),
-      "alleles" -> TArray(TString()),
-      "rsid" -> TString(),
-      "cm_position" -> TFloat64()),
-    rowKey = Array("locus", "alleles"),
-    entryType = TStruct("GT" -> TCall()))
+      I("locus") -> TLocus.schemaFromRG(referenceGenome),
+      I("alleles") -> TArray(TString()),
+      I("rsid") -> TString(),
+      I("cm_position") -> TFloat64()),
+    rowKey = Array(I("locus"), I("alleles")),
+    entryType = TStruct(I("GT") -> TCall()))
 
   val fullRVDType: RVDType = fullType.canonicalRVDType
 
@@ -214,9 +214,9 @@ case class MatrixPLINKReader(
       val kType = requestedType.canonicalRVDType.kType
       val rvRowType = requestedType.rvRowType
 
-      val hasRsid = requestedType.rowType.hasField("rsid")
-      val hasCmPos = requestedType.rowType.hasField("cm_position")
-      val hasGT = requestedType.entryType.hasField("GT")
+      val hasRsid = requestedType.rowType.hasField(I("rsid"))
+      val hasCmPos = requestedType.rowType.hasField(I("cm_position"))
+      val hasGT = requestedType.entryType.hasField(I("GT"))
 
       val skipInvalidLociLocal = skipInvalidLoci
       val rgLocal = referenceGenome

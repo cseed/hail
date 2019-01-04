@@ -1,6 +1,7 @@
 package is.hail.expr.types.virtual
 
 import is.hail.annotations.ExtendedOrdering
+import is.hail.expr.ir.I
 import is.hail.expr.types.physical.PTuple
 import is.hail.utils._
 
@@ -27,7 +28,7 @@ final case class TTuple(_types: IndexedSeq[Type], override val required: Boolean
   val types = _types.toArray
   val fieldRequired: Array[Boolean] = types.map(_.required)
 
-  val fields: IndexedSeq[Field] = types.zipWithIndex.map { case (t, i) => Field(s"$i", t, i) }
+  val fields: IndexedSeq[Field] = types.zipWithIndex.map { case (t, i) => Field(I(s"$i"), t, i) }
 
   val ordering: ExtendedOrdering = TBaseStruct.getOrdering(types)
 

@@ -7,6 +7,7 @@ import breeze.numerics.{abs => breezeAbs, log => breezeLog, pow => breezePow, sq
 import breeze.stats.distributions.{RandBasis, ThreadLocalRandomGenerator}
 import is.hail._
 import is.hail.annotations._
+import is.hail.expr.ir.{I, Sym}
 import is.hail.table.Table
 import is.hail.expr.types._
 import is.hail.expr.types.virtual.{TFloat64, TFloat64Optional, TInt64Optional, TStruct}
@@ -1190,7 +1191,7 @@ class BlockMatrix(val blocks: RDD[((Int, Int), BDM[Double])],
   }
 
   def entriesTable(hc: HailContext): Table = {
-    val rvRowType = TStruct("i" -> TInt64Optional, "j" -> TInt64Optional, "entry" -> TFloat64Optional)
+    val rvRowType = TStruct(I("i") -> TInt64Optional, I("j") -> TInt64Optional, I("entry") -> TFloat64Optional)
     
     val entriesRDD = ContextRDD.weaken[RVDContext](blocks).cflatMap { case (ctx, ((blockRow, blockCol), block)) =>
       val rowOffset = blockRow * blockSize.toLong
@@ -1213,7 +1214,7 @@ class BlockMatrix(val blocks: RDD[((Int, Int), BDM[Double])],
         }
     }
 
-    new Table(hc, entriesRDD, rvRowType, Array("i", "j"))
+    new Table(hc, entriesRDD, rvRowType, Array(I("i"), I("j")))
   }
 }
 
@@ -1560,7 +1561,7 @@ class WriteBlocksRDD(path: String,
   @transient rvd: RVD,
   sc: SparkContext,
   @transient parentPartStarts: Array[Long],
-  entryField: String,
+  entryField: Sym,
   gp: GridPartitioner) extends RDD[(Int, String)](sc, Nil) {
 
   require(gp.nRows == parentPartStarts.last)

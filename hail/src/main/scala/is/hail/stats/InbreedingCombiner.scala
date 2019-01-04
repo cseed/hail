@@ -1,6 +1,7 @@
 package is.hail.stats
 
 import is.hail.annotations.{Annotation, RegionValueBuilder}
+import is.hail.expr.ir.Identifier
 import is.hail.expr.types._
 import is.hail.expr.types.virtual.{TFloat64, TInt64, TStruct}
 import is.hail.utils._
@@ -8,10 +9,10 @@ import is.hail.variant.{Call, Genotype}
 
 object InbreedingCombiner {
   def signature = TStruct(
-    "f_stat" -> TFloat64(),
-    "n_called" -> TInt64(),
-    "expected_homs" -> TFloat64(),
-    "observed_homs" -> TInt64())
+    Identifier("f_stat") -> TFloat64(),
+    Identifier("n_called") -> TInt64(),
+    Identifier("expected_homs") -> TFloat64(),
+    Identifier("observed_homs") -> TInt64())
 }
 
 class InbreedingCombiner extends Serializable {

@@ -2,6 +2,7 @@ package is.hail
 
 import breeze.linalg.Matrix
 import is.hail.annotations.Annotation
+import is.hail.expr.ir.I
 import is.hail.expr.types._
 import is.hail.expr.types.virtual._
 import is.hail.utils._
@@ -109,7 +110,7 @@ package object stats {
     }
   }
 
-  val hweStruct = TStruct("het_freq_hwe" -> TFloat64(), "p_value" -> TFloat64())
+  val hweStruct = TStruct(I("het_freq_hwe") -> TFloat64(), I("p_value") -> TFloat64())
 
   def hardyWeinbergTest(nHomRef: Int, nHet: Int, nHomVar: Int): Array[Double] = {
     if (nHomRef < 0 || nHet < 0 || nHomVar < 0)
@@ -123,7 +124,7 @@ package object stats {
     Array(LH.getNumericalMean / n, LH.exactMidP(nAB))
   }
   
-  val chisqStruct = TStruct("p_value" -> TFloat64(), "odds_ratio" -> TFloat64())
+  val chisqStruct = TStruct(I("p_value") -> TFloat64(), I("odds_ratio") -> TFloat64())
   
   def chiSquaredTest(a0: Int, b0: Int, c0: Int, d0: Int): Array[Double] = {
     if (a0 < 0 || b0 < 0 || c0 < 0 || d0 < 0)
@@ -153,10 +154,10 @@ package object stats {
   }
   
   val fetStruct = TStruct(
-    "p_value" -> TFloat64(),
-    "odds_ratio" -> TFloat64(),
-    "ci_95_lower" -> TFloat64(),
-    "ci_95_upper" -> TFloat64())
+    I("p_value") -> TFloat64(),
+    I("odds_ratio") -> TFloat64(),
+    I("ci_95_lower") -> TFloat64(),
+    I("ci_95_upper") -> TFloat64())
 
   def fisherExactTest(a: Int, b: Int, c: Int, d: Int): Array[Double] =
     fisherExactTest(a, b, c, d, 1.0, 0.95, "two.sided")
@@ -404,11 +405,11 @@ package object stats {
 
     MatrixTable.fromLegacy(hc, MatrixType.fromParts(
       globalType = TStruct.empty(),
-      colKey = Array("s"),
-      colType = TStruct("s" -> TString()),
-      rowKey = Array("locus", "alleles"),
-      rowType = TStruct("locus" -> TLocus(ReferenceGenome.defaultReference),
-        "alleles" -> TArray(TString())),
+      colKey = Array(I("s")),
+      colType = TStruct(I("s") -> TString()),
+      rowKey = Array(I("locus"), I("alleles")),
+      rowType = TStruct(I("locus") -> TLocus(ReferenceGenome.defaultReference),
+        I("alleles") -> TArray(TString())),
       entryType = Genotype.htsGenotypeType),
       Annotation.empty, sampleIds.map(Annotation(_)), rdd)
   }
@@ -438,13 +439,13 @@ package object stats {
 
     MatrixTable.fromLegacy(hc, MatrixType.fromParts(
       globalType = TStruct.empty(),
-      colKey = Array("s"),
-      colType = TStruct("s" -> TString()),
-      rowKey = Array("locus", "alleles"),
-      rowType = TStruct("locus" -> TLocus(ReferenceGenome.defaultReference),
-        "alleles" -> TArray(TString())),
+      colKey = Array(I("s")),
+      colType = TStruct(I("s") -> TString()),
+      rowKey = Array(I("locus"), I("alleles")),
+      rowType = TStruct(I("locus") -> TLocus(ReferenceGenome.defaultReference),
+        I("alleles") -> TArray(TString())),
       entryType = TStruct(
-        "GP" -> TArray(TFloat64()))),
+        I("GP") -> TArray(TFloat64()))),
       Annotation.empty, sampleIds.map(Annotation(_)), rdd)
   }
 }

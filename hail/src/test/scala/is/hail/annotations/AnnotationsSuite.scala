@@ -1,5 +1,6 @@
 package is.hail.annotations
 
+import is.hail.expr.ir.I
 import is.hail.{SparkSuite, TestUtils}
 import is.hail.expr.types._
 import is.hail.expr.types.virtual._
@@ -32,38 +33,38 @@ class AnnotationsSuite extends SparkSuite {
     assert(variantAnnotationMap.contains(anotherVariant))
 
     // type Int - info.DP
-    val dpQuery = vas.query("info", "DP")
-    assert(vas.fieldOption("info", "DP").exists(_.typ.isInstanceOf[TInt32]))
+    val dpQuery = vas.query(I("info"), I("DP"))
+    assert(vas.fieldOption(I("info"), I("DP")).exists(_.typ.isInstanceOf[TInt32]))
     assert(dpQuery(variantAnnotationMap(firstVariant)) == 77560)
     assert(dpQuery(variantAnnotationMap(anotherVariant)) == 20271)
 
     // type Double - info.HWP
-    val hwpQuery = vas.query("info", "HWP")
-    assert(vas.fieldOption("info", "HWP").exists(_.typ.isInstanceOf[TFloat64]))
+    val hwpQuery = vas.query(I("info"), I("HWP"))
+    assert(vas.fieldOption(I("info"), I("HWP")).exists(_.typ.isInstanceOf[TFloat64]))
     assert(D_==(hwpQuery(variantAnnotationMap(firstVariant)).asInstanceOf[Double], 0.0001))
     assert(D_==(hwpQuery(variantAnnotationMap(anotherVariant)).asInstanceOf[Double], 0.8286))
 
     // type String - info.culprit
-    val culpritQuery = vas.query("info", "culprit")
-    assert(vas.fieldOption("info", "culprit").exists(_.typ.isInstanceOf[TString]))
+    val culpritQuery = vas.query(I("info"), I("culprit"))
+    assert(vas.fieldOption(I("info"), I("culprit")).exists(_.typ.isInstanceOf[TString]))
     assert(culpritQuery(variantAnnotationMap(firstVariant)) == "FS")
     assert(culpritQuery(variantAnnotationMap(anotherVariant)) == "FS")
 
     // type Array - info.AC (allele count)
-    val acQuery = vas.query("info", "AC")
-    assert(vas.fieldOption("info", "AC").exists(f => f.typ == TArray(TInt32()) || f.typ == TArray(+TInt32())))
+    val acQuery = vas.query(I("info"), I("AC"))
+    assert(vas.fieldOption(I("info"), I("AC")).exists(f => f.typ == TArray(TInt32()) || f.typ == TArray(+TInt32())))
     assert(acQuery(variantAnnotationMap(firstVariant)) == IndexedSeq(89))
     assert(acQuery(variantAnnotationMap(anotherVariant)) == IndexedSeq(13))
 
     // type Boolean/flag - info.DB (dbSNP membership)
-    val dbQuery = vas.query("info", "DB")
-    assert(vas.fieldOption("info", "DB").exists(_.typ.isInstanceOf[TBoolean]))
+    val dbQuery = vas.query(I("info"), I("DB"))
+    assert(vas.fieldOption(I("info"), I("DB")).exists(_.typ.isInstanceOf[TBoolean]))
     assert(dbQuery(variantAnnotationMap(firstVariant)) == true)
     assert(dbQuery(variantAnnotationMap(anotherVariant)) == false)
 
     //type Set[String]
-    val filtQuery = vas.query("filters")
-    assert(vas.fieldOption("filters").exists(f => f.typ == TSet(TString()) || f.typ == TSet(+TString())))
+    val filtQuery = vas.query(I("filters"))
+    assert(vas.fieldOption(I("filters")).exists(f => f.typ == TSet(TString()) || f.typ == TSet(+TString())))
     assert(filtQuery(variantAnnotationMap(firstVariant)) == Set())
     assert(filtQuery(variantAnnotationMap(anotherVariant)) == Set("VQSRTrancheSNP99.95to100.00"))
   }

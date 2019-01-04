@@ -2,7 +2,7 @@ package is.hail.io.gen
 
 import is.hail.HailContext
 import is.hail.annotations.Region
-import is.hail.expr.ir.MatrixValue
+import is.hail.expr.ir.{I, MatrixValue}
 import is.hail.expr.types.physical.{PString, PStruct}
 import is.hail.io.plink.BimAnnotationView
 import is.hail.variant.{ArrayGenotypeView, RegionValueVariant, VariantMethods, View}
@@ -105,8 +105,8 @@ object ExportGen {
 }
 
 class GenAnnotationView(rowType: PStruct) extends View {
-  private val rsidField = rowType.fieldByName("rsid")
-  private val varidField = rowType.fieldByName("varid")
+  private val rsidField = rowType.fieldByName(I("rsid"))
+  private val varidField = rowType.fieldByName(I("varid"))
 
   private val rsidIdx = rsidField.index
   private val varidIdx = varidField.index

@@ -1,19 +1,18 @@
 package is.hail.annotations.aggregators
 
 import is.hail.annotations._
-import is.hail.asm4s._
-import is.hail.expr.types._
+import is.hail.expr.ir.Identifier
 import is.hail.expr.types.virtual.{TFloat64, TInt64, TStruct}
 import org.apache.spark.util.StatCounter
 
 object RegionValueStatisticsAggregator {
   val typ: TStruct = TStruct(
-    "mean" -> TFloat64(),
-    "stdev" -> TFloat64(),
-    "min" -> TFloat64(), // FIXME should really preserve the input type
-    "max" -> TFloat64(), // FIXME should really preserve the input type
-    "n" -> TInt64(),
-    "sum" -> TFloat64())
+    Identifier("mean") -> TFloat64(),
+    Identifier("stdev") -> TFloat64(),
+    Identifier("min") -> TFloat64(), // FIXME should really preserve the input type
+    Identifier("max") -> TFloat64(), // FIXME should really preserve the input type
+    Identifier("n") -> TInt64(),
+    Identifier("sum") -> TFloat64())
 }
 
 class RegionValueStatisticsAggregator extends RegionValueAggregator {

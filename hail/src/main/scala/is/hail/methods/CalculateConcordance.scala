@@ -1,6 +1,7 @@
 package is.hail.methods
 
 import is.hail.annotations.UnsafeRow
+import is.hail.expr.ir.I
 import is.hail.expr.types._
 import is.hail.expr.types.virtual.{TArray, TInt64, TStruct}
 import is.hail.table.Table
@@ -85,13 +86,13 @@ object CalculateConcordance {
 
     val sampleSchema = TStruct(
       left.colKey.zip(left.colKeyTypes) ++
-      Array("n_discordant" -> TInt64(),
-      "concordance" -> ConcordanceCombiner.schema): _*
+      Array(I("n_discordant") -> TInt64(),
+      I("concordance") -> ConcordanceCombiner.schema): _*
     )
 
     val variantSchema = TStruct(
       left.rowKey.zip(left.rowKeyTypes) ++
-        Array("n_discordant" -> TInt64(), "concordance" -> ConcordanceCombiner.schema): _*
+        Array(I("n_discordant") -> TInt64(), I("concordance") -> ConcordanceCombiner.schema): _*
     )
 
     val leftIds = leftFiltered.stringSampleIds

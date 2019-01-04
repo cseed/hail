@@ -24,7 +24,7 @@ object IBDInfo {
   }
 
   val signature =
-    TStruct(("Z0", TFloat64()), ("Z1", TFloat64()), ("Z2", TFloat64()), ("PI_HAT", TFloat64()))
+    TStruct((I("Z0"), TFloat64()), (I("Z1"), TFloat64()), (I("Z2"), TFloat64()), (I("PI_HAT"), TFloat64()))
 
   private val pType = signature.physicalType
 
@@ -58,7 +58,7 @@ case class IBDInfo(Z0: Double, Z1: Double, Z2: Double, PI_HAT: Double) {
 
 object ExtendedIBDInfo {
   val signature =
-    TStruct(("ibd", IBDInfo.signature), ("ibs0", TInt64()), ("ibs1", TInt64()), ("ibs2", TInt64()))
+    TStruct((I("ibd"), IBDInfo.signature), (I("ibs0"), TInt64()), (I("ibs1"), TInt64()), (I("ibs2"), TInt64()))
 
   private val pType = signature.physicalType
 
@@ -307,7 +307,7 @@ object IBD {
   }
 
   def apply(vds: MatrixTable,
-    mafFieldName: Option[String] = None,
+    mafFieldName: Option[Sym] = None,
     bounded: Boolean = true,
     min: Option[Double] = None,
     max: Option[Double] = None): Table = {
@@ -326,16 +326,16 @@ object IBD {
     val sampleIds = vds.stringSampleIds
 
     val ktRdd2 = computeIBDMatrix(vds, computeMaf, min, max, sampleIds, bounded)
-    new Table(vds.hc, ktRdd2, ibdSignature, IndexedSeq("i", "j"))
+    new Table(vds.hc, ktRdd2, ibdSignature, IndexedSeq(I("i"), I("j")))
   }
 
-  private val ibdSignature = TStruct(("i", TString()), ("j", TString())) ++ ExtendedIBDInfo.signature
+  private val ibdSignature = TStruct((I("i"), TString()), (I("j"), TString())) ++ ExtendedIBDInfo.signature
 
   private val ibdPType = ibdSignature.physicalType
 
   def toKeyTable(sc: HailContext, ibdMatrix: RDD[((Annotation, Annotation), ExtendedIBDInfo)]): Table = {
     val ktRdd = ibdMatrix.map { case ((i, j), eibd) => eibd.makeRow(i, j) }
-    Table(sc, ktRdd, ibdSignature, IndexedSeq("i", "j"))
+    Table(sc, ktRdd, ibdSignature, IndexedSeq(I("i"), I("j")))
   }
 
   def toRDD(kt: Table): RDD[((Annotation, Annotation), ExtendedIBDInfo)] = {
@@ -353,7 +353,7 @@ object IBD {
     }
   }
 
-  private[methods] def generateComputeMaf(vds: MatrixTable, fieldName: String): (RegionValue) => Double = {
+  private[methods] def generateComputeMaf(vds: MatrixTable, fieldName: Sym): (RegionValue) => Double = {
     val rvRowType = vds.rvRowType
     val rvRowPType = rvRowType.physicalType
     val field = rvRowType.field(fieldName)

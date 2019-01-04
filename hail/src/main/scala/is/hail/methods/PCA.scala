@@ -2,6 +2,7 @@ package is.hail.methods
 
 import breeze.linalg.{*, DenseMatrix, DenseVector}
 import is.hail.annotations._
+import is.hail.expr.ir.{I, Sym}
 import is.hail.expr.types._
 import is.hail.expr.types.virtual.{TArray, TFloat64, TStruct}
 import is.hail.rvd.RVDContext
@@ -20,7 +21,7 @@ object PCA {
     val hc = vsm.hc
     val sc = hc.sc
 
-    val rowType = TStruct(vsm.colKey.zip(vsm.colKeyTypes): _*) ++ TStruct("scores" -> TArray(TFloat64()))
+    val rowType = TStruct(vsm.colKey.zip(vsm.colKeyTypes): _*) ++ TStruct(I("scores") -> TArray(TFloat64()))
     val rowTypeBc = sc.broadcast(rowType)
 
     val scoresBc = sc.broadcast(scores)
@@ -57,7 +58,7 @@ object PCA {
   }
 
   // returns (eigenvalues, sample scores, optional variant loadings)
-  def apply(vsm: MatrixTable, entryField: String, k: Int, computeLoadings: Boolean): (IndexedSeq[Double], DenseMatrix[Double], Option[Table]) = {
+  def apply(vsm: MatrixTable, entryField: Sym, k: Int, computeLoadings: Boolean): (IndexedSeq[Double], DenseMatrix[Double], Option[Table]) = {
     if (k < 1)
       fatal(s"""requested invalid number of components: $k
                |  Expect componenents >= 1""".stripMargin)
@@ -90,7 +91,7 @@ object PCA {
     }
 
     val optionLoadings = if (computeLoadings) {
-      val rowType = TStruct(vsm.rowKey.zip(vsm.rowKeyTypes): _*) ++ TStruct("loadings" -> TArray(TFloat64()))
+      val rowType = TStruct(vsm.rowKey.zip(vsm.rowKeyTypes): _*) ++ TStruct(I("loadings") -> TArray(TFloat64()))
       val rowPTypeBc = vsm.sparkContext.broadcast(rowType.physicalType)
       val rowKeysBc = vsm.sparkContext.broadcast(collectRowKeys())
       val localRowKeySignature = vsm.rowKeyTypes

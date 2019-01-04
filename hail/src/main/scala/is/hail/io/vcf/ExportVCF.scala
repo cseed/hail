@@ -3,7 +3,7 @@ package is.hail.io.vcf
 import is.hail
 import is.hail.HailContext
 import is.hail.annotations.Region
-import is.hail.expr.ir.MatrixValue
+import is.hail.expr.ir.{I, MatrixValue, Sym}
 import is.hail.expr.types.physical._
 import is.hail.expr.types.virtual._
 import is.hail.io.{VCFAttributes, VCFFieldAttributes, VCFMetadata}
@@ -131,7 +131,7 @@ object ExportVCF {
     case _ => None
   }
 
-  def formatType(fieldName: String, t: Type): String = {
+  def formatType(fieldName: Sym, t: Type): String = {
     val tOption = t match {
       case TArray(elt, _) => formatType(elt)
       case TSet(elt, _) => formatType(elt)
@@ -191,13 +191,13 @@ object ExportVCF {
     }(sb += ':')
   }
 
-  def getAttributes(k1: String, attributes: Option[VCFMetadata]): Option[VCFAttributes] =
+  def getAttributes(k1: Sym, attributes: Option[VCFMetadata]): Option[VCFAttributes] =
     attributes.flatMap(_.get(k1))
 
-  def getAttributes(k1: String, k2: String, attributes: Option[VCFMetadata]): Option[VCFFieldAttributes] =
+  def getAttributes(k1: Sym, k2: String, attributes: Option[VCFMetadata]): Option[VCFFieldAttributes] =
     getAttributes(k1, attributes).flatMap(_.get(k2))
 
-  def getAttributes(k1: String, k2: String, k3: String, attributes: Option[VCFMetadata]): Option[String] =
+  def getAttributes(k1: Sym, k2: String, k3: String, attributes: Option[VCFMetadata]): Option[String] =
     getAttributes(k1, k2, attributes).flatMap(_.get(k3))
 
   def apply(mt: MatrixTable, path: String, append: Option[String] = None,
@@ -221,15 +221,15 @@ object ExportVCF {
 
     checkFormatSignature(tg.virtualType)
         
-    val formatFieldOrder: Array[Int] = tg.fieldIdx.get("GT") match {
-      case Some(i) => (i +: tg.fields.filter(fd => fd.name != "GT").map(_.index)).toArray
+    val formatFieldOrder: Array[Int] = tg.fieldIdx.get(I("GT")) match {
+      case Some(i) => (i +: tg.fields.filter(fd => fd.name != I("GT")).map(_.index)).toArray
       case None => tg.fields.indices.toArray
     }
     val formatFieldString = formatFieldOrder.map(i => tg.fields(i).name).mkString(":")
 
     val tinfo =
-      if (typ.rowType.hasField("info")) {
-        typ.rowType.field("info").typ match {
+      if (typ.rowType.hasField(I("info"))) {
+        typ.rowType.field(I("info")).typ match {
           case t: TStruct => t.asInstanceOf[TStruct].physicalType
           case t =>
             warn(s"export_vcf found row field 'info' of type $t, but expected type 'Struct'. Emitting no INFO fields.")
@@ -253,7 +253,7 @@ object ExportVCF {
       sb.append(s"##hailversion=${ hail.HAIL_PRETTY_VERSION }\n")
 
       tg.fields.foreach { f =>
-        val attrs = getAttributes("format", f.name, metadata).getOrElse(Map.empty[String, String])
+        val attrs = getAttributes(I("format"), f.name.toString, metadata).getOrElse(Map.empty[String, String])
         sb.append("##FORMAT=<ID=")
         sb.append(f.name)
         sb.append(",Number=")
@@ -265,9 +265,9 @@ object ExportVCF {
         sb.append("\">\n")
       }
 
-      val filters = getAttributes("filter", metadata).getOrElse(Map.empty[String, Any]).keys.toArray.sorted
+      val filters = getAttributes(I("filter"), metadata).getOrElse(Map.empty[String, Any]).keys.toArray.sorted
       filters.foreach { id =>
-        val attrs = getAttributes("filter", id, metadata).getOrElse(Map.empty[String, String])
+        val attrs = getAttributes(I("filter"), id, metadata).getOrElse(Map.empty[String, String])
         sb.append("##FILTER=<ID=")
         sb.append(id)
         sb.append(",Description=\"")
@@ -276,7 +276,7 @@ object ExportVCF {
       }
 
       tinfo.virtualType.fields.foreach { f =>
-        val attrs = getAttributes("info", f.name, metadata).getOrElse(Map.empty[String, String])
+        val attrs = getAttributes(I("info"), f.name.toString, metadata).getOrElse(Map.empty[String, String])
         sb.append("##INFO=<ID=")
         sb.append(f.name)
         sb.append(",Number=")
@@ -324,7 +324,7 @@ object ExportVCF {
 
     val fieldIdx = typ.rowType.fieldIdx
 
-    def lookupVAField(fieldName: String, vcfColName: String, expectedTypeOpt: Option[Type]): (Boolean, Int) = {
+    def lookupVAField(fieldName: Sym, vcfColName: String, expectedTypeOpt: Option[Type]): (Boolean, Int) = {
       fieldIdx.get(fieldName) match {
         case Some(idx) =>
           val t = typ.rowType.types(idx)
@@ -341,10 +341,10 @@ object ExportVCF {
     val filtersType = TSet(TString())
     val filtersPType = filtersType.physicalType
 
-    val (idExists, idIdx) = lookupVAField("rsid", "ID", Some(TString()))
-    val (qualExists, qualIdx) = lookupVAField("qual", "QUAL", Some(TFloat64()))
-    val (filtersExists, filtersIdx) = lookupVAField("filters", "FILTERS", Some(filtersType))
-    val (infoExists, infoIdx) = lookupVAField("info", "INFO", None)
+    val (idExists, idIdx) = lookupVAField(I("rsid"), "ID", Some(TString()))
+    val (qualExists, qualIdx) = lookupVAField(I("qual"), "QUAL", Some(TFloat64()))
+    val (filtersExists, filtersIdx) = lookupVAField(I("filters"), "FILTERS", Some(filtersType))
+    val (infoExists, infoIdx) = lookupVAField(I("info"), "INFO", None)
     
     val fullRowType = typ.rvRowType.physicalType
     val localEntriesIndex = typ.entriesIdx

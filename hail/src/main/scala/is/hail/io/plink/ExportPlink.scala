@@ -4,7 +4,7 @@ import java.io.{OutputStream, OutputStreamWriter}
 
 import is.hail.HailContext
 import is.hail.annotations.Region
-import is.hail.expr.ir.MatrixValue
+import is.hail.expr.ir.{I, MatrixValue}
 import is.hail.expr.types._
 import is.hail.expr.types.physical.{PString, PStruct}
 import is.hail.variant._
@@ -123,8 +123,8 @@ object ExportPlink {
 }
 
 class BimAnnotationView(rowType: PStruct) extends View {
-  private val varidField = rowType.fieldByName("varid")
-  private val cmPosField = rowType.fieldByName("cm_position")
+  private val varidField = rowType.fieldByName(I("varid"))
+  private val cmPosField = rowType.fieldByName(I("cm_position"))
 
   private val varidIdx = varidField.index
   private val cmPosIdx = cmPosField.index

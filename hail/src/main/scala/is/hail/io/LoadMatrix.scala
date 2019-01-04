@@ -2,6 +2,7 @@ package is.hail.io
 
 import is.hail.HailContext
 import is.hail.annotations._
+import is.hail.expr.ir.{I, Sym}
 import is.hail.expr.types._
 import is.hail.expr.types.virtual._
 import is.hail.rvd.{RVD, RVDContext, RVDPartitioner}
@@ -199,7 +200,7 @@ object LoadMatrix {
     }
   }
 
-  def parseHeader(hConf: Configuration, file: String, sep: Char, nRowFields: Int, noHeader: Boolean): (Array[String], Int) = {
+  def parseHeader(hConf: Configuration, file: String, sep: Char, nRowFields: Int, noHeader: Boolean): (Array[Sym], Int) = {
     if (noHeader) {
       val nCols = hConf.readFile(file) { s => Source.fromInputStream(s).getLines().next() }.count(_ == sep) + 1
       (Array(), nCols - nRowFields)
@@ -207,23 +208,24 @@ object LoadMatrix {
       val lines = hConf.readFile(file) { s => Source.fromInputStream(s).getLines().take(2).toArray }
       lines match {
         case Array(header, first) =>
-          val nCols = first.split(charRegex(sep), -1).length - nRowFields
+          val cols = first.split(charRegex(sep), -1)
+          val nCols = cols.length - nRowFields
           if (nCols <= 0)
             fatal(s"More row fields ($nRowFields) than columns (${ nRowFields + nCols }) in file: $file")
-          (header.split(charRegex(sep), -1), nCols)
+          (cols.map(c => I(c)), nCols)
         case _ =>
           fatal(s"file in import_matrix contains no data: $file")
       }
     }
   }
 
-  def splitHeader(cols: Array[String], nRowFields: Int, nColIDs: Int): (Array[String], Array[_]) = {
+  def splitHeader(cols: Array[Sym], nRowFields: Int, nColIDs: Int): (Array[Sym], Array[_]) = {
     if (cols.length == nColIDs) {
-      (Array.tabulate(nRowFields)(i => s"f$i"), cols)
+      (Array.tabulate(nRowFields)(i => I(s"f$i")), cols)
     } else if (cols.length == nColIDs + nRowFields) {
       (cols.take(nRowFields), cols.drop(nRowFields))
     } else if (cols.isEmpty) {
-      (Array.tabulate(nRowFields)(i => s"f$i"), Array.range(0, nColIDs))
+      (Array.tabulate(nRowFields)(i => I(s"f$i")), Array.range(0, nColIDs))
     } else
       fatal(
         s"""Expected file header to contain all $nColIDs column IDs and
@@ -247,12 +249,12 @@ object LoadMatrix {
     (new RVDPartitioner(Array(kType.fieldNames(0)), kType, ranges), keepPartitions.result())
   }
 
-  def verifyRowFields(fieldNames: Array[String], fieldTypes: Map[String, Type]): TStruct = {
+  def verifyRowFields(fieldNames: Array[Sym], fieldTypes: Map[Sym, Type]): TStruct = {
     val headerDups = fieldNames.duplicates()
     if (headerDups.nonEmpty)
       fatal(s"Found following duplicate row fields in header: \n    ${ headerDups.mkString("\n    ") }")
 
-    val fields: Array[(String, Type)] = fieldNames.map { name =>
+    val fields: Array[(Sym, Type)] = fieldNames.map { name =>
       fieldTypes.get(name) match {
         case Some(t) => (name, t)
         case None => fatal(
@@ -269,9 +271,9 @@ object LoadMatrix {
 
   def apply(hc: HailContext,
     files: Array[String],
-    rowFields: Map[String, Type],
-    keyFields: Array[String],
-    cellType: TStruct = TStruct("x" -> TInt64()),
+    rowFields: Map[Sym, Type],
+    keyFields: Array[Sym],
+    cellType: TStruct = TStruct(I("x") -> TInt64()),
     missingValue: String = "NA",
     nPartitions: Option[Int] = None,
     noHeader: Boolean = false,
@@ -342,7 +344,7 @@ object LoadMatrix {
     val useIndex = keyFields.isEmpty
     val (rowKey, rowType) =
       if (useIndex)
-        (Array("row_id"), TStruct("row_id" -> TInt64()) ++ rowFieldType)
+        (Array(I("row_id")), TStruct(I("row_id") -> TInt64()) ++ rowFieldType)
       else (keyFields, rowFieldType)
 
     if (!keyFields.forall(rowType.fieldNames.contains))
@@ -354,8 +356,8 @@ object LoadMatrix {
 
     val matrixType = MatrixType.fromParts(
       TStruct.empty(),
-      colType = TStruct("col_id" -> (if (noHeader) TInt32() else TString())),
-      colKey = Array("col_id"),
+      colType = TStruct(I("col_id") -> (if (noHeader) TInt32() else TString())),
+      colKey = Array(I("col_id")),
       rowType = rowType,
       rowKey = rowKey.toFastIndexedSeq,
       entryType = cellType)

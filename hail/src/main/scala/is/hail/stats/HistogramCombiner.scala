@@ -4,16 +4,17 @@ import java.util
 import java.util.Arrays.binarySearch
 
 import is.hail.annotations.Annotation
+import is.hail.expr.ir.I
 import is.hail.expr.types._
 import is.hail.expr.types.virtual.{TArray, TFloat64, TInt64, TStruct}
 import is.hail.utils.fatal
 
 object HistogramCombiner {
   def schema: TStruct = TStruct(
-    "bin_edges" -> TArray(TFloat64()),
-    "bin_freq" -> TArray(TInt64()),
-    "n_smaller" -> TInt64(),
-    "n_larger" -> TInt64())
+    I("bin_edges") -> TArray(TFloat64()),
+    I("bin_freq") -> TArray(TInt64()),
+    I("n_smaller") -> TInt64(),
+    I("n_larger") -> TInt64())
 }
 
 class HistogramCombiner(val indices: Array[Double]) extends Serializable {

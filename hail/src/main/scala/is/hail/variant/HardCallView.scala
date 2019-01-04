@@ -1,6 +1,7 @@
 package is.hail.variant
 
 import is.hail.annotations.{Region, RegionValue}
+import is.hail.expr.ir.{EntriesSym, I, Sym}
 import is.hail.expr.types._
 import is.hail.expr.types.physical._
 
@@ -9,11 +10,11 @@ object ArrayGenotypeView {
 }
 
 final class ArrayGenotypeView(rvType: PStruct) {
-  private val entriesIndex = rvType.fieldByName(MatrixType.entriesIdentifier).index
+  private val entriesIndex = rvType.fieldByName(EntriesSym).index
   private val tgs = rvType.types(entriesIndex).asInstanceOf[PArray]
   private val tg = tgs.elementType.asInstanceOf[PStruct]
 
-  private def lookupField(name: String, expected: PType): (Boolean, Int) = {
+  private def lookupField(name: Sym, expected: PType): (Boolean, Int) = {
     tg.selfField(name) match {
       case Some(f) =>
         if (f.typ == expected)
@@ -24,8 +25,8 @@ final class ArrayGenotypeView(rvType: PStruct) {
     }
   }
 
-  private val (gtExists, gtIndex) = lookupField("GT", PCall())
-  private val (gpExists, gpIndex) = lookupField("GP", ArrayGenotypeView.tArrayFloat64)
+  private val (gtExists, gtIndex) = lookupField(I("GT"), PCall())
+  private val (gpExists, gpIndex) = lookupField(I("GP"), ArrayGenotypeView.tArrayFloat64)
   private var m: Region = _
   private var gsOffset: Long = _
   private var gsLength: Int = _
@@ -74,16 +75,16 @@ final class ArrayGenotypeView(rvType: PStruct) {
 
 object HardCallView {
   def apply(rowSignature: PStruct): HardCallView = {
-    new HardCallView(rowSignature, "GT")
+    new HardCallView(rowSignature, I("GT"))
   }
 }
 
-final class HardCallView(rvType: PStruct, callField: String) {
-  private val entriesIndex = rvType.fieldByName(MatrixType.entriesIdentifier).index
+final class HardCallView(rvType: PStruct, callField: Sym) {
+  private val entriesIndex = rvType.fieldByName(EntriesSym).index
   private val tgs = rvType.types(entriesIndex).asInstanceOf[PArray]
   private val tg = tgs.elementType.asInstanceOf[PStruct]
 
-  private def lookupField(name: String, expected: PType): (Boolean, Int) = {
+  private def lookupField(name: Sym, expected: PType): (Boolean, Int) = {
     tg.selfField(name) match {
       case Some(f) =>
         if (f.typ == expected)

@@ -2,6 +2,7 @@ package is.hail.expr.types.virtual
 
 import is.hail.annotations._
 import is.hail.check._
+import is.hail.expr.ir.I
 import is.hail.expr.types.physical.PLocus
 import is.hail.utils._
 import is.hail.variant._
@@ -11,8 +12,8 @@ import scala.reflect.{ClassTag, classTag}
 object TLocus {
   def representation(required: Boolean = false): TStruct = {
     TStruct(required,
-      "contig" -> +TString(),
-      "position" -> +TInt32())
+      I("contig") -> +TString(),
+      I("position") -> +TInt32())
   }
 
   def schemaFromRG(rg: Option[ReferenceGenome], required: Boolean = false): Type = rg match {

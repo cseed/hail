@@ -2,6 +2,7 @@ package is.hail.io.bgen
 
 import is.hail.annotations.{Region, _}
 import is.hail.asm4s._
+import is.hail.expr.ir.I
 import is.hail.expr.types._
 import is.hail.expr.types.physical.{PArray, PStruct}
 import is.hail.expr.types.virtual.{TArray, TInterval, Type}
@@ -255,7 +256,7 @@ object CompileDecoder {
         }
       ),
       srvb.start(),
-      srvb.addBaseStruct(settings.pType.field("locus").typ.fundamentalType.asInstanceOf[PStruct], { srvb =>
+      srvb.addBaseStruct(settings.pType.field(I("locus")).typ.fundamentalType.asInstanceOf[PStruct], { srvb =>
         Code(
           srvb.start(),
           srvb.addString(contigRecoded),
@@ -269,7 +270,7 @@ object CompileDecoder {
           const("Only biallelic variants supported, found variant with ")
             .concat(nAlleles.toS)),
         Code._empty),
-      srvb.addArray(settings.pType.field("alleles").typ.fundamentalType.asInstanceOf[PArray], { srvb =>
+      srvb.addArray(settings.pType.field(I("alleles")).typ.fundamentalType.asInstanceOf[PArray], { srvb =>
         Code(
           srvb.start(nAlleles),
           i := 0,
@@ -440,7 +441,7 @@ object CompileDecoder {
                         } else Code._empty,
                         if (includeGP) {
                           Code(
-                            srvb.addArray(settings.matrixType.entryType.types(settings.matrixType.entryType.fieldIdx("GP")).asInstanceOf[TArray].physicalType, { srvb =>
+                            srvb.addArray(settings.matrixType.entryType.types(settings.matrixType.entryType.fieldIdx(I("GP"))).asInstanceOf[TArray].physicalType, { srvb =>
                               Code(
                                 srvb.start(3),
                                 srvb.addDouble(d0.toD / 255.0),

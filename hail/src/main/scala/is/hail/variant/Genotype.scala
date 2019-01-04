@@ -2,6 +2,7 @@ package is.hail.variant
 
 import is.hail.annotations.Annotation
 import is.hail.check.{Arbitrary, Gen}
+import is.hail.expr.ir.I
 import is.hail.expr.types._
 import is.hail.expr.types.virtual.{TArray, TCall, TInt32, TStruct}
 import is.hail.utils._
@@ -48,11 +49,11 @@ class AllelePair(val p: Int) extends AnyVal {
 
 object Genotype {
   val htsGenotypeType: TStruct = TStruct(
-    "GT" -> TCall(),
-    "AD" -> TArray(+TInt32()),
-    "DP" -> TInt32(),
-    "GQ" -> TInt32(),
-    "PL" -> TArray(+TInt32()))
+    I("GT") -> TCall(),
+    I("AD") -> TArray(+TInt32()),
+    I("DP") -> TInt32(),
+    I("GQ") -> TInt32(),
+    I("PL") -> TArray(+TInt32()))
 
   def call(g: Annotation): Option[Call] = {
     if (g == null)

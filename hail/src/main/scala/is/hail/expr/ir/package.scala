@@ -53,7 +53,7 @@ package object ir {
   // Build consistent expression for a filter-condition with keep polarity,
   // using Let to manage missing-ness.
   def filterPredicateWithKeep(irPred: ir.IR, keep: Boolean): ir.IR = {
-    val pred = genUID()
+    val pred = genSym("pred")
     ir.Let(pred,
       if (keep) irPred else ir.ApplyUnaryPrimOp(ir.Bang(), irPred),
       ir.If(ir.IsNA(ir.Ref(pred, TBoolean())),

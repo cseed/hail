@@ -7,7 +7,7 @@ import is.hail.expr.types.virtual._
 
 object DictFunctions extends RegistryFunctions {
   def contains(dict: IR, key: IR) = {
-    val i = Ref(genUID(), TInt32())
+    val i = Ref(genSym("i"), TInt32())
 
     If(IsNA(dict),
       NA(TBoolean()),
@@ -17,12 +17,12 @@ object DictFunctions extends RegistryFunctions {
           False(),
           ApplyComparisonOp(
             EQWithNA(key.typ),
-            GetField(ArrayRef(ToArray(dict), i), "key"),
+            GetField(ArrayRef(ToArray(dict), i), I("key")),
             key))))
   }
 
   def get(dict: IR, key: IR, default: IR): IR = {
-    val i = Ref(genUID(), TInt32())
+    val i = Ref(genSym("i"), TInt32())
 
     If(IsNA(dict),
       NA(default.typ),
@@ -30,8 +30,8 @@ object DictFunctions extends RegistryFunctions {
         LowerBoundOnOrderedCollection(dict, key, onKey=true),
         If(i.ceq(ArrayLen(ToArray(dict))),
           default,
-          If(ApplyComparisonOp(EQWithNA(key.typ), GetField(ArrayRef(ToArray(dict), i), "key"), key),
-            GetField(ArrayRef(ToArray(dict), i), "value"),
+          If(ApplyComparisonOp(EQWithNA(key.typ), GetField(ArrayRef(ToArray(dict), i), I("key")), key),
+            GetField(ArrayRef(ToArray(dict), i), I("value")),
             default))))
   }
 
@@ -56,16 +56,16 @@ object DictFunctions extends RegistryFunctions {
     }
 
     registerIR("dictToArray", tdict) { d =>
-      val elt = Ref(genUID(), -types.coerce[TContainer](d.typ).elementType)
+      val elt = Ref(genSym("elt"), -types.coerce[TContainer](d.typ).elementType)
       ArrayMap(
         ToArray(d),
         elt.name,
-        MakeTuple(Seq(GetField(elt, "key"), GetField(elt, "value"))))
+        MakeTuple(Seq(GetField(elt, I("key")), GetField(elt, I("value")))))
     }
 
     registerIR("keySet", tdict) { d =>
-      val pairs = Ref(genUID(), -types.coerce[TContainer](d.typ).elementType)
-      ToSet(ArrayMap(ToArray(d), pairs.name, GetField(pairs, "key")))
+      val pairs = Ref(genSym("pairs"), -types.coerce[TContainer](d.typ).elementType)
+      ToSet(ArrayMap(ToArray(d), pairs.name, GetField(pairs, I("key"))))
     }
 
     registerIR("dict", TSet(TTuple(tv("key"), tv("value"))))(s => ToDict(ToArray(s)))
@@ -73,13 +73,13 @@ object DictFunctions extends RegistryFunctions {
     registerIR("dict", TArray(TTuple(tv("key"), tv("value"))))(ToDict)
 
     registerIR("keys", tdict) { d =>
-      val elt = Ref(genUID(), -types.coerce[TContainer](d.typ).elementType)
-      ArrayMap(ToArray(d), elt.name, GetField(elt, "key"))
+      val elt = Ref(genSym("elt"), -types.coerce[TContainer](d.typ).elementType)
+      ArrayMap(ToArray(d), elt.name, GetField(elt, I("key")))
     }
 
     registerIR("values", tdict) { d =>
-      val elt = Ref(genUID(), -types.coerce[TContainer](d.typ).elementType)
-      ArrayMap(ToArray(d), elt.name, GetField(elt, "value"))
+      val elt = Ref(genSym("elt"), -types.coerce[TContainer](d.typ).elementType)
+      ArrayMap(ToArray(d), elt.name, GetField(elt, I("value")))
     }
   }
 }

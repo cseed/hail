@@ -1,6 +1,7 @@
 package is.hail.expr
 
 import is.hail.annotations.Annotation
+import is.hail.expr.ir.Identifier
 import is.hail.expr.ir.functions.UtilFunctions
 import is.hail.expr.types._
 import is.hail.expr.types.virtual._
@@ -33,7 +34,7 @@ object SparkAnnotationImpex {
     case BinaryType => TBinary()
     case ArrayType(elementType, containsNull) => TArray(importType(elementType).setRequired(!containsNull))
     case StructType(fields) =>
-      TStruct(fields.map { f => (f.name, importType(f.dataType).setRequired(!f.nullable)) }: _*)
+      TStruct(fields.map { f => (Identifier(f.name), importType(f.dataType).setRequired(!f.nullable)) }: _*)
   }
 
   def exportType(t: Type): DataType = (t: @unchecked) match {
@@ -52,7 +53,7 @@ object SparkAnnotationImpex {
       else
         StructType(tbs.fields
           .map(f =>
-            StructField(escapeColumnName(f.name), f.typ.schema, nullable = !f.typ.required)))
+            StructField(escapeColumnName(f.name.toString), f.typ.schema, nullable = !f.typ.required)))
   }
 }
 
@@ -121,7 +122,7 @@ object JSONAnnotationImpex {
         case TStruct(fields, _) =>
           val row = a.asInstanceOf[Row]
           JObject(List.tabulate(row.size) { i =>
-            (fields(i).name, exportAnnotation(row.get(i), fields(i).typ))
+            (fields(i).name.toString, exportAnnotation(row.get(i), fields(i).typ))
           })
         case TTuple(types, _) =>
           val row = a.asInstanceOf[Row]
@@ -189,11 +190,11 @@ object JSONAnnotationImpex {
         else {
           val annotationSize =
             if (padNulls) t.size
-            else jfields.map { case (name, jv2) => t.selfField(name).map(_.index).getOrElse(-1) }.max + 1
+            else jfields.map { case (name, jv2) => t.selfField(Identifier(name)).map(_.index).getOrElse(-1) }.max + 1
           val a = Array.fill[Any](annotationSize)(null)
 
           for ((name, jv2) <- jfields) {
-            t.selfField(name) match {
+            t.selfField(Identifier(name)) match {
               case Some(f) =>
                 a(f.index) = importAnnotation(jv2, f.typ, parent + "." + name, padNulls)
 

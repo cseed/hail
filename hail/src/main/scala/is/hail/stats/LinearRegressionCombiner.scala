@@ -1,25 +1,25 @@
 package is.hail.stats
 
 import breeze.linalg.{DenseMatrix, DenseVector, diag, inv}
-import breeze.numerics._
+import is.hail.expr.ir.I
+import breeze.numerics.sqrt
 import is.hail.annotations.{Annotation, Region, RegionValueBuilder}
-import is.hail.expr.types._
 import is.hail.expr.types.physical.{PArray, PFloat64, PType}
 import is.hail.expr.types.virtual._
 import net.sourceforge.jdistlib.{F, T}
 
 object LinearRegressionCombiner {
   val typ: Type = TStruct(
-    "beta" -> TArray(TFloat64()),
-    "standard_error" -> TArray(TFloat64()),
-    "t_stat" -> TArray(TFloat64()),
-    "p_value" -> TArray(TFloat64()),
-    "multiple_standard_error" -> TFloat64(),
-    "multiple_r_squared" -> TFloat64(),
-    "adjusted_r_squared" -> TFloat64(),
-    "f_stat" -> TFloat64(),
-    "multiple_p_value" -> TFloat64(),
-    "n" -> TInt64())
+    I("beta") -> TArray(TFloat64()),
+    I("standard_error") -> TArray(TFloat64()),
+    I("t_stat") -> TArray(TFloat64()),
+    I("p_value") -> TArray(TFloat64()),
+    I("multiple_standard_error") -> TFloat64(),
+    I("multiple_r_squared") -> TFloat64(),
+    I("adjusted_r_squared") -> TFloat64(),
+    I("f_stat") -> TFloat64(),
+    I("multiple_p_value") -> TFloat64(),
+    I("n") -> TInt64())
 }
 
 class LinearRegressionCombiner(k: Int, k0: Int, t: PType) extends Serializable {

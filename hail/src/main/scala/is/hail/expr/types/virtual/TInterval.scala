@@ -2,6 +2,7 @@ package is.hail.expr.types.virtual
 
 import is.hail.annotations.{Annotation, ExtendedOrdering}
 import is.hail.check.Gen
+import is.hail.expr.ir.I
 import is.hail.expr.types.physical.PInterval
 import is.hail.utils.{FastSeq, Interval}
 
@@ -39,10 +40,10 @@ case class TInterval(pointType: Type, override val required: Boolean = false) ex
   val representation: TStruct = {
     TStruct(
       required,
-      "start" -> pointType,
-      "end" -> pointType,
-      "includesStart" -> TBooleanRequired,
-      "includesEnd" -> TBooleanRequired)
+      I("start") -> pointType,
+      I("end") -> pointType,
+      I("includesStart") -> TBooleanRequired,
+      I("includesEnd") -> TBooleanRequired)
   }
 
   override def unify(concrete: Type): Boolean = concrete match {

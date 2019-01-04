@@ -1,6 +1,7 @@
 package is.hail.io.bgen
 
 import is.hail.HailContext
+import is.hail.expr.ir.I
 import is.hail.expr.types.virtual.TStruct
 import is.hail.io.index.IndexWriter
 import is.hail.rvd.{RVD, RVDPartitioner, RVDType}
@@ -62,7 +63,7 @@ object IndexBgen {
       annotationType
     )
 
-    val typ = RVDType(settings.typ.physicalType, Array("file_idx", "locus", "alleles"))
+    val typ = RVDType(settings.typ.physicalType, Array(I("file_idx"), I("locus"), I("alleles")))
 
     val sHadoopConfBc = hc.sc.broadcast(new SerializableHadoopConfiguration(hConf))
 
@@ -79,19 +80,19 @@ object IndexBgen {
     }
 
     val rowType = typ.rowType
-    val locusIdx = rowType.fieldIdx("locus")
-    val allelesIdx = rowType.fieldIdx("alleles")
-    val offsetIdx = rowType.fieldIdx("offset")
-    val fileIdxIdx = rowType.fieldIdx("file_idx")
-    val (keyType, _) = rowType.virtualType.select(Array("file_idx", "locus", "alleles"))
-    val (indexKeyType, _) = keyType.select(Array("locus", "alleles"))
+    val locusIdx = rowType.fieldIdx(I("locus"))
+    val allelesIdx = rowType.fieldIdx(I("alleles"))
+    val offsetIdx = rowType.fieldIdx(I("offset"))
+    val fileIdxIdx = rowType.fieldIdx(I("file_idx"))
+    val (keyType, _) = rowType.virtualType.select(Array(I("file_idx"), I("locus"), I("alleles")))
+    val (indexKeyType, _) = keyType.select(Array(I("locus"), I("alleles")))
 
     val attributes = Map("reference_genome" -> rg.orNull,
       "contig_recoding" -> recoding,
       "skip_invalid_loci" -> skipInvalidLoci)
 
     val rangeBounds = files.zipWithIndex.map { case (_, i) => Interval(Row(i), Row(i), includesStart = true, includesEnd = true) }
-    val partitioner = new RVDPartitioner(Array("file_idx"), keyType.asInstanceOf[TStruct], rangeBounds)
+    val partitioner = new RVDPartitioner(Array(I("file_idx")), keyType.asInstanceOf[TStruct], rangeBounds)
     val crvd = BgenRDD(hc.sc, partitions, settings, null)
 
     RVD.unkeyed(rowType, crvd)

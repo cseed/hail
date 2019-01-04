@@ -734,18 +734,18 @@ class IRSuite extends SparkSuite {
   @DataProvider(name = "valueIRs")
   def valueIRs(): Array[Array[IR]] = {
     val b = True()
-    val c = Ref("c", TBoolean())
+    val c = Ref(I("c"), TBoolean())
     val i = I32(5)
     val j = I32(7)
     val str = Str("Hail")
-    val a = Ref("a", TArray(TInt32()))
-    val aa = Ref("aa", TArray(TArray(TInt32())))
-    val da = Ref("da", TArray(TTuple(TInt32(), TString())))
-    val v = Ref("v", TInt32())
-    val s = Ref("s", TStruct("x" -> TInt32(), "y" -> TInt64(), "z" -> TFloat64()))
-    val t = Ref("t", TTuple(TInt32(), TInt64(), TFloat64()))
+    val a = Ref(I("a"), TArray(TInt32()))
+    val aa = Ref(I("aa"), TArray(TArray(TInt32())))
+    val da = Ref(I("da"), TArray(TTuple(TInt32(), TString())))
+    val v = Ref(I("v"), TInt32())
+    val s = Ref(I("s"), TStruct(I("x") -> TInt32(), I("y") -> TInt64(), I("z") -> TFloat64()))
+    val t = Ref(I("t"), TTuple(TInt32(), TInt64(), TFloat64()))
 
-    val call = Ref("call", TCall())
+    val call = Ref(I("call"), TCall())
 
     val collectSig = AggSignature(Collect(), Seq(), None, Seq(TInt32()))
 
@@ -786,12 +786,12 @@ class IRSuite extends SparkSuite {
       ToArray(a),
       LowerBoundOnOrderedCollection(a, i, onKey = true),
       GroupByKey(da),
-      ArrayMap(a, "v", v),
-      ArrayFilter(a, "v", b),
-      ArrayFlatMap(aa, "v", a),
-      ArrayFold(a, I32(0), "x", "v", v),
-      ArrayScan(a, I32(0), "x", "v", v),
-      ArrayFor(a, "v", Void()),
+      ArrayMap(a, I("v"), v),
+      ArrayFilter(a, I("v"), b),
+      ArrayFlatMap(aa, I("v"), a),
+      ArrayFold(a, I32(0), "x", I("v"), v),
+      ArrayScan(a, I32(0), "x", I("v"), v),
+      ArrayFor(a, I("v"), Void()),
       AggFilter(True(), I32(0)),
       AggExplode(NA(TArray(TInt32())), "x", I32(0)),
       AggGroupBy(True(), I32(0)),
@@ -984,15 +984,15 @@ class IRSuite extends SparkSuite {
   @Test(dataProvider = "valueIRs")
   def testValueIRParser(x: IR) {
     val env = IRParserEnvironment(refMap = Map(
-      "c" -> TBoolean(),
-      "a" -> TArray(TInt32()),
-      "aa" -> TArray(TArray(TInt32())),
-      "da" -> TArray(TTuple(TInt32(), TString())),
-      "v" -> TInt32(),
-      "s" -> TStruct("x" -> TInt32(), "y" -> TInt64(), "z" -> TFloat64()),
-      "t" -> TTuple(TInt32(), TInt64(), TFloat64()),
-      "call" -> TCall(),
-      "x" -> TInt32()
+      I("c") -> TBoolean(),
+      I("a") -> TArray(TInt32()),
+      I("aa") -> TArray(TArray(TInt32())),
+      I("da") -> TArray(TTuple(TInt32(), TString())),
+      I("v") -> TInt32(),
+      I("s") -> TStruct(I("x") -> TInt32(), I("y") -> TInt64(), I("z") -> TFloat64()),
+      I("t") -> TTuple(TInt32(), TInt64(), TFloat64()),
+      I("call") -> TCall(),
+      I("x") -> TInt32()
     ))
 
     val s = Pretty(x)
@@ -1017,21 +1017,21 @@ class IRSuite extends SparkSuite {
   @Test def testCachedIR() {
     val cached = Literal(TSet(TInt32()), Set(1))
     val s = s"(JavaIR __uid1)"
-    val x2 = IRParser.parse_value_ir(s, IRParserEnvironment(refMap = Map.empty, irMap = Map("__uid1" -> cached)))
+    val x2 = IRParser.parse_value_ir(s, IRParserEnvironment(refMap = Map.empty, irMap = Map(I("__uid1") -> cached)))
     assert(x2 eq cached)
   }
 
   @Test def testCachedTableIR() {
     val cached = TableRange(1, 1)
     val s = s"(JavaTable __uid1)"
-    val x2 = IRParser.parse_table_ir(s, IRParserEnvironment(refMap = Map.empty, irMap = Map("__uid1" -> cached)))
+    val x2 = IRParser.parse_table_ir(s, IRParserEnvironment(refMap = Map.empty, irMap = Map(I("__uid1") -> cached)))
     assert(x2 eq cached)
   }
 
   @Test def testCachedMatrixIR() {
     val cached = MatrixTable.range(hc, 3, 7, None).ast
     val s = s"(JavaMatrix __uid1)"
-    val x2 = IRParser.parse_matrix_ir(s, IRParserEnvironment(refMap = Map.empty, irMap = Map("__uid1" -> cached)))
+    val x2 = IRParser.parse_matrix_ir(s, IRParserEnvironment(refMap = Map.empty, irMap = Map(I("__uid1") -> cached)))
     assert(x2 eq cached)
   }
 
@@ -1126,11 +1126,11 @@ class IRSuite extends SparkSuite {
       If(IsNA(In(0, TBoolean())),
         NA(TArray(TInt32())),
         In(1, TArray(TInt32()))),
-      "x", Cast(Ref("x", TInt32()), TInt64()))
+      I("x"), Cast(Ref(I("x"), TInt32()), TInt64()))
 
     val env = Env.empty[(Any, Type)]
-      .bind("flag" -> (true, TBoolean()))
-      .bind("array" -> (FastIndexedSeq(0), TArray(TInt32())))
+      .bind(I("flag") -> (true, TBoolean()))
+      .bind(I("array") -> (FastIndexedSeq(0), TArray(TInt32())))
 
     assertEvalsTo(ir, FastIndexedSeq(true -> TBoolean(), FastIndexedSeq(0) -> TArray(TInt32())), FastIndexedSeq(0L))
   }
@@ -1197,13 +1197,13 @@ class IRSuite extends SparkSuite {
   }
 
   @Test def testTableGetGlobalsSimplifyRules() {
-    val t1 = TableType(TStruct("a" -> TInt32()), IndexedSeq("a"), TStruct("g1" -> TInt32(), "g2" -> TFloat64()))
-    val t2 = TableType(TStruct("a" -> TInt32()), IndexedSeq("a"), TStruct("g3" -> TInt32(), "g4" -> TFloat64()))
+    val t1 = TableType(TStruct(I("a") -> TInt32()), IndexedSeq(I("a")), TStruct(I("g1") -> TInt32(), I("g2") -> TFloat64()))
+    val t2 = TableType(TStruct(I("a") -> TInt32()), IndexedSeq(I("a")), TStruct(I("g3") -> TInt32(), I("g4") -> TFloat64()))
     val tab1 = TableLiteral(TableValue(t1, BroadcastRow(Row(1, 1.1), t1.globalType, sc), RVD.empty(sc, t1.canonicalRVDType)))
     val tab2 = TableLiteral(TableValue(t2, BroadcastRow(Row(2, 2.2), t2.globalType, sc), RVD.empty(sc, t2.canonicalRVDType)))
 
     assertEvalsTo(TableGetGlobals(TableJoin(tab1, tab2, "left")), Row(1, 1.1, 2, 2.2))
-    assertEvalsTo(TableGetGlobals(TableMapGlobals(tab1, InsertFields(Ref("global", t1.globalType), Seq("g1" -> I32(3))))), Row(3, 1.1))
-    assertEvalsTo(TableGetGlobals(TableRename(tab1, Map.empty, Map("g2" -> "g3"))), Row(1, 1.1))
+    assertEvalsTo(TableGetGlobals(TableMapGlobals(tab1, InsertFields(Ref(I("global"), t1.globalType), Seq(I("g1") -> I32(3))))), Row(3, 1.1))
+    assertEvalsTo(TableGetGlobals(TableRename(tab1, Map.empty, Map(I("g2") -> I("g3")))), Row(1, 1.1))
   }
 }

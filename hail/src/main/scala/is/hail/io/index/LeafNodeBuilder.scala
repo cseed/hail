@@ -1,16 +1,17 @@
 package is.hail.io.index
 
 import is.hail.annotations.{Annotation, RegionValueBuilder}
+import is.hail.expr.ir.I
 import is.hail.expr.types.virtual.{TArray, TInt64, TStruct, Type}
 import is.hail.utils.ArrayBuilder
 
 object LeafNodeBuilder {
   def typ(keyType: Type, annotationType: Type) = TStruct(
-    "first_idx" -> +TInt64(),
-    "keys" -> +TArray(+TStruct(
-      "key" -> keyType,
-      "offset" -> +TInt64(),
-      "annotation" -> annotationType
+    I("first_idx") -> +TInt64(),
+    I("keys") -> +TArray(+TStruct(
+      I("key") -> keyType,
+      I("offset") -> +TInt64(),
+      I("annotation") -> annotationType
     ), required = true)
   )
 }

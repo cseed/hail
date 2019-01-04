@@ -9,6 +9,7 @@ import is.hail.table.Table
 import is.hail.utils._
 import is.hail.variant.{Call, HardCallView, MatrixTable}
 import is.hail.HailContext
+import is.hail.expr.ir.{I, Sym}
 import is.hail.expr.types.virtual._
 import org.apache.spark.storage.StorageLevel
 import org.apache.spark.mllib.linalg.Vectors
@@ -36,14 +37,14 @@ object PCRelate {
   val defaultStorageLevel: StorageLevel = StorageLevel.MEMORY_AND_DISK
 
   private val sig = TStruct(
-      ("i", TInt32()),
-      ("j", TInt32()),
-      ("kin", TFloat64()),
-      ("ibd0", TFloat64()),
-      ("ibd1", TFloat64()),
-      ("ibd2", TFloat64()))
+      (I("i"), TInt32()),
+      (I("j"), TInt32()),
+      (I("kin"), TFloat64()),
+      (I("ibd0"), TFloat64()),
+      (I("ibd1"), TFloat64()),
+      (I("ibd2"), TFloat64()))
 
-  private val keys: IndexedSeq[String] = Array("i", "j")
+  private val keys: IndexedSeq[Sym] = Array(I("i"), I("j"))
 
   def apply(
     hc: HailContext,
@@ -90,7 +91,7 @@ object PCRelate {
     val irExpr = s"(MakeStruct ${irFields.mkString(" ")})"
 
     Table(vds.hc, toRowRdd(result, blockSize, minKinship, statistics), sig, FastIndexedSeq())
-      .annotateGlobal(sampleIds.toFastIndexedSeq, TArray(TString()), "sample_ids")
+      .annotateGlobal(sampleIds.toFastIndexedSeq, TArray(TString()), I("sample_ids"))
       .mapRows(irExpr)
       .keyBy(keys.toArray)
   }

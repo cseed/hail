@@ -16,7 +16,7 @@ object ExtractAggregators {
   private case class IRAgg(i: Int, rvAgg: RegionValueAggregator, rt: Type)
   private case class AggOps(initOp: Option[IR], seqOp: IR)
 
-  def apply(ir: IR, resultName: String = "AGGR"): ExtractedAggregators = {
+  def apply(ir: IR, resultName: Sym = AGGRSym): ExtractedAggregators = {
     val ab = new ArrayBuilder[IRAgg]()
     val ab2 = new ArrayBuilder[AggOps]()
     val ref = Ref(resultName, null)
@@ -68,8 +68,8 @@ object ExtractAggregators {
 
         val newRVAggBuilder = new ArrayBuilder[IRAgg]()
         val newBuilder = new ArrayBuilder[AggOps]()
-        val newRef = Ref(genUID(), null)
-        val transformed = this.extract(aggIR, newRVAggBuilder, newBuilder, GetField(newRef, "value"))
+        val newRef = Ref(genSym("tuple"), null)
+        val transformed = this.extract(aggIR, newRVAggBuilder, newBuilder, GetField(newRef, Identifier("value")))
 
         val nestedAggs = newRVAggBuilder.result()
         val agg = KeyedRegionValueAggregator(nestedAggs.map(_.rvAgg), key.typ)
@@ -84,7 +84,7 @@ object ExtractAggregators {
           Some(InitOp(i, FastIndexedSeq(Begin(initOp.flatten.toFastIndexedSeq)), aggSig)),
           SeqOp(I32(i), FastIndexedSeq(key, Begin(seqOp)), aggSig))
 
-        ToDict(ArrayMap(ToArray(GetTupleElement(result, i)), newRef.name, MakeTuple(FastSeq(GetField(newRef, "key"), transformed))))
+        ToDict(ArrayMap(ToArray(GetTupleElement(result, i)), newRef.name, MakeTuple(FastSeq(GetField(newRef, Identifier("key")), transformed))))
       case _ => MapIR(extract)(ir)
     }
   }

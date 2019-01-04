@@ -129,7 +129,7 @@ object InferType {
       case _: MatrixWrite => TVoid
       case _: TableExport => TVoid
       case TableGetGlobals(child) => child.typ.globalType
-      case TableCollect(child) => TStruct("rows" -> TArray(child.typ.rowType), "global" -> child.typ.globalType)
+      case TableCollect(child) => TStruct(Identifier("rows") -> TArray(child.typ.rowType), Identifier("global") -> child.typ.globalType)
     }
   }
 }

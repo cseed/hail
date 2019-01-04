@@ -2,7 +2,7 @@ package is.hail.io.bgen
 
 import is.hail.HailContext
 import is.hail.annotations._
-import is.hail.expr.ir.{IRParser, IRParserEnvironment, MatrixRead, MatrixReader, MatrixValue, Pretty}
+import is.hail.expr.ir.{I, IRParser, IRParserEnvironment, MatrixRead, MatrixReader, MatrixValue, Pretty, Sym}
 import is.hail.expr.types._
 import is.hail.expr.types.physical.PStruct
 import is.hail.expr.types.virtual._
@@ -325,26 +325,26 @@ object MatrixBGENReader {
     includeDosage: Boolean = true
   ): MatrixType = {
     val typedRowFields = Array(
-      (true, "locus" -> TLocus.schemaFromRG(rg)),
-      (true, "alleles" -> TArray(TString())),
-      (includeRsid, "rsid" -> TString()),
-      (includeVarid, "varid" -> TString()),
-      (includeOffset, "offset" -> TInt64()),
-      (includeFileIdx, "file_idx" -> TInt32()))
+      (true, I("locus") -> TLocus.schemaFromRG(rg)),
+      (true, I("alleles") -> TArray(TString())),
+      (includeRsid, I("rsid") -> TString()),
+      (includeVarid, I("varid") -> TString()),
+      (includeOffset, I("offset") -> TInt64()),
+      (includeFileIdx, I("file_idx") -> TInt32()))
       .withFilter(_._1).map(_._2)
 
-    val typedEntryFields: Array[(String, Type)] = Array(
-      (includeGT, "GT" -> TCall()),
-      (includeGP, "GP" -> +TArray(+TFloat64())),
-      (includeDosage, "dosage" -> +TFloat64()))
+    val typedEntryFields: Array[(Sym, Type)] = Array(
+      (includeGT, I("GT") -> TCall()),
+      (includeGP, I("GP") -> +TArray(+TFloat64())),
+      (includeDosage, I("dosage") -> +TFloat64()))
       .withFilter(_._1).map(_._2)
 
     MatrixType.fromParts(
       globalType = TStruct.empty(),
-      colKey = Array("s"),
-      colType = TStruct("s" -> TString()),
+      colKey = Array(I("s")),
+      colType = TStruct(I("s") -> TString()),
       rowType = TStruct(typedRowFields: _*),
-      rowKey = Array("locus", "alleles"),
+      rowKey = Array(I("locus"), I("alleles")),
       entryType = TStruct(typedEntryFields: _*))
   }
 }
@@ -440,15 +440,15 @@ case class MatrixBGENReader(
     val requestedType = mr.typ
     val requestedEntryType = requestedType.entryType
 
-    val includeGT = requestedEntryType.hasField("GT")
-    val includeGP = requestedEntryType.hasField("GP")
-    val includeDosage = requestedEntryType.hasField("dosage")
+    val includeGT = requestedEntryType.hasField(I("GT"))
+    val includeGP = requestedEntryType.hasField(I("GP"))
+    val includeDosage = requestedEntryType.hasField(I("dosage"))
 
     val requestedRowType = requestedType.rowType
-    val includeLid = requestedRowType.hasField("varid")
-    val includeRsid = requestedRowType.hasField("rsid")
-    val includeOffset = requestedRowType.hasField("offset")
-    val includeFileIdx = requestedRowType.hasField("file_idx")
+    val includeLid = requestedRowType.hasField(I("varid"))
+    val includeRsid = requestedRowType.hasField(I("rsid"))
+    val includeOffset = requestedRowType.hasField(I("offset"))
+    val includeFileIdx = requestedRowType.hasField(I("file_idx"))
 
     assert(requestedType.rowKeyStruct == indexKeyType)
 
