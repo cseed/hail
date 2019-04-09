@@ -62,7 +62,7 @@ routes = web.RouteTableDef()
 aiohttp_jinja2.setup(app, loader=jinja2.PackageLoader('batch', 'templates'))
 
 db = BatchDatabase.create_synchronous(os.environ.get('CLOUD_SQL_CONFIG_PATH',
-                                                     '/batch-secrets/batch-production-cloud-sql-config.json'))
+                                                     '/sql-batch-batch-admin-config/sql-config.json'))
 
 
 def abort(code, reason=None):

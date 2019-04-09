@@ -1,10 +1,10 @@
 apiVersion: apps/v1beta2
 kind: Deployment
 metadata:
-  name: batch-deployment
+  name: batch
   labels:
     app: batch
-    hail.is/sha: "@sha@"
+    hail.is/sha: "{{ pr.sha }}"
 spec:
   selector:
     matchLabels:
@@ -14,23 +14,26 @@ spec:
     metadata:
       labels:
         app: batch
-        hail.is/sha: "@sha@"
+        hail.is/sha: "{{ pr.sha }}"
     spec:
-      serviceAccountName: batch-svc
+      serviceAccountName: batch
       containers:
       - name: batch
-        image: @image@
+        image: "{{ batch_image.image }}"
+        env:
+          - name: POD_NAMESPACE
+            value: "{{ batch_pods_ns.name }}"
         ports:
         - containerPort: 5000
         volumeMounts:
-        - name: batch-production-cloud-sql-config
-          mountPath: /batch-secrets
+        - name: sql-batch-batch-admin-config
+          mountPath: /sql-batch-batch-admin-config
           readOnly: true
       volumes:
-      - name: batch-production-cloud-sql-config
+      - name: sql-batch-batch-admin-config
         secret:
           optional: false
-          secretName: batch-production-cloud-sql-config
+          secretName: {{ batch_database.admin_secret }}
 ---
 apiVersion: v1
 kind: Service
