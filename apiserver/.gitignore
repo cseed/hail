@@ -1,9 +1,4 @@
-/deployment.yaml
-/spark-hail-pod.yaml
-/hail-jupyter-pod.yaml
-/src
 /apiserver.log
-/jupyter_notebook_config.py
 flycheck_*.py
 *_flymake.py
 /flake8-stmp

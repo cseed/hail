@@ -1,13 +1,11 @@
 *~
 *.o
 .*.crc
-.gradle/
-.idea/
 .pytest_cache/
-build/
 hail.iml
 hail*.log
-out/
-target
 .classpath
 .DS_Store
+*.pyc
+__pycache__
+*-stmp

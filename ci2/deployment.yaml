@@ -4,7 +4,7 @@ metadata:
   name: ci2
   labels:
     app: ci2
-    hail.is/sha: "@sha@"
+    hail.is/sha: "{{ pr.sha }}"
 spec:
   selector:
     matchLabels:
@@ -14,11 +14,11 @@ spec:
     metadata:
       labels:
         app: ci2
-        hail.is/sha: "@sha@"
+        hail.is/sha: "{{ pr.sha }}"
     spec:
       containers:
         - name: ci2
-          image: @image@
+          image: {{ ci2_image.image }}
           env:
             - name: CI2_OAUTH_TOKEN
               value: /secrets/oauth-token/oauth-token

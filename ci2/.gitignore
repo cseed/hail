@@ -1,5 +1,6 @@
 /ci.log
 /oauth-token
-/deployment.yaml
-*.pyc
-**/__pycache__
+/repos
+/proxy.err
+/proxy.log
+/proxy.pid
