@@ -522,19 +522,22 @@ mkdir -p {shq(repo_dir)}
             return
 
         deploy_batch = None
-
-        log.info(f'creating deploy batch for {self.branch.short_str()}')
-        deploy_batch = await batch_client.create_batch(
-            attributes={
-                'token': secrets.token_hex(16),
-                'deploy': '1',
-                'target_branch': self.branch.short_str(),
-                'sha': self.sha
-            })
-        # FIXME make build atomic
-        await config.build(deploy_batch, self, deploy=True)
-        await deploy_batch.close()
-        self.deploy_batch = deploy_batch
+        try:
+            log.info(f'creating deploy batch for {self.branch.short_str()}')
+            deploy_batch = await batch_client.create_batch(
+                attributes={
+                    'token': secrets.token_hex(16),
+                    'deploy': '1',
+                    'target_branch': self.branch.short_str(),
+                    'sha': self.sha
+                })
+            # FIXME make build atomic
+            await config.build(deploy_batch, self, deploy=True)
+            await deploy_batch.close()
+            self.deploy_batch = deploy_batch
+        finally:
+            if deploy_batch and not self.deploy_batch:
+                deploy_batch.cancel()
 
     def checkout_script(self):
         return f'''
