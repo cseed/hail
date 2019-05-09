@@ -83,7 +83,7 @@ object ExtendedOrdering {
       private val itOrd = iterableOrdering(ord)
 
       // ord can be null if the element type is a TVariable
-      private val elemOrd = if (ord != null) ord.toOrdering else null
+      private val elemOrd = if (ord != null) ord.toTotalOrdering else null
 
       def compareNonnull(x: T, y: T): Int = {
         itOrd.compareNonnull(
@@ -398,6 +398,10 @@ abstract class ExtendedOrdering extends Serializable {
     override def lteq(x: T, y: T): Boolean = outer.lteq(x, y)
 
     override def equiv(x: T, y: T): Boolean = outer.equiv(x, y)
+  }
+
+  def toTotalOrdering: Ordering[T] = new Ordering[T] {
+    def compare(x: T, y: T): Int = outer.compare(x, y)
   }
 
   lazy val intervalEndpointOrdering: IntervalEndpointOrdering =

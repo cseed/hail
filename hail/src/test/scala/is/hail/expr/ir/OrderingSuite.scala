@@ -135,10 +135,14 @@ class OrderingSuite extends SparkSuite {
       a <- TArray(elt).genNonmissingValue
     } yield (elt, a)
     val p = Prop.forAll(compareGen) { case (t, a: IndexedSeq[Any]) =>
+      val tord = t.ordering.toTotalOrdering
+      val ord = t.ordering.toOrdering
       val array = a ++ a
+      val s = array.sorted(tord)
+      println(s)
       assertEvalsTo(ToArray(ToSet(In(0, TArray(t)))),
         FastIndexedSeq(array -> TArray(t)),
-        expected = array.sorted(t.ordering.toOrdering).distinct)
+        expected = distinctOrd(s)(ord))
       true
     }
     p.check()

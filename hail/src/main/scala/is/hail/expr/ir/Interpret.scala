@@ -14,6 +14,9 @@ import is.hail.utils._
 import org.apache.spark.sql.Row
 import org.json4s.jackson.JsonMethods
 
+import scala.collection.immutable.{TreeMap, TreeSet}
+import scala.collection.mutable
+
 object Interpret {
   type Agg = (IndexedSeq[Row], TStruct)
 
@@ -307,14 +310,28 @@ object Interpret {
         val aValue = interpret(a, env, args, agg)
         if (aValue == null)
           null
-        else
-          aValue.asInstanceOf[IndexedSeq[Any]].toSet
+        else {
+          val eord = coerce[TIterable](a.typ).elementType.ordering
+          val tord = eord.toTotalOrdering
+          val ord = eord.toOrdering
+          distinctOrd(aValue.asInstanceOf[IndexedSeq[Any]].sorted(tord))(ord).toSet
+        }
       case ToDict(a) =>
         val aValue = interpret(a, env, args, agg)
         if (aValue == null)
           null
-        else
-          aValue.asInstanceOf[IndexedSeq[Row]].filter(_ != null).map { case Row(k, v) => (k, v) }.toMap
+        else {
+          val eord = coerce[TBaseStruct](coerce[TIterable](a.typ).elementType).types(0).ordering
+          val ptord = mapOrdering((t: (Any, Any)) => t._1, eord.toTotalOrdering)
+          val pord = mapOrdering((t: (Any, Any)) => t._1, eord.toOrdering)
+          val ord = eord.toOrdering
+
+          val elems = distinctOrd(aValue.asInstanceOf[IndexedSeq[Row]]
+            .filter(_ != null)
+            .map { case Row(k, v) => (k, v) }
+            .sorted(ptord))(pord)
+          TreeMap(elems: _*)(ord)
+        }
 
       case ToArray(c) =>
         val ordering = coerce[TIterable](c.typ).elementType.ordering.toOrdering
