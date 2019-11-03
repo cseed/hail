@@ -142,7 +142,7 @@ class InstancePool:
                 'autoDelete': True,
                 'diskSizeGb': WORKER_DISK_SIZE_GB,
                 'initializeParams': {
-                    'sourceImage': f'projects/{PROJECT}/global/images/batch2-worker-5',
+                    'sourceImage': f'projects/{PROJECT}/global/images/batch2-worker-6',
                 }
             }],
 
