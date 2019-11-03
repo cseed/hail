@@ -282,11 +282,11 @@ def copy(files):
     return f'''
 set -ex
 
-function retry() {
+function retry() {{
     "$@" ||
 	(sleep 2 && "$@") ||
 	(sleep 5 && "$@")
-}
+}}
 
 retry gcloud -q auth activate-service-account --key-file=/gsa-key/privateKeyData
 
