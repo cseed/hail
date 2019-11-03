@@ -20,7 +20,8 @@ build:
 	python3 ../ci/jinja2_render.py '{"service_base_image":{"image":"service-base"}}' Dockerfile Dockerfile.out
 	docker build -t batch2 -f Dockerfile.out --cache-from batch2,$(BATCH2_LATEST),service-base ..
 	-docker pull python:3.6-slim-stretch
-	docker build -t batch2-worker -f Dockerfile.worker --cache-from batch2-worker,$(BATCH2_WORKER_LATEST),python:3.6-slim-stretch .
+	-docker pull $(BATCH2_WORKER_LATEST)
+	docker build -t batch2-worker -f Dockerfile.worker --cache-from batch2-worker,$(BATCH2_WORKER_LATEST),python:3.6-slim-stretch ..
 
 push: build
 	docker tag batch2 $(BATCH2_LATEST)
