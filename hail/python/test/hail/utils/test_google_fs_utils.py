@@ -14,7 +14,7 @@ tearDownModule = stopTestHailContext
 class Tests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        bucket = os.environ.get("TEST_BUCKET_NAME", None)
+        bucket = os.environ.get('TEST_BUCKET_NAME')
 
         if bucket is None:
             raise unittest.case.SkipTest("TEST_BUCKET_NAME not set in env")

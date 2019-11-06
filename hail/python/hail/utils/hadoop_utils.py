@@ -242,4 +242,11 @@ def copy_log(path: str) -> None:
     ----------
     path: :obj:`str`
     """
-    Env.fs().copy_log(path)
+    log = Env.hc()._log
+    try:
+        if self.is_dir(path):
+            path = os.path.join(path, os.path.basename(log))
+            info(f"copying log to {repr(path)}...")
+            hadoop_copy(local_path_uri(log), path)
+    except Exception:
+        raise RuntimeError('Could not copy log')

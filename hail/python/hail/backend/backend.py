@@ -94,8 +94,8 @@ class SparkBackend(Backend):
     @property
     def fs(self):
         if self._fs is None:
-            from hail.fs.hadoop_fs import HadoopFS
-            self._fs = HadoopFS()
+            from hail.fs.base_fs import BaseFS
+            self._fs = BaseFS(None, use_hadoop_fs=True, use_native_local_fs=False, use_native_gs_fs=False)
         return self._fs
 
     def _to_java_ir(self, ir):
@@ -223,8 +223,7 @@ class ServiceBackend(Backend):
     @property
     def fs(self):
         if self._fs is None:
-            from hail.fs.google_fs import GoogleCloudStorageFS
-            self._fs = GoogleCloudStorageFS()
+            self._fs = BaseFS('file', use_hadoop_fs=False, use_native_local_fs=True, use_native_gs_fs=True)
         return self._fs
 
     def _render(self, ir):
