@@ -43,16 +43,19 @@ class EntryIterator:
     async def __anext__(self):
         while True:
             if not self.entries:
+                log.info(f'gevent: listing entries from {self.mark}')
                 self.entries = await self.gservices.list_entries(self.mark)
             timestamp = None
             try:
                 entry = await anext(self.entries)
                 timestamp = entry.timestamp.isoformat()
+                log.info(f'gevent: got entry {timestamp} {entry}')
                 return entry
             except StopAsyncIteration:
                 self.entries = None
             finally:
                 if timestamp:
+                    log.info(f'gevent: new mark {timestamp}')
                     await self._update_mark(timestamp)
 
 
@@ -70,6 +73,7 @@ class PagedIterator:
             if self.page is None:
                 await asyncio.sleep(5)
                 try:
+                    log.info(f'gevent: next page')
                     self.page = next(self.pages)
                 except StopIteration:
                     raise StopAsyncIteration
