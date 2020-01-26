@@ -473,8 +473,8 @@ class BatchBuilder:
                                                      json=batch_spec)).json()
         return Batch(self._client, batch_json['id'], self.attributes, n_jobs)
 
-    MAX_BUNCH_BYTESIZE = 8 * 1024 * 1024 - 512 * 1024  # max request size minus room for headers etc
-    MAX_BUNCH_SIZE = 8 * 1024  # ???
+    MAX_BUNCH_BYTESIZE = 1024 * 1024
+    MAX_BUNCH_SIZE = 1024
 
     async def submit(self,
                      max_bunch_bytesize=MAX_BUNCH_BYTESIZE,
@@ -522,7 +522,7 @@ class BatchBuilder:
             log.info('calling gather')
             await bounded_gather(
                 *pfs,
-                parallelism=50)
+                parallelism=6)
 
         await self._client._patch(f'/api/v1alpha/batches/{id}/close')
         log.info(f'closed batch {id}')
