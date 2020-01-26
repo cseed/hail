@@ -2,7 +2,7 @@ from hailtop import pipeline
 import random
 
 import logging
-logging.basicConfig(level='INFO', force=True)
+logging.basicConfig(level='INFO')
 
 def flip(p):
     return random.random() <= p

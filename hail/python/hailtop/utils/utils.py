@@ -221,7 +221,7 @@ async def retry_transient_errors(f, *args, **kwargs):
         try:
             return await f(*args, **kwargs)
         except Exception as e:
-            log.warning(f'encountered {errors} errors, most recent one was {e}', exc_info=True)
+            log.warning(f'encountered {errors} errors, most recent one was {e}', exc_info=True, stack_info=True)
             if is_transient_error(e):
                 pass
             else:
