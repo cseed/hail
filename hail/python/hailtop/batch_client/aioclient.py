@@ -15,7 +15,7 @@ from hailtop.utils import bounded_gather, request_retry_transient_errors, tqdm, 
 from .globals import tasks, complete_states
 
 log = logging.getLogger('batch_client.aioclient')
-log.setLevel('WARNING')
+# log.setLevel('WARNING')
 
 
 class Job:
@@ -446,10 +446,17 @@ class BatchBuilder:
 
         b.append(ord(']'))
 
-        await self._client._post(
-            f'/api/v1alpha/batches/{batch_id}/jobs/create',
-            data=aiohttp.BytesPayload(
-                b, content_type='application/json', encoding='utf-8'))
+        log.info('before POST /jobs/create')
+
+        async with await self._client._post(
+                f'/api/v1alpha/batches/{batch_id}/jobs/create',
+                data=aiohttp.BytesPayload(
+                    b, content_type='application/json', encoding='utf-8')) as resp:
+            # read the response so the connection is returned to the pool
+            await resp.read()
+
+        log.info('after POST /jobs/create')
+
         pbar.update(n_jobs)
 
     async def _create(self, batch_token=None):
@@ -509,9 +516,12 @@ class BatchBuilder:
         with tqdm(total=len(self._job_specs),
                   disable=disable_progress_bar,
                   desc='jobs submitted to queue') as pbar:
+            log.info('creating partial functions')
+            pfs = [functools.partial(self._submit_jobs, id, bunch, size, pbar)
+                   for bunch, size in zip(byte_job_specs_bunches, bunch_sizes)]
+            log.info('calling gather')
             await bounded_gather(
-                *[functools.partial(self._submit_jobs, id, bunch, size, pbar)
-                  for bunch, size in zip(byte_job_specs_bunches, bunch_sizes)],
+                *pfs,
                 parallelism=50)
 
         await self._client._patch(f'/api/v1alpha/batches/{id}/close')
