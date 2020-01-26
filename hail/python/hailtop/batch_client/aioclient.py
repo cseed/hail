@@ -446,7 +446,7 @@ class BatchBuilder:
 
         b.append(ord(']'))
 
-        log.info('before POST /jobs/create')
+        log.info(f'before POST /jobs/create, len(b) {len(b)}')
 
         async with await self._client._post(
                 f'/api/v1alpha/batches/{batch_id}/jobs/create',
