@@ -1,0 +1,106 @@
+1. Set up k8s cluster with preemptible and non-preemptible pools.
+
+Done: pharma-vdc
+
+2. Set up database MySQL 5.7, 2 core, 100GB disk.
+
+* don't use bin logging
+
+Done: db-p3xnd, 10.10.240.3
+
+3. Create static IP address.
+
+Done: 34.67.97.72
+
+* Add IP address to DNS.
+
+Done: deadbeef.hail.is
+
+* Apply priority classes
+
+$HAIL/vdc $ kubectl apply -f priority-classes.yaml
+
+* Create dummy letsencrypt-config secret.
+
+$ hailctl create secret generic letsencrypt-config
+
+* Create letsencrypt service
+
+$HAIL/letsencrypt $ kubectl -n default apply -f service.yaml
+
+* Deploy bootstrap gateway
+
+Just port 80 portion of config.
+
+*** gateway config is not parameterized by domain
+*** mount of unnecessary letsencrypt pvc
+
+* Run let's encrypt.
+
+$HAIL/letsencrypt $ make run
+
+* Deploy full gateway.
+
+$HAIL/gateway $ make deploy
+
+* Deploy router.
+
+*** ukbb-rg service missing
+
+* Create database config
+
+* Create deploy config, vdc deploy config
+
+* Create batch-pods
+
+* Deploy admin pod
+
+ - session-secret-key: follow build.yaml
+ - auth-gsa-key
+
+5. Deploy auth
+
+give permission:
+ - service account admin
+ - service account key admin
+ - storage admin
+
+in default, batch-pods
+
+ - sql-config: follow create_database.py
+
+       - name: auth-oauth2-client-secret
+         secret:
+           secretName: auth-oauth2-client-secret
+
+Create in API & Services > Credentials (after setting up OAuth consent
+screen)
+
+*** deploy config isn't parameterized by domain
+
+6. Deploy internal-gateway
+
+* Create static internal IP address, add to config.mk
+
+7. Deploy batch!
+
+ - create database
+ - batch-gsa-key
+
+give permissions:
+
+Compte Instance Admin
+Service Account User
+Logs Viewer
+
+ - create batch2-agent SA, give
+Compte Instance Admin (v1)
+Storage Object Creator
+Storage Object Viewer
+
+ - create -to-batch-agents firewall rule
+
+Make worker image
+
+* Create hail DNS
+

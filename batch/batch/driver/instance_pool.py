@@ -174,7 +174,7 @@ SET max_instances = %s, pool_size = %s;
                 'boot': True,
                 'autoDelete': True,
                 'initializeParams': {
-                    'sourceImage': f'projects/{PROJECT}/global/images/batch-worker-7',
+                    'sourceImage': f'projects/{PROJECT}/global/images/batch-worker-1',
                     'diskType': f'projects/{PROJECT}/zones/{zone}/diskTypes/pd-ssd',
                     'diskSizeGb': str(self.worker_disk_size_gb)
                 }
@@ -196,7 +196,7 @@ SET max_instances = %s, pool_size = %s;
             },
 
             'serviceAccounts': [{
-                'email': 'batch2-agent@hail-vdc.iam.gserviceaccount.com',
+                'email': f'batch2-agent@{PROJECT}.iam.gserviceaccount.com',
                 'scopes': [
                     'https://www.googleapis.com/auth/cloud-platform'
                 ]

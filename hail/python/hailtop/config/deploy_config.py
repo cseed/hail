@@ -56,8 +56,8 @@ class DeployConfig:
             return 'internal.hail'
         assert self._location == 'external'
         if ns == 'default':
-            return f'{service}.hail.is'
-        return 'internal.hail.is'
+            return f'{service}.deadbeef.hail.is'
+        return 'internal.deadbeef.hail.is'
 
     def base_path(self, service):
         ns = self.service_ns(service)
@@ -80,8 +80,8 @@ class DeployConfig:
     def external_url(self, service, path, base_scheme='http'):
         ns = self.service_ns(service)
         if ns == 'default':
-            return f'{base_scheme}s://{service}.hail.is{path}'
-        return f'{base_scheme}s://internal.hail.is/{ns}/{service}{path}'
+            return f'{base_scheme}s://{service}.deadbeef.hail.is{path}'
+        return f'{base_scheme}s://internal.deadbeef.hail.is/{ns}/{service}{path}'
 
     def prefix_application(self, app, service, **kwargs):
         base_path = self.base_path(service)

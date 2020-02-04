@@ -56,7 +56,7 @@ spec:
            value: "{{ global.k8s_server_url }}"
          - name: HAIL_BATCH_BUCKET_NAME
 {% if deploy %}
-           value: hail-batch
+           value: ukbb-exome-pharma-batch
 {% else %}
            value: hail-test-dmk9z
 {% endif %}
@@ -160,7 +160,7 @@ spec:
 {% endif %}
          - name: HAIL_BATCH_BUCKET_NAME
 {% if deploy %}
-           value: hail-batch
+           value: ukbb-exome-pharma-batch
 {% else %}
            value: hail-test-dmk9z
 {% endif %}
