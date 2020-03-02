@@ -79,7 +79,7 @@ class StagedArrayBuilder(eltType: PType, fb: EmitFunctionBuilder[_], region: Cod
         data := dec(region, ib),
         ib.readInt()
           .cne(const(StagedArrayBuilder.END_SERIALIZATION))
-          .orEmpty[Unit](Code._fatal(s"StagedArrayBuilder serialization failed"))
+          .orEmpty(Code._fatal(s"StagedArrayBuilder serialization failed"))
       )
     }
   }
