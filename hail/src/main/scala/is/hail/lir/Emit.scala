@@ -105,7 +105,7 @@ object Emit {
           case _ =>
         }
 
-        x.children.map(findLocals)
+        x.children.foreach(findLocals)
       }
 
       var x = ell.first
@@ -117,10 +117,15 @@ object Emit {
 
     for (l <- locals) {
       if (!l.isInstanceOf[Parameter]) {
-        val i = n
-        localIndex += (l -> i)
-        mn.localVariables.asInstanceOf[java.util.List[LocalVariableNode]]
-          .add(new LocalVariableNode(l.name, l.ti.desc, null, start, end, i))
+        localIndex += (l -> n)
+        val ln = new LocalVariableNode(
+          // FIXME require
+          if (l.name == null)
+            s"local$n"
+          else
+            l.name,
+          l.ti.desc, null, start, end, n)
+        mn.localVariables.asInstanceOf[java.util.List[LocalVariableNode]].add(ln)
         n += l.ti.slots
       }
     }
@@ -136,6 +141,10 @@ object Emit {
       x.children.foreach(emitX(_))
 
       x match {
+        case x: IfX =>
+          mn.instructions.add(new JumpInsnNode(x.op, labelNodes(x.Ltrue)))
+          // FIXME layout to avoid gotos
+          mn.instructions.add(new JumpInsnNode(GOTO, labelNodes(x.Lfalse)))
         case x: GotoX =>
           mn.instructions.add(new JumpInsnNode(GOTO, labelNodes(x.L)))
         case x: ReturnX =>
@@ -148,6 +157,8 @@ object Emit {
           mn.instructions.add(new VarInsnNode(x.l.ti.loadOp, getLocalIndex(x.l)))
         case x: StoreX =>
           mn.instructions.add(new VarInsnNode(x.l.ti.storeOp, getLocalIndex(x.l)))
+        case x: PutFieldX =>
+          mn.instructions.add(new FieldInsnNode(x.op, x.f.owner, x.f.name, x.f.ti.desc))
         case x: InsnX =>
           mn.instructions.add(new InsnNode(x.op))
         case x: TypeInsnX =>
@@ -162,6 +173,24 @@ object Emit {
           mn.instructions.add(new TypeInsnNode(NEW, x.ti.iname))
         case x: LdcX =>
           mn.instructions.add(new LdcInsnNode(x.a))
+        case x: GetFieldX =>
+          mn.instructions.add(new FieldInsnNode(x.op, x.f.owner, x.f.name, x.f.ti.desc))
+        case x: BooleanX =>
+          val Ltrue = new LabelNode()
+          val Lafter = new LabelNode()
+          mn.instructions.add(new JumpInsnNode(x.op, Ltrue))
+          mn.instructions.add(new LdcInsnNode(0))
+          mn.instructions.add(new JumpInsnNode(GOTO, Lafter))
+          mn.instructions.add(Ltrue)
+          mn.instructions.add(new LdcInsnNode(1))
+          // fall through
+          mn.instructions.add(Lafter)
+        case x: NewArrayX =>
+          mn.instructions.add(x.eti.newArray())
+        case x: IincX =>
+          mn.instructions.add(new IincInsnNode(getLocalIndex(x.l), x.i))
+        case x: StmtOpX =>
+          mn.instructions.add(new InsnNode(x.op))
       }
     }
 
@@ -184,6 +213,8 @@ object Emit {
   }
 
   def apply(c: Classx[_], print: Option[PrintWriter]): Array[Byte] = {
+    println(Pretty(c))
+
     val cn = new ClassNode()
 
     cn.version = V1_8
@@ -193,6 +224,11 @@ object Emit {
     cn.superName = c.superName
     for (intf <- c.interfaces)
       cn.interfaces.asInstanceOf[java.util.List[String]].add(intf)
+
+    for (f <- c.fields) {
+      val fn = new FieldNode(ACC_PUBLIC, f.name, f.ti.desc, null, null)
+      cn.fields.asInstanceOf[java.util.List[FieldNode]].add(fn)
+    }
 
     for (m <- c.methods) {
       emit(cn, m)

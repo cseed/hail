@@ -58,7 +58,7 @@ object Pretty {
     b.indent {
       b += "\n"
       for (f <- c.fields) {
-        b += s"field ${ f.name }\n"
+        b += s"field ${ f.name } ${ f.ti.desc }\n"
       }
     }
 
@@ -118,7 +118,7 @@ object Pretty {
   }
 
   def header(x: X): String = x match {
-    case x: IfX =>s"${ x.Ltrue } ${ x.Lfalse }"
+    case x: IfX =>s"${ asm.util.Printer.OPCODES(x.op) } ${ x.Ltrue } ${ x.Lfalse }"
     case x: GotoX => x.L.toString
     case x: LdcX => x.a.toString
     case x: InsnX => asm.util.Printer.OPCODES(x.op)
@@ -136,6 +136,7 @@ object Pretty {
     case x: MethodStmtX =>
       s"${ asm.util.Printer.OPCODES(x.op) } ${ x.method }"
     case x: LoadX => x.l.toString
+    case x: StmtOpX => asm.util.Printer.OPCODES(x.op)
     case _ =>
       ""
   }

@@ -6,6 +6,8 @@ import scala.collection.mutable
 
 import is.hail.asm4s._
 
+import org.objectweb.asm.Opcodes._
+
 // move typeinfo stuff lir
 // test more asm4s examples
 
@@ -77,6 +79,8 @@ abstract class MethodRef {
   def desc: String
 
   def isInterface: Boolean
+
+  def returnTypeInfo: TypeInfo[_]
 
   override def toString: String =
     s"$owner.$name $desc${ if (isInterface) "interface" else "" }"
@@ -203,7 +207,10 @@ class Method private[lir] (
   }
 }
 
-class MethodLit(val owner: String, val name: String, val desc: String, val isInterface: Boolean) extends MethodRef
+class MethodLit(
+  val owner: String, val name: String, val desc: String, val isInterface: Boolean,
+  val returnTypeInfo: TypeInfo[_]
+) extends MethodRef
 
 class Local(val method: Method, val name: String, val ti: TypeInfo[_]) {
   override def toString: String = f"t${ System.identityHashCode(this) }%08x/$name"
@@ -346,7 +353,7 @@ class GotoX extends ControlX {
   }
 }
 
-class IfX(op: Int) extends ControlX {
+class IfX(val op: Int) extends ControlX {
   var _Ltrue: Block = _
 
   def Ltrue: Block = _Ltrue
@@ -390,10 +397,16 @@ class IincX(val l: Local, val i: Int) extends StmtX
 
 class ReturnX() extends ControlX
 
+class StmtOpX(val op: Int) extends StmtX
+
 class MethodStmtX(val op: Int, val method: MethodRef) extends StmtX
 
 class TypeInsnX(val op: Int, val t: String) extends ValueX {
-  def ti: TypeInfo[_] = ???
+  def ti: TypeInfo[_] = {
+    assert(op == CHECKCAST)
+    // FIXME, ClassInfo should take the internal name
+    new ClassInfo(t.replace("/", "."))
+  }
 }
 
 class BooleanX(val op: Int) extends ValueX {
@@ -401,7 +414,54 @@ class BooleanX(val op: Int) extends ValueX {
 }
 
 class InsnX(val op: Int) extends ValueX {
-  def ti: TypeInfo[_] = ???
+  def ti: TypeInfo[_] = op match {
+    // Int
+    case INEG => IntInfo
+    case IADD => IntInfo
+    case ISUB => IntInfo
+    case IMUL => IntInfo
+    case IDIV => IntInfo
+    case IREM => IntInfo
+    case IAND => IntInfo
+    case IOR => IntInfo
+    case IXOR => IntInfo
+    case L2I => IntInfo
+    case F2I => IntInfo
+    case D2I => IntInfo
+    // Long
+    case LNEG => LongInfo
+    case LADD => LongInfo
+    case LSUB => LongInfo
+    case LMUL => LongInfo
+    case LDIV => LongInfo
+    case LREM => LongInfo
+    case LAND => LongInfo
+    case LOR => LongInfo
+    case LXOR => LongInfo
+    case I2L => LongInfo
+    case F2L => LongInfo
+    case D2L => LongInfo
+    // Float
+    case FNEG => FloatInfo
+    case FADD => FloatInfo
+    case FSUB => FloatInfo
+    case FMUL => FloatInfo
+    case FDIV => FloatInfo
+    case FREM => FloatInfo
+    case I2F => FloatInfo
+    case L2F => FloatInfo
+    case D2F => FloatInfo
+    // Double
+    case DNEG => DoubleInfo
+    case DADD => DoubleInfo
+    case DSUB => DoubleInfo
+    case DMUL => DoubleInfo
+    case DDIV => DoubleInfo
+    case DREM => DoubleInfo
+    case I2D => DoubleInfo
+    case L2D => DoubleInfo
+    case F2D => DoubleInfo
+  }
 }
 
 class LoadX(val l: Local) extends ValueX {
@@ -432,5 +492,5 @@ class LdcX(val a: Any) extends ValueX {
 }
 
 class MethodX(val op: Int, val method: MethodRef) extends ValueX {
-  def ti: TypeInfo[_] = ???
+  def ti: TypeInfo[_] = method.returnTypeInfo
 }

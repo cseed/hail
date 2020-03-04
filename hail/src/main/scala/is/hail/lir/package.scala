@@ -83,6 +83,16 @@ package object lir {
 
   def insn(op: Int, c1: ValueX, c2: ValueX, c3: ValueX): ValueX = insn(op, FastIndexedSeq(c1, c2, c3))
 
+  def stmtOp3(op: Int): (ValueX, ValueX, ValueX) => StmtX = (c1, c2, c3) => stmtOp(op, c1, c2, c3)
+
+  def stmtOp(op: Int, args: IndexedSeq[ValueX]): StmtX = {
+    val x = new StmtOpX(op)
+    setChildren(x, args)
+    x
+  }
+
+  def stmtOp(op: Int, c1: ValueX, c2: ValueX, c3: ValueX): StmtX = stmtOp(op, FastIndexedSeq(c1, c2, c3))
+
   def boolean1(op: Int): (ValueX) => ValueX = (c) => boolean(op, c)
 
   def boolean2(op: Int): (ValueX, ValueX) => ValueX = (c1, c2) => boolean(op, c1, c2)
@@ -112,9 +122,11 @@ package object lir {
   }
 
   def methodStmt(
-    op: Int, owner: String, name: String, desc: String, isInterface: Boolean, args: IndexedSeq[ValueX]
+    op: Int, owner: String, name: String, desc: String, isInterface: Boolean,
+    returnTypeInfo: TypeInfo[_],
+    args: IndexedSeq[ValueX]
   ): StmtX = {
-    val x = new MethodStmtX(op, new MethodLit(owner, name, desc, isInterface))
+    val x = new MethodStmtX(op, new MethodLit(owner, name, desc, isInterface, returnTypeInfo))
     setChildren(x, args)
     x
   }
@@ -128,9 +140,11 @@ package object lir {
   }
 
   def methodInsn(
-    op: Int, owner: String, name: String, desc: String, isInterface: Boolean, args: IndexedSeq[ValueX]
+    op: Int, owner: String, name: String, desc: String, isInterface: Boolean,
+    returnTypeInfo: TypeInfo[_],
+    args: IndexedSeq[ValueX]
   ): ValueX = {
-    val x = new MethodX(op, new MethodLit(owner, name, desc, isInterface))
+    val x = new MethodX(op, new MethodLit(owner, name, desc, isInterface, returnTypeInfo))
     setChildren(x, args)
     x
   }
@@ -144,7 +158,7 @@ package object lir {
   }
 
   def getStaticField(owner: String, name: String, ti: TypeInfo[_]): ValueX =
-    new GetFieldX(GETFIELD, new FieldLit(owner, name, ti))
+    new GetFieldX(GETSTATIC, new FieldLit(owner, name, ti))
 
   def getField(owner: String, name: String, ti: TypeInfo[_], obj: ValueX): ValueX = {
     val x = new GetFieldX(GETFIELD, new FieldLit(owner, name, ti))

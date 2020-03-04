@@ -16,6 +16,8 @@ package asm4s {
     def astoreOp: Int
     val returnOp: Int
     def slots: Int = 1
+
+    def newArray(): AbstractInsnNode
   }
 
   class ClassInfo[C](className: String) extends TypeInfo[C] {
@@ -26,6 +28,8 @@ package asm4s {
     val aloadOp = AALOAD
     val astoreOp = AASTORE
     val returnOp = ARETURN
+
+    def newArray(): AbstractInsnNode = new TypeInsnNode(ANEWARRAY, iname)
   }
 
   class ArrayInfo[T](implicit val tti: TypeInfo[T]) extends TypeInfo[Array[T]] {
@@ -36,6 +40,8 @@ package asm4s {
     val aloadOp = AALOAD
     val astoreOp = AASTORE
     val returnOp = ARETURN
+
+    def newArray() = new TypeInsnNode(ANEWARRAY, iname)
   }
 }
 
@@ -52,6 +58,38 @@ package object asm4s {
   def coerce[T](c: Settable[_]): Settable[T] =
     c.asInstanceOf[Settable[T]]
 
+  def typeInfoFromClassTag[T](ct: ClassTag[T]): TypeInfo[T] =
+    typeInfoFromClass(ct.runtimeClass.asInstanceOf[Class[T]])
+
+  def typeInfoFromClass[T](c: Class[T]): TypeInfo[T] = {
+    val ti: TypeInfo[_] = if (c.isPrimitive) {
+      if (c == java.lang.Void.TYPE)
+        UnitInfo
+      else if (c == java.lang.Byte.TYPE)
+        ByteInfo
+      else if (c == java.lang.Short.TYPE)
+        ShortInfo
+      else if (c == java.lang.Boolean.TYPE)
+        BooleanInfo
+      else if (c == java.lang.Integer.TYPE)
+        IntInfo
+      else if (c == java.lang.Long.TYPE)
+        LongInfo
+      else if (c == java.lang.Float.TYPE)
+        FloatInfo
+      else if (c == java.lang.Double.TYPE)
+        DoubleInfo
+      else {
+        assert(c == java.lang.Character.TYPE, c)
+        CharInfo
+      }
+    } else if (c.isArray) {
+      arrayInfo(typeInfoFromClass(c.getComponentType))
+    } else
+      classInfoFromClass(c)
+    ti.asInstanceOf[TypeInfo[T]]
+  }
+
   implicit object BooleanInfo extends TypeInfo[Boolean] {
     val desc = "Z"
     val loadOp = ILOAD
@@ -60,6 +98,8 @@ package object asm4s {
     val astoreOp = IASTORE
     val returnOp = IRETURN
     val newarrayOp = NEWARRAY
+
+    def newArray() = new IntInsnNode(NEWARRAY, T_BOOLEAN)
   }
 
   implicit object ByteInfo extends TypeInfo[Byte] {
@@ -70,6 +110,8 @@ package object asm4s {
     val astoreOp = BASTORE
     val returnOp = IRETURN
     val newarrayOp = NEWARRAY
+
+    def newArray() = new IntInsnNode(NEWARRAY, T_BYTE)
   }
 
   implicit object ShortInfo extends TypeInfo[Short] {
@@ -80,6 +122,8 @@ package object asm4s {
     val astoreOp = IASTORE
     val returnOp = IRETURN
     val newarrayOp = NEWARRAY
+
+    def newArray() = new IntInsnNode(NEWARRAY, T_SHORT)
   }
 
   implicit object IntInfo extends TypeInfo[Int] {
@@ -89,6 +133,8 @@ package object asm4s {
     val aloadOp = IALOAD
     val astoreOp = IASTORE
     val returnOp = IRETURN
+
+    def newArray() = new IntInsnNode(NEWARRAY, T_INT)
   }
 
   implicit object LongInfo extends TypeInfo[Long] {
@@ -99,6 +145,8 @@ package object asm4s {
     val astoreOp = LASTORE
     val returnOp = LRETURN
     override val slots = 2
+
+    def newArray() = new IntInsnNode(NEWARRAY, T_LONG)
   }
 
   implicit object FloatInfo extends TypeInfo[Float] {
@@ -108,6 +156,9 @@ package object asm4s {
     val aloadOp = FALOAD
     val astoreOp = FASTORE
     val returnOp = FRETURN
+
+
+    def newArray() = new IntInsnNode(NEWARRAY, T_FLOAT)
   }
 
   implicit object DoubleInfo extends TypeInfo[Double] {
@@ -118,6 +169,8 @@ package object asm4s {
     val astoreOp = DASTORE
     val returnOp = DRETURN
     override val slots = 2
+
+    def newArray() = new IntInsnNode(NEWARRAY, T_DOUBLE)
   }
 
   implicit object CharInfo extends TypeInfo[Char] {
@@ -128,6 +181,8 @@ package object asm4s {
     val astoreOp = IASTORE
     val returnOp = IRETURN
     override val slots = 2
+
+    def newArray() = new IntInsnNode(NEWARRAY, T_CHAR)
   }
 
   implicit object UnitInfo extends TypeInfo[Unit] {
@@ -138,6 +193,13 @@ package object asm4s {
     def astoreOp = ???
     val returnOp = RETURN
     override def slots = ???
+
+    def newArray() = ???
+  }
+
+  def classInfoFromClass[C](c: Class[C]): ClassInfo[C] = {
+    assert(!c.isPrimitive && !c.isArray)
+    new ClassInfo[C](c.getName)
   }
 
   implicit def classInfo[C <: AnyRef](implicit cct: ClassTag[C]): TypeInfo[C] =

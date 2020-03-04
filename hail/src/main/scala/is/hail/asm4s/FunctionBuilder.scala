@@ -21,7 +21,7 @@ class Field[T: TypeInfo](classBuilder: ClassBuilder[_], val name: String) {
 
   def put(obj: Code[_], v: Code[T]): Code[Unit] = {
     obj.end.append(lir.goto(v.start))
-    obj.end.append(lir.putField(lf, obj.v, v.v))
+    v.end.append(lir.putField(lf, obj.v, v.v))
     new Code(obj.start, v.end, null)
   }
 }
@@ -115,6 +115,7 @@ class ClassBuilder[C](
         "<init>",
         "()V",
         false,
+        UnitInfo,
         FastIndexedSeq(lir.load(lInit.getParam(0)))))
     L.append(lir.returnx())
     new Code(L, L, null)
@@ -267,9 +268,17 @@ class MethodBuilder(val fb: FunctionBuilder[_], _mname: String, val parameterTyp
 
   def invoke[T](args: Code[_]*): Code[T] = {
     val (start, end, argvs) = Code.sequenceValues(args.toFastIndexedSeq)
-    new Code(start, end,
-      lir.methodInsn(INVOKEVIRTUAL, lmethod,
-        lir.load(new lir.Parameter(null, 0, fb.classBuilder.ti)) +: argvs))
+    if (returnTypeInfo.desc == "V") {
+      val L = new lir.Block()
+      L.append(
+        lir.methodStmt(INVOKEVIRTUAL, lmethod,
+          lir.load(new lir.Parameter(null, 0, fb.classBuilder.ti)) +: argvs))
+      new Code(L, L, null)
+    } else {
+      new Code(start, end,
+        lir.methodInsn(INVOKEVIRTUAL, lmethod,
+          lir.load(new lir.Parameter(null, 0, fb.classBuilder.ti)) +: argvs))
+    }
   }
 }
 
@@ -372,7 +381,7 @@ class FunctionBuilder[F >: Null](
   def newField[T: TypeInfo](name: String = null): ClassFieldRef[T] =
     new ClassFieldRef[T](this, classBuilder.genField[T](name))
 
-  def newLazyField[T: TypeInfo](setup: Code[T], name: String = null): LazyFieldRef[T] =
+  def newLazyField[T: TypeInfo](setup: => Code[T], name: String = null): LazyFieldRef[T] =
     new LazyFieldRef[T](this, name, setup)
 
   val lazyFieldMemo: mutable.Map[Any, LazyFieldRef[_]] = mutable.Map.empty

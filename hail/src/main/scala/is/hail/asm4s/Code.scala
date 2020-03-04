@@ -14,11 +14,18 @@ import scala.reflect.ClassTag
 object Junk {
   def main(args: Array[String]): Unit = {
     val fb = FunctionBuilder.functionBuilder[Int, Int]
-    val l = fb.newLocal[Int]
-    val v = l.load()
-    fb.emit(Code(
-      l := fb.getArg[Int](0),
-      v + v + 5))
+    fb.emit(
+      fb.getArg[Int](1) + 5)
+    val f = fb.result()()
+    assert(f(-2) == 3)
+  }
+}
+
+object Junk2 {
+  def main(args: Array[String]): Unit = {
+    val fb = FunctionBuilder.functionBuilder[Int, Int]
+    fb.emit(
+      fb.getArg[Int](1) + 5)
     val f = fb.result()()
     assert(f(-2) == 3)
   }
@@ -37,8 +44,8 @@ object Code {
   }
 
   def void[T](c1: Code[_], c2: Code[_], f: (lir.ValueX, lir.ValueX) => lir.StmtX): Code[T] = {
-    c1.end.append(lir.goto(c2.start))
     c2.end.append(f(c1.v, c2.v))
+    c1.end.append(lir.goto(c2.start))
     new Code(c1.start, c2.end, null)
 
   }
@@ -359,9 +366,11 @@ class Conditional(
 
   def toCode: Code[Boolean] = {
     val c = new lir.Local(null, "cond_to_bool", BooleanInfo)
-    Ltrue.append(lir.store(c, lir.ldcInsn(1)))
-    Lfalse.append(lir.store(c, lir.ldcInsn(0)))
     val L = new lir.Block()
+    Ltrue.append(lir.store(c, lir.ldcInsn(1)))
+    Ltrue.append(lir.goto(L))
+    Lfalse.append(lir.store(c, lir.ldcInsn(0)))
+    Lfalse.append(lir.goto(L))
     new Code(start, L, lir.load(c))
   }
 }
@@ -370,7 +379,7 @@ class CodeBoolean(val lhs: Code[Boolean]) extends AnyVal {
   def toConditional: Conditional = {
     val Ltrue = new lir.Block()
     val Lfalse = new lir.Block()
-    lhs.end.append(lir.ifx(IFEQ, lhs.v, Ltrue, Lfalse))
+    lhs.end.append(lir.ifx(IFNE, lhs.v, Ltrue, Lfalse))
     new Conditional(lhs.start, Ltrue, Lfalse)
   }
 
@@ -378,16 +387,29 @@ class CodeBoolean(val lhs: Code[Boolean]) extends AnyVal {
     (!lhs.toConditional).toCode
 
   def mux[T](cthen: Code[T], celse: Code[T]): Code[T] = {
-    val t = new lir.Local(null, "mux",
-      // FIXME infer
-      UnitInfo)
-    val L = new lir.Block()
     val cond = lhs.toConditional
-    cond.Ltrue.append(lir.goto(cthen.start))
-    cthen.end.append(lir.goto(L))
-    cond.Lfalse.append(lir.goto(celse.start))
-    celse.end.append(lir.goto(L))
-    new Code(cond.start, L, lir.load(t))
+    val L = new lir.Block()
+    if (cthen.v == null) {
+      cond.Ltrue.append(lir.goto(cthen.start))
+      cthen.end.append(lir.goto(L))
+      cond.Lfalse.append(lir.goto(celse.start))
+      celse.end.append(lir.goto(L))
+      new Code(cond.start, L, null)
+    } else {
+      assert(cthen.v.ti.desc == celse.v.ti.desc)
+      val t = new lir.Local(null, "mux",
+        cthen.v.ti)
+
+      cond.Ltrue.append(lir.goto(cthen.start))
+      cthen.end.append(lir.store(t, cthen.v))
+      cthen.end.append(lir.goto(L))
+
+      cond.Lfalse.append(lir.goto(celse.start))
+      celse.end.append(lir.store(t, celse.v))
+      celse.end.append(lir.goto(L))
+
+      new Code(cond.start, L, lir.load(t))
+    }
   }
 
   def orEmpty(cthen: Code[Unit]): Code[Unit] = {
@@ -634,8 +656,12 @@ class CodeArray[T](val lhs: Code[Array[T]])(implicit tti: TypeInfo[T]) {
   def apply(i: Code[Int]): Code[T] =
     Code(lhs, i, lir.insn2(tti.aloadOp))
 
-  def update(i: Code[Int], x: Code[T]): Code[Unit] =
-    Code(lhs, i, x, lir.insn3(tti.astoreOp))
+  def update(i: Code[Int], x: Code[T]): Code[Unit] = {
+    lhs.start.append(lir.goto(i.end))
+    i.start.append(lir.goto(x.start))
+    x.end.append(lir.stmtOp(tti.astoreOp, lhs.v, i.v, x.v))
+    new Code(lhs.start, x.end, null)
+  }
 
   def length(): Code[Int] =
     Code(lhs, lir.insn1(ARRAYLENGTH))
@@ -723,13 +749,15 @@ class Invokeable[T, S](tcls: Class[T],
       else
         lhs +: args)
 
+    val sti = typeInfoFromClassTag(sct)
+
     // FIXME doesn't correctly handle units, generics
-    if (sct.runtimeClass.getName == "void") {
+    if (sct.runtimeClass == java.lang.Void.TYPE) {
       end.append(
-        lir.methodStmt(invokeOp, Type.getInternalName(tcls), name, descriptor, isInterface, argvs))
+        lir.methodStmt(invokeOp, Type.getInternalName(tcls), name, descriptor, isInterface, sti, argvs))
       new Code(start, end, null)
     } else {
-      var v = lir.methodInsn(invokeOp, Type.getInternalName(tcls), name, descriptor, isInterface, argvs)
+      var v = lir.methodInsn(invokeOp, Type.getInternalName(tcls), name, descriptor, isInterface, sti, argvs)
       if (concreteReturnType != sct.runtimeClass)
         v = lir.checkcast(Type.getInternalName(sct.runtimeClass), v)
       new Code(start, end, v)
@@ -761,7 +789,8 @@ trait Settable[T] extends Value[T] {
   def load(): Code[T] = get
 }
 
-class LazyFieldRef[T: TypeInfo](fb: FunctionBuilder[_], name: String, setup: Code[T]) extends Settable[T] {
+// FIXME lazy setup
+class LazyFieldRef[T: TypeInfo](fb: FunctionBuilder[_], name: String, setup: => Code[T]) extends Settable[T] {
   private[this] val value: ClassFieldRef[T] = fb.newField[T](name)
   private[this] val present: ClassFieldRef[Boolean] = fb.newField[Boolean](s"${name}_present")
 
