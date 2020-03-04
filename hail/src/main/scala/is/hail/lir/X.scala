@@ -9,7 +9,6 @@ import is.hail.asm4s._
 import org.objectweb.asm.Opcodes._
 
 // move typeinfo stuff lir
-// test more asm4s examples
 
 class Classx[C](val name: String, val superName: String) {
   val methods: mutable.ArrayBuffer[Method] = new mutable.ArrayBuffer()

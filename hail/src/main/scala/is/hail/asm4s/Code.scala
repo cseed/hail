@@ -11,26 +11,6 @@ import org.objectweb.asm.Type
 
 import scala.reflect.ClassTag
 
-object Junk {
-  def main(args: Array[String]): Unit = {
-    val fb = FunctionBuilder.functionBuilder[Int, Int]
-    fb.emit(
-      fb.getArg[Int](1) + 5)
-    val f = fb.result()()
-    assert(f(-2) == 3)
-  }
-}
-
-object Junk2 {
-  def main(args: Array[String]): Unit = {
-    val fb = FunctionBuilder.functionBuilder[Int, Int]
-    fb.emit(
-      fb.getArg[Int](1) + 5)
-    val f = fb.result()()
-    assert(f(-2) == 3)
-  }
-}
-
 object Code {
   def void[T](v: lir.StmtX): Code[T] = {
     val L = new lir.Block()
