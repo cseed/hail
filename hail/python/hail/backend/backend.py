@@ -1,3 +1,5 @@
+import pkg_resources
+from pyspark import SparkContext, SparkConf
 import abc
 import os
 import requests
@@ -74,6 +76,10 @@ class Backend(abc.ABC):
     def fs(self):
         pass
 
+    @abc.abstractmethod
+    def index_bgen(self, files, index_file_map, rg, contig_recoding, skip_invalid_loci):
+        pass
+
     def persist_table(self, t, storage_level):
         return t
 
@@ -88,7 +94,55 @@ class Backend(abc.ABC):
 
 
 class SparkBackend(Backend):
-    def __init__(self):
+    def __init__(self, idempotent, sc, app_name, master, local, min_block_size):
+        if pkg_resources.resource_exists(__name__, "hail-all-spark.jar"):
+            hail_jar_path = pkg_resources.resource_filename(__name__, "hail-all-spark.jar")
+            assert os.path.exists(hail_jar_path), f'{hail_jar_path} does not exist'
+            conf = SparkConf()
+
+            base_conf = spark_conf or {}
+            for k, v in base_conf.items():
+                conf.set(k, v)
+
+            jars = [hail_jar_path]
+
+            if os.environ.get('HAIL_SPARK_MONITOR'):
+                import sparkmonitor
+                jars.append(os.path.join(os.path.dirname(sparkmonitor.__file__), 'listener.jar'))
+                conf.set("spark.extraListeners", "sparkmonitor.listener.JupyterSparkMonitorListener")
+
+            conf.set('spark.jars', ','.join(jars))
+            conf.set('spark.driver.extraClassPath', ','.join(jars))
+            conf.set('spark.executor.extraClassPath', './hail-all-spark.jar')
+            if sc is None:
+                SparkContext._ensure_initialized(conf=conf)
+            else:
+                import warnings
+                warnings.warn(
+                    'pip-installed Hail requires additional configuration options in Spark referring\n'
+                    '  to the path to the Hail Python module directory HAIL_DIR,\n'
+                    '  e.g. /path/to/python/site-packages/hail:\n'
+                    '    spark.jars=HAIL_DIR/hail-all-spark.jar\n'
+                    '    spark.driver.extraClassPath=HAIL_DIR/hail-all-spark.jar\n'
+                    '    spark.executor.extraClassPath=./hail-all-spark.jar')
+        else:
+            SparkContext._ensure_initialized()
+
+        self._gateway = SparkContext._gateway
+        self._jvm = SparkContext._jvm
+
+        # hail package
+        hail = getattr(self._jvm, 'is').hail
+
+        jsc = sc._jsc.sc() if sc else None
+
+        if idempotent:
+            self._jbackend = hail.backend.spark.SparkBackend.getOrCreate(
+                jsc, app_name, master, local, True, min_block_size)
+        else:
+            self._jbackend = hail.backend.spark.SparkBackend.apply(
+                jsc, app_name, master, local, True, min_block_size)
+
         self._fs = None
 
     @property
@@ -190,6 +244,9 @@ class SparkBackend(Backend):
 
     def parse_vcf_metadata(self, path):
         return json.loads(Env.hc()._jhc.pyParseVCFMetadataJSON(path))
+
+    def index_bgen(self, files, index_file_map, rg, contig_recoding, skip_invalid_loci):
+        self._jbackend.pyIndexBgen(files, index_file_map, joption(rg), contig_recoding, skip_invalid_loci)
 
 
 class ServiceBackend(Backend):
@@ -341,6 +398,22 @@ class ServiceBackend(Backend):
     def parse_vcf_metadata(self, path):
         resp = requests.post(f'{self.url}/parse-vcf-metadata',
                              json={'path': path},
+                             headers=self.headers)
+        if resp.status_code == 400:
+            resp_json = resp.json()
+            raise FatalError(resp_json['message'])
+        resp.raise_for_status()
+        return resp.json()
+
+    def index_bgen(self, files, index_file_map, rg, contig_recoding, skip_invalid_loci):
+        resp = requests.post(f'{self.url}/index-bgen',
+                             json={
+                                 'files': files,
+                                 'index_file_map': index_file_map,
+                                 'rg': rg,
+                                 'contig_recoding': contig_recoding,
+                                 'skip_invalid_loci': skip_invalid_loci
+                             },
                              headers=self.headers)
         if resp.status_code == 400:
             resp_json = resp.json()

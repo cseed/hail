@@ -26,18 +26,18 @@ case class BlockMatrixNativeWriter(
   forceRowMajor: Boolean,
   stageLocally: Boolean) extends BlockMatrixWriter {
 
-  def apply(hc: HailContext, bm: BlockMatrix): Unit = bm.write(hc.sFS, path, overwrite, forceRowMajor, stageLocally)
+  def apply(hc: HailContext, bm: BlockMatrix): Unit = bm.write(hc.fs, path, overwrite, forceRowMajor, stageLocally)
 }
 
 case class BlockMatrixBinaryWriter(path: String) extends BlockMatrixWriter {
   def apply(hc: HailContext, bm: BlockMatrix): Unit = {
-    RichDenseMatrixDouble.exportToDoubles(hc.sFS, path, bm.toBreezeMatrix(), forceRowMajor = true)
+    RichDenseMatrixDouble.exportToDoubles(hc.fs, path, bm.toBreezeMatrix(), forceRowMajor = true)
   }
 }
 
 case class BlockMatrixPersistWriter(id: String, storageLevel: String) extends BlockMatrixWriter {
   def apply(hc: HailContext, bm: BlockMatrix): Unit =
-    HailContext.backend.cache.persistBlockMatrix(id, bm, storageLevel)
+    HailContext.sparkBackend().bmCache.persistBlockMatrix(id, bm, storageLevel)
 }
 
 case class BlockMatrixRectanglesWriter(
