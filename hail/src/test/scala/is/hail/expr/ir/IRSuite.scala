@@ -14,6 +14,7 @@ import is.hail.expr.types.virtual._
 import is.hail.expr.Nat
 import is.hail.expr.types.encoded.{EArray, EBaseStruct, EBinary, EField, EFloat32, EFloat64, EInt32, EInt64, EType}
 import is.hail.io.bgen.{IndexBgen, MatrixBGENReader}
+import is.hail.io.fs.HadoopFS
 import is.hail.io.{BufferSpec, TypedCodecSpec}
 import is.hail.linalg.BlockMatrix
 import is.hail.methods._
@@ -3289,6 +3290,30 @@ class IRSuite extends HailSuite {
         ReadValue(Ref("filename", TString), spec, pt.virtualType)))
     for (v <- Array(value, null)) {
       assertEvalsTo(ToArray(readArray), FastIndexedSeq(v -> pt.virtualType), Array.fill(10)(v).toFastIndexedSeq)
+    }
+  }
+
+  @Test def testMoo(): Unit = {
+    import org.apache.hadoop.fs.Path
+
+    val fs = HailContext.fs.asInstanceOf[HadoopFS].getFileSystem("/home/cotton")
+
+    println("1")
+    println(fs.getFileStatus(new Path("/home/cotton/test/")))
+
+    println("2")
+    for (s <- fs.listStatus(new Path("/home/cotton/test/aa"))) {
+      println(s)
+    }
+
+    println("3")
+    for (s <- fs.globStatus(new Path("/home/cotton/test/*"))) {
+      println(s)
+    }
+
+    println("4")
+    for (s <- fs.globStatus(new Path("/home/cotton/test/*/a"))) {
+      println(s)
     }
   }
 }
