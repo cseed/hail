@@ -1,9 +1,6 @@
 #!/bin/bash
 set -ex
 
-# start service
-kubectl -n default apply -f service.yaml
-
 # stop existing letsencrypt pod
 kubectl -n default delete pod --ignore-not-found=true letsencrypt
 N=
