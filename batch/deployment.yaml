@@ -64,9 +64,9 @@ spec:
 {% endif %}
 {% if deploy %}
          - name: HAIL_BATCH_BUCKET_NAME
-           value: hail-batch
+           value: ukbb-exome-pharma-batch
          - name: HAIL_WORKER_LOGS_BUCKET_NAME
-           value: hail-batch-worker-logs
+           value: ukbb-exome-pharma-batch
          - name: STANDING_WORKER_MAX_IDLE_TIME_SECS
            value: "7200" # 2 hours
 {% else %}
@@ -191,9 +191,9 @@ spec:
 {% endif %}
 {% if deploy %}
          - name: HAIL_BATCH_BUCKET_NAME
-           value: hail-batch
+           value: ukbb-exome-pharma-batch
          - name: HAIL_WORKER_LOGS_BUCKET_NAME
-           value: hail-batch-worker-logs
+           value: ukbb-exome-pharma-batch
          - name: STANDING_WORKER_MAX_IDLE_TIME_SECS
            value: "7200" # 2 hours
 {% else %}

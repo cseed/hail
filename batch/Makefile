@@ -1,6 +1,4 @@
-PROJECT := $(shell gcloud config get-value project)
-ZONE := us-central1-a
-KUBERNETES_SERVER_URL := https://104.198.230.143
+include ../config.mk
 
 BATCH_LATEST = gcr.io/$(PROJECT)/batch:latest
 BATCH_IMAGE = gcr.io/$(PROJECT)/batch:$(shell docker images -q --no-trunc batch | sed -e 's,[^:]*:,,')
@@ -59,6 +57,8 @@ deploy: push
 	kubectl -n default apply -f service-account-batch-pods.yaml.out
 	kubectl -n default apply -f deployment.yaml.out
 
+ZONE = us-central1-a
+
 .PHONY: create-build-worker-image-instance
 create-build-worker-image-instance:
 	-gcloud -q compute --project $(PROJECT) instances delete --zone=$(ZONE) build-batch-worker-image
@@ -66,6 +66,6 @@ create-build-worker-image-instance:
 
 .PHONY: create-worker-image
 create-worker-image:
-	-gcloud -q compute --project $(PROJECT) images delete batch-worker-9
-	gcloud -q compute --project $(PROJECT) images create batch-worker-9 --source-disk=build-batch-worker-image --source-disk-zone=$(ZONE)
+	-gcloud -q compute --project $(PROJECT) images delete batch-worker-2
+	gcloud -q compute --project $(PROJECT) images create batch-worker-2 --source-disk=build-batch-worker-image --source-disk-zone=$(ZONE)
 	gcloud -q compute --project $(PROJECT) instances delete --zone=$(ZONE) build-batch-worker-image
