@@ -298,7 +298,7 @@ SET worker_type = %s, worker_cores = %s, worker_disk_size_gb = %s,
                 'boot': True,
                 'autoDelete': True,
                 'initializeParams': {
-                    'sourceImage': f'projects/{PROJECT}/global/images/batch-worker-2',
+                    'sourceImage': f'projects/{PROJECT}/global/images/batch-worker-3',
                     'diskType': f'projects/{PROJECT}/zones/{zone}/diskTypes/pd-ssd',
                     'diskSizeGb': str(self.worker_disk_size_gb)
                 }
