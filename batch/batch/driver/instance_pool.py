@@ -712,7 +712,7 @@ FROM ready_cores;
                                            # 20 queries/s; our GCE long-run quota
                                            300,
                                            # n * 16 cores / 15s = excess_scheduling_rate/s = 10/s => n ~= 10
-                                           10)
+                                           20)
                     if instances_needed > 0:
                         log.info(f'creating {instances_needed} new instances')
                         # parallelism will be bounded by thread pool
@@ -780,4 +780,4 @@ FROM ready_cores;
             except Exception:
                 log.exception('in monitor instances loop')
 
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.1)
