@@ -312,7 +312,7 @@ SET worker_type = %s, worker_cores = %s, worker_disk_size_gb = %s,
             zone = random.choice(zones)
         else:
             zone_prob_weights = [
-                max(w, 10.0) * self.zone_success_rate.zone_success_rate(z)
+                min(w, 10) * self.zone_success_rate.zone_success_rate(z)
                 for z, w in zip(self.zones, self.zone_weights)]
 
             log.info(f'zones {self.zones}')
