@@ -372,12 +372,14 @@ class SparkBackend(
       }
     }
   }
-
+  
   def executeJSON(ir: IR): String = {
+    assert(ir.typ != TVoid)
     val (jsonValue, timer) = ExecutionTimer.time("SparkBackend.executeJSON") { timer =>
-      val t = ir.typ
-      val value = execute(timer, ir, optimize = true)
-      JsonMethods.compact(JSONAnnotationImpex.exportAnnotation(value, t))
+      withExecuteContext(timer) { ctx =>
+        val RawValue(pt, a) = Pass2.default.runAny(ctx, ir)
+        JsonMethods.compact(JSONAnnotationImpex.exportAnnotation(new UnsafeRow(pt, null, a), pt.virtualType))
+      }
     }
     Serialization.write(Map("value" -> jsonValue, "timings" -> timer.toMap))(new DefaultFormats {})
   }

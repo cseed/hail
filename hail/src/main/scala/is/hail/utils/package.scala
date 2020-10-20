@@ -899,6 +899,12 @@ package object utils extends Logging
     random.nextBytes(bytes)
     Base64.getUrlEncoder.encodeToString(bytes)
   }
+
+  def stripTrailingDollar(s: String): String = {
+    if (s.endsWith("$"))
+      return s.dropRight(1)
+    s
+  }
 }
 
 // FIXME: probably resolved in 3.6 https://github.com/json4s/json4s/commit/fc96a92e1aa3e9e3f97e2e91f94907fdfff6010d

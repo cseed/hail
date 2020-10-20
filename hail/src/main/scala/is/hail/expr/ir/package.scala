@@ -1,5 +1,7 @@
 package is.hail.expr
 
+import java.io.OutputStream
+
 import is.hail.asm4s
 import is.hail.asm4s._
 import is.hail.annotations.RegionValue
