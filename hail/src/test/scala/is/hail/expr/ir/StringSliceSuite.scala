@@ -1,6 +1,6 @@
 package is.hail.expr.ir
 
-import is.hail.{ExecStrategy, HailSuite}
+import is.hail.HailSuite
 import is.hail.utils._
 import is.hail.TestUtils._
 import is.hail.types._
@@ -8,8 +8,6 @@ import is.hail.types.virtual.TString
 import org.testng.annotations.Test
 
 class StringSliceSuite extends HailSuite {
-  implicit val execStrats = ExecStrategy.javaOnly
-
   @Test def unicodeSlicingSlicesCodePoints() {
     val poopEmoji = "\uD83D\uDCA9"
     val s = s"abc${ poopEmoji }def"

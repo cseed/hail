@@ -1,6 +1,6 @@
 package is.hail.expr.ir
 
-import is.hail.{ExecStrategy, HailSuite}
+import is.hail.HailSuite
 import is.hail.expr._
 import is.hail.types._
 import is.hail.utils._
@@ -15,9 +15,6 @@ import is.hail.expr.ir.IRBuilder._
 import org.apache.spark.sql.Row
 
 class AggregatorsSuite extends HailSuite {
-
-  implicit val execStrats = ExecStrategy.compileOnly
-
   def runAggregator(op: AggOp, aggType: TStruct, agg: IndexedSeq[Row], expected: Any, initOpArgs: IndexedSeq[IR],
     seqOpArgs: IndexedSeq[IR]) {
 
@@ -738,8 +735,6 @@ class AggregatorsSuite extends HailSuite {
   }
 
   @Test def testArrayElementsAggregator(): Unit = {
-    implicit val execStrats = ExecStrategy.interpretOnly
-
     def getAgg(n: Int, m: Int): IR = {
       hc
       val ht = TableRange(10, 3)
@@ -762,8 +757,6 @@ class AggregatorsSuite extends HailSuite {
   }
 
   @Test def testArrayElementsAggregatorEmpty(): Unit = {
-    implicit val execStrats = ExecStrategy.interpretOnly
-
     def getAgg(n: Int, m: Int, knownLength: Option[IR]): IR = {
       hc
       val ht = TableRange(10, 3)

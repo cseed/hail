@@ -24,7 +24,6 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
 import scala.collection.mutable
 import scala.reflect.ClassTag
 import scala.collection.JavaConverters._
-import java.io.PrintWriter
 
 import is.hail.io.plink.LoadPlink
 import is.hail.io.vcf.VCFsReader
@@ -268,117 +267,33 @@ class SparkBackend(
     ProgressBarBuilder.build(sc)
   }
 
-  private[this] def executionResultToAnnotation(ctx: ExecuteContext, result: Either[Unit, (PTuple, Long)]) = result match {
-    case Left(x) => x
-    case Right((pt, off)) => SafeRow(pt, off).get(0)
-  }
-
-  def jvmLowerAndExecute(
-    timer: ExecutionTimer,
-    ir0: IR,
-    optimize: Boolean,
-    lowerTable: Boolean,
-    lowerBM: Boolean,
-    print: Option[PrintWriter] = None
-  ): Any = {
-    withExecuteContext(timer) { ctx =>
-      val l = _jvmLowerAndExecute(ctx, ir0, optimize, lowerTable, lowerBM, print)
-      executionResultToAnnotation(ctx, l)
-    }
-  }
-
-  private[this] def _jvmLowerAndExecute(
-    ctx: ExecuteContext,
-    ir0: IR,
-    optimize: Boolean,
-    lowerTable: Boolean,
-    lowerBM: Boolean,
-    print: Option[PrintWriter] = None
-  ): Either[Unit, (PTuple, Long)] = {
-    val typesToLower: DArrayLowering.Type = (lowerTable, lowerBM) match {
-      case (true, true) => DArrayLowering.All
-      case (true, false) => DArrayLowering.TableOnly
-      case (false, true) => DArrayLowering.BMOnly
-      case (false, false) => throw new LowererUnsupportedOperation("no lowering enabled")
-    }
-    val ir = LoweringPipeline.darrayLowerer(optimize)(typesToLower).apply(ctx, ir0).asInstanceOf[IR]
-
-    if (!Compilable(ir))
-      throw new LowererUnsupportedOperation(s"lowered to uncompilable IR: ${ Pretty(ir) }")
-
-    val res = ir.typ match {
-      case TVoid =>
-        val (_, f) = ctx.timer.time("Compile") {
-          Compile[AsmFunction1RegionUnit](ctx,
-            FastIndexedSeq[(String, PType)](),
-            FastIndexedSeq(classInfo[Region]), UnitInfo,
-            ir,
-            print = print)
-        }
-        ctx.timer.time("Run")(Left(f(0, ctx.r)(ctx.r)))
-
-      case _ =>
-        val (pt: PTuple, f) = ctx.timer.time("Compile") {
-          Compile[AsmFunction1RegionLong](ctx,
-            FastIndexedSeq[(String, PType)](),
-            FastIndexedSeq(classInfo[Region]), LongInfo,
-            MakeTuple.ordered(FastSeq(ir)),
-            print = print)
-        }
-        ctx.timer.time("Run")(Right((pt, f(0, ctx.r).apply(ctx.r))))
-    }
-
-    res
-  }
-
-  def execute(timer: ExecutionTimer, ir: IR, optimize: Boolean): Any =
-    withExecuteContext(timer) { ctx =>
-      val queryID = Backend.nextID()
-      log.info(s"starting execution of query $queryID of initial size ${ IRSize(ir) }")
-      val l = _execute(ctx, ir, optimize)
-      val javaObjResult = ctx.timer.time("convertRegionValueToAnnotation")(executionResultToAnnotation(ctx, l))
-      log.info(s"finished execution of query $queryID")
-      javaObjResult
-    }
-
-  private[this] def _execute(ctx: ExecuteContext, ir: IR, optimize: Boolean): Either[Unit, (PTuple, Long)] = {
-    TypeCheck(ir)
-    Validate(ir)
-    try {
-      val lowerTable = HailContext.getFlag("lower") != null
-      val lowerBM = HailContext.getFlag("lower_bm") != null
-      _jvmLowerAndExecute(ctx, ir, optimize, lowerTable, lowerBM)
-    } catch {
-      case e: LowererUnsupportedOperation if HailContext.getFlag("lower_only") != null => throw e
-      case _: LowererUnsupportedOperation =>
-        CompileAndEvaluate._apply(ctx, ir, optimize = optimize)
+  def safeExecute(ir: IR): Any = {
+    assert(ir.typ.isRealizable)
+    ExecutionTimer.logTime("SparkBackend.safeExecute") { timer =>
+      withExecuteContext(timer) { ctx =>
+        val RawValue(pt, a) = Pass2.compile.runAny(ctx, ir)
+        SafeRow(pt, a).get(0)
+      }
     }
   }
 
   def executeLiteral(ir: IR): IR = {
-    val t = ir.typ
-    assert(t.isRealizable)
+    assert(ir.typ.isRealizable)
     ExecutionTimer.logTime("SparkBackend.executeLiteral") { timer =>
       withExecuteContext(timer) { ctx =>
-        val queryID = Backend.nextID()
-        log.info(s"starting execution of query $queryID} of initial size ${ IRSize(ir) }")
-        val retVal = _execute(ctx, ir, true)
-        val literalIR = retVal match {
-          case Left(x) => throw new HailException("Can't create literal")
-          case Right((pt, addr)) => GetFieldByIdx(EncodedLiteral.hailValueToByteArray(pt, addr, ctx), 0)
-        }
-        log.info(s"finished execution of query $queryID")
-        literalIR
+        val RawValue(pt, a) = Pass2.compile.runAny(ctx, ir)
+        GetFieldByIdx(EncodedLiteral.hailValueToByteArray(pt, a, ctx), 0)
       }
     }
   }
   
   def executeJSON(ir: IR): String = {
-    assert(ir.typ != TVoid)
+    assert(ir.typ.isRealizable)
     val (jsonValue, timer) = ExecutionTimer.time("SparkBackend.executeJSON") { timer =>
       withExecuteContext(timer) { ctx =>
-        val RawValue(pt, a) = Pass2.default.runAny(ctx, ir)
-        JsonMethods.compact(JSONAnnotationImpex.exportAnnotation(new UnsafeRow(pt, null, a), pt.virtualType))
+        val RawValue(pt, a) = Pass2.compile.runAny(ctx, ir)
+        JsonMethods.compact(JSONAnnotationImpex.exportAnnotation(
+          new UnsafeRow(pt, null, a).get(0), pt.virtualType.fields(0).typ))
       }
     }
     Serialization.write(Map("value" -> jsonValue, "timings" -> timer.toMap))(new DefaultFormats {})
@@ -389,16 +304,12 @@ class SparkBackend(
     ExecutionTimer.logTime("SparkBackend.encodeToBytes") { timer =>
       val bs = BufferSpec.parseOrDefault(bufferSpecString)
       withExecuteContext(timer) { ctx =>
-        _execute(ctx, ir, true) match {
-          case Left(_) => throw new RuntimeException("expression returned void")
-          case Right((t, off)) =>
-            assert(t.size == 1)
-            val elementType = t.fields(0).typ
-            val codec = TypedCodecSpec(
-              EType.defaultFromPType(elementType), elementType.virtualType, bs)
-            assert(t.isFieldDefined(off, 0))
-            (elementType.toString, codec.encode(ctx, elementType, t.loadField(off, 0)))
-        }
+        val RawValue(pt, a) = Pass2.compile.runAny(ctx, ir)
+        val elementType = pt.fields(0).typ
+        val codec = TypedCodecSpec(
+          EType.defaultFromPType(elementType), elementType.virtualType, bs)
+        assert(pt.isFieldDefined(a, 0))
+        (elementType.toString, codec.encode(ctx, elementType, pt.loadField(a, 0)))
       }
     }
   }
@@ -451,7 +362,7 @@ class SparkBackend(
       }
 
       withExecuteContext(timer) { ctx =>
-        val tv = Interpret(mir, ctx, optimize = true)
+        val tv = Pass2.executeMatrix(ctx, mir)
         MatrixLiteral(mir.typ, TableLiteral(tv.persist(ctx, level)))
       }
     }
@@ -467,7 +378,7 @@ class SparkBackend(
       }
 
       withExecuteContext(timer) { ctx =>
-        val tv = Interpret(tir, ctx, optimize = true)
+        val tv = Pass2.executeTable(ctx, tir)
         TableLiteral(tv.persist(ctx, level))
       }
     }
@@ -476,7 +387,8 @@ class SparkBackend(
   def pyToDF(tir: TableIR): DataFrame = {
     ExecutionTimer.logTime("SparkBackend.pyToDF") { timer =>
       withExecuteContext(timer) { ctx =>
-        Interpret(tir, ctx).toDF()
+        val tv = Pass2.executeTable(ctx, tir)
+        tv.toDF()
       }
     }
   }

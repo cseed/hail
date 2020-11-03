@@ -11,7 +11,7 @@ import is.hail.types.virtual._
 import is.hail.io.BufferSpec
 import is.hail.utils._
 import is.hail.variant.{Call0, Call1, Call2}
-import is.hail.{ExecStrategy, HailSuite}
+import is.hail.HailSuite
 import org.apache.spark.sql.Row
 import org.testng.annotations.Test
 
@@ -348,7 +348,7 @@ class Aggregators2Suite extends HailSuite {
       FastIndexedSeq(invoke("str", TString, GetField(Ref("row", tr.typ.rowType), "idx")), I32(9999) - GetField(Ref("row", tr.typ.rowType), "idx")),
       AggSignature(TakeBy(), FastSeq(TInt32), FastSeq(TString, TInt32))))
 
-    assertEvalsTo(ta, (0 until 19).map(i => (9999 - i).toString).toFastIndexedSeq)(ExecStrategy.interpretOnly)
+    assertEvalsTo(ta, (0 until 19).map(i => (9999 - i).toString).toFastIndexedSeq)
   }
 
   @Test def testTake() {
@@ -690,11 +690,10 @@ class Aggregators2Suite extends HailSuite {
               AggSignature(Sum(), FastSeq(), FastSeq(TInt64))),
             false))))),
       Some(FastIndexedSeq()))))
-    assertEvalsTo(ir, Row((0 until 10).map(i => Row(i, 2L * i + 12L)), Row()))(ExecStrategy.interpretOnly)
+    assertEvalsTo(ir, Row((0 until 10).map(i => Row(i, 2L * i + 12L)), Row()))
   }
 
   @Test def testRunAggScan(): Unit = {
-    implicit val execStrats = ExecStrategy.compileOnly
     val sig = PhysicalAggSig(Sum(), TypedStateSig(PFloat64(true)))
     val x = ToArray(RunAggScan(
       StreamRange(I32(0), I32(5), I32(1)),
@@ -707,7 +706,6 @@ class Aggregators2Suite extends HailSuite {
   }
 
   @Test def testNestedRunAggScan(): Unit = {
-    implicit val execStrats = ExecStrategy.compileOnly
     val sig = PhysicalAggSig(Sum(), TypedStateSig(PFloat64(true)))
     val x =
       ToArray(
@@ -728,7 +726,6 @@ class Aggregators2Suite extends HailSuite {
   }
 
   @Test def testRunAggBasic(): Unit = {
-    implicit val execStrats = ExecStrategy.compileOnly
     val sig = PhysicalAggSig(Sum(), TypedStateSig(PFloat64(true)))
     val x = RunAgg(
       Begin(FastSeq(
@@ -741,7 +738,6 @@ class Aggregators2Suite extends HailSuite {
   }
 
   @Test def testRunAggNested(): Unit = {
-    implicit val execStrats = ExecStrategy.compileOnly
     val sumSig = PhysicalAggSig(Sum(), TypedStateSig(PFloat64(true)))
     val takeSig = PhysicalAggSig(Take(), TakeStateSig(PFloat64(true)))
     val x = RunAgg(
@@ -767,7 +763,6 @@ class Aggregators2Suite extends HailSuite {
   }
 
   @Test(enabled = false) def testAggStateAndCombOp(): Unit = {
-    implicit val execStrats = ExecStrategy.compileOnly
     val takeSig = PhysicalAggSig(Take(), TakeStateSig(PInt64(true)))
     val x = Let(
       "x",

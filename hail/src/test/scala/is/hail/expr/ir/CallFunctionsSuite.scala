@@ -1,6 +1,5 @@
 package is.hail.expr.ir
 
-import is.hail.ExecStrategy
 import is.hail.TestUtils._
 import is.hail.expr.ir.TestUtils.IRCall
 import is.hail.types.virtual.{TArray, TBoolean, TCall, TInt32}
@@ -9,8 +8,6 @@ import org.testng.annotations.{DataProvider, Test}
 import org.scalatest.testng.TestNGSuite
 
 class CallFunctionsSuite extends TestNGSuite {
-
-  implicit val execStrats = ExecStrategy.javaOnly
 
   @DataProvider(name = "basic")
   def basicData(): Array[Array[Any]] = {

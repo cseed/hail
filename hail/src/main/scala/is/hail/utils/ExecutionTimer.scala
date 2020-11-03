@@ -49,9 +49,13 @@ class TimeBlock(val name: String) {
 object ExecutionTimer {
   def time[T](rootName: String)(f: ExecutionTimer => T): (T, ExecutionTimer) = {
     val timer = new ExecutionTimer(rootName)
-    val result = f(timer)
-    timer.finish()
-    timer.logInfo()
+    val result =
+      try {
+        f(timer)
+      } finally {
+        timer.finish()
+        timer.logInfo()
+      }
     (result, timer)
   }
 
@@ -78,11 +82,13 @@ class ExecutionTimer(val rootName: String) {
     parent.children += child
     stack.push(child)
     val start = System.nanoTime()
-    val result: T = block
-    val end = System.nanoTime()
-    child.finish(end - start)
-    stack.pop()
-    result
+    try {
+      block: T
+    } finally {
+      val end = System.nanoTime()
+      child.finish(end - start)
+      stack.pop()
+    }
   }
 
   def finish(): Unit = {

@@ -207,8 +207,7 @@ class ShuffleSuite extends HailSuite {
       val (pairPType: PBaseStruct, f) = Compile[AsmFunction1RegionLong](ctx,
         FastIndexedSeq[(String, PType)](),
         FastIndexedSeq[TypeInfo[_]](classInfo[Region]), LongInfo,
-        x,
-        optimize = true)
+        x)
       val partitionBoundsPType = pairPType
         .asInstanceOf[PBaseStruct].types(0)
       val rowArrayPType = pairPType

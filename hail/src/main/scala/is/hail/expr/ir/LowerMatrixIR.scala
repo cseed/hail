@@ -83,7 +83,6 @@ object LowerMatrixIR {
     BindingEnv(e, agg = Some(e), scan = Some(e))
   }
 
-
   private[this] def lower(mir: MatrixIR, ab: ArrayBuilder[(String, IR)]): TableIR = {
     val lowered = mir match {
       case RelationalLetMatrixTable(name, value, body) =>

@@ -1,18 +1,14 @@
 package is.hail.expr.ir
 
-import is.hail.{ExecStrategy, HailSuite}
-import is.hail.types.{virtual, _}
+import is.hail.HailSuite
 import is.hail.TestUtils._
 import is.hail.expr.ir.TestUtils._
 import is.hail.types.virtual._
 import is.hail.utils.{FastIndexedSeq, FastSeq}
 import org.testng.annotations.{DataProvider, Test}
-import org.scalatest.testng.TestNGSuite
 
 class ArrayFunctionsSuite extends HailSuite {
   val naa = NA(TArray(TInt32))
-
-  implicit val execStrats = ExecStrategy.javaOnly
 
   @DataProvider(name = "basic")
   def basicData(): Array[Array[Any]] = Array(

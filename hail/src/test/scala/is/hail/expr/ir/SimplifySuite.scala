@@ -1,7 +1,7 @@
 package is.hail.expr.ir
 
-import is.hail.{ExecStrategy, HailSuite}
-import is.hail.TestUtils.assertEvalsTo
+import is.hail.HailSuite
+import is.hail.TestUtils._
 import is.hail.expr.ir.TestUtils.IRAggCount
 import is.hail.types.virtual._
 import is.hail.utils.{FastIndexedSeq, FastSeq, Interval}
@@ -10,8 +10,6 @@ import org.apache.spark.sql.Row
 import org.testng.annotations.Test
 
 class SimplifySuite extends HailSuite {
-  implicit val execStrats = ExecStrategy.interpretOnly
-
   @Test def testTableMultiWayZipJoinGlobalsRewrite() {
     hc
     val tmwzj = TableGetGlobals(TableMultiWayZipJoin(

@@ -3,10 +3,8 @@ package is.hail
 import java.io.{File, PrintWriter}
 
 import breeze.linalg.{DenseMatrix, Matrix, Vector}
-import is.hail.ExecStrategy.ExecStrategy
 import is.hail.annotations.{Region, RegionValueBuilder, SafeRow}
 import is.hail.asm4s._
-import is.hail.backend.spark.SparkBackend
 import is.hail.expr.ir._
 import is.hail.expr.ir.{BindingEnv, MakeTuple, Subst}
 import is.hail.expr.ir.lowering.LowererUnsupportedOperation
@@ -18,19 +16,7 @@ import is.hail.variant._
 import org.apache.spark.SparkException
 import org.apache.spark.sql.Row
 
-object ExecStrategy extends Enumeration {
-  type ExecStrategy = Value
-  val Interpret, InterpretUnoptimized, JvmCompile, LoweredJVMCompile, JvmCompileUnoptimized = Value
-
-  val unoptimizedCompileOnly: Set[ExecStrategy] = Set(JvmCompileUnoptimized)
-  val compileOnly: Set[ExecStrategy] = Set(JvmCompile, JvmCompileUnoptimized)
-  val javaOnly: Set[ExecStrategy] = Set(Interpret, InterpretUnoptimized, JvmCompile, JvmCompileUnoptimized)
-  val interpretOnly: Set[ExecStrategy] = Set(Interpret, InterpretUnoptimized)
-  val nonLowering: Set[ExecStrategy] = Set(Interpret, InterpretUnoptimized, JvmCompile, JvmCompileUnoptimized)
-  val lowering: Set[ExecStrategy] = Set(LoweredJVMCompile)
-  val backendOnly: Set[ExecStrategy] = Set(LoweredJVMCompile)
-  val allRelational: Set[ExecStrategy] = interpretOnly.union(lowering)
-}
+import scala.collection.mutable
 
 object TestUtils {
 
@@ -148,28 +134,13 @@ object TestUtils {
       None
   }
 
-  def loweredExecute(x: IR, env: Env[(Any, Type)],
-    args: IndexedSeq[(Any, Type)],
-    agg: Option[(IndexedSeq[Row], TStruct)],
-    bytecodePrinter: Option[PrintWriter] = None
-  ): Any = {
-    if (agg.isDefined || !env.isEmpty || !args.isEmpty)
-      throw new LowererUnsupportedOperation("can't test with aggs or user defined args/env")
-
-    ExecutionTimer.logTime("TestUtils.loweredExecute") { timer =>
-      HailContext.sparkBackend("TestUtils.loweredExecute")
-        .jvmLowerAndExecute(timer, x, optimize = false, lowerTable = true, lowerBM = true, print = bytecodePrinter)
-    }
-  }
-
   def eval(x: IR): Any = eval(x, Env.empty, FastIndexedSeq(), None)
 
   def eval(x: IR,
     env: Env[(Any, Type)],
     args: IndexedSeq[(Any, Type)],
     agg: Option[(IndexedSeq[Row], TStruct)],
-    bytecodePrinter: Option[PrintWriter] = None,
-    optimize: Boolean = true
+    bytecodePrinter: Option[PrintWriter] = None
   ): Any = {
     ExecuteContext.scoped() { ctx =>
       val inputTypesB = new ArrayBuilder[Type]()
@@ -222,8 +193,7 @@ object TestUtils {
               (aggArrayVar, aggArrayPType)),
             FastIndexedSeq(classInfo[Region], LongInfo, LongInfo), LongInfo,
             aggIR,
-            print = bytecodePrinter,
-            optimize = optimize)
+            print = bytecodePrinter)
           assert(resultType2.virtualType == resultType)
 
           Region.scoped { region =>
@@ -255,7 +225,6 @@ object TestUtils {
             FastIndexedSeq((argsVar, argsPType)),
             FastIndexedSeq(classInfo[Region], LongInfo), LongInfo,
             MakeTuple.ordered(FastSeq(rewrite(Subst(x, BindingEnv(substEnv))))),
-            optimize = optimize,
             print = bytecodePrinter)
           assert(resultType2.virtualType == resultType)
 
@@ -304,22 +273,19 @@ object TestUtils {
     assert(t.valuesSimilar(i2, c), s"interpret (optimize = false) $i vs compile $c")
   }
 
-  def assertAllEvalTo(xs: (IR, Any)*)(implicit execStrats: Set[ExecStrategy]): Unit = {
+  def assertAllEvalTo(xs: (IR, Any)*): Unit = {
     assertEvalsTo(MakeTuple.ordered(xs.map(_._1)), Row.fromSeq(xs.map(_._2)))
   }
 
-  def assertEvalsTo(x: IR, expected: Any)
-    (implicit execStrats: Set[ExecStrategy]) {
+  def assertEvalsTo(x: IR, expected: Any) {
     assertEvalsTo(x, Env.empty, FastIndexedSeq(), None, expected)
   }
 
-  def assertEvalsTo(x: IR, args: IndexedSeq[(Any, Type)], expected: Any)
-    (implicit execStrats: Set[ExecStrategy]) {
+  def assertEvalsTo(x: IR, args: IndexedSeq[(Any, Type)], expected: Any) {
     assertEvalsTo(x, Env.empty, args, None, expected)
   }
 
-  def assertEvalsTo(x: IR, agg: (IndexedSeq[Row], TStruct), expected: Any)
-    (implicit execStrats: Set[ExecStrategy]) {
+  def assertEvalsTo(x: IR, agg: (IndexedSeq[Row], TStruct), expected: Any) {
     assertEvalsTo(x, Env.empty, FastIndexedSeq(), Some(agg), expected)
   }
 
@@ -327,64 +293,44 @@ object TestUtils {
     env: Env[(Any, Type)],
     args: IndexedSeq[(Any, Type)],
     agg: Option[(IndexedSeq[Row], TStruct)],
-    expected: Any)
-    (implicit execStrats: Set[ExecStrategy]) {
+    expected: Any) {
 
     TypeCheck(x, BindingEnv(env.mapValues(_._2), agg = agg.map(_._2.toEnv)))
 
     val t = x.typ
     assert(t == TVoid || t.typeCheck(expected), s"$t, $expected")
 
-    ExecuteContext.scoped() { ctx =>
-      val filteredExecStrats: Set[ExecStrategy] =
-        if (HailContext.backend.isInstanceOf[SparkBackend])
-          execStrats
-        else {
-          info("skipping interpret and non-lowering compile steps on non-spark backend")
-          execStrats.intersect(ExecStrategy.backendOnly)
-        }
+    // FIXME fix agg
+    // FIXME move substArgs somewhere else
+    val closed = env.m.foldLeft[IR](Interpret.substArgs(x, args)) { case (acc, (k, (value, t))) => Let(k, Literal.coerce(t, value), acc) }
 
-      filteredExecStrats.foreach { strat =>
-        InferPType.clearPTypes(x)
-        try {
-          val res = strat match {
-            case ExecStrategy.Interpret =>
-              assert(agg.isEmpty)
-              Interpret[Any](ctx, x, env, args)
-            case ExecStrategy.InterpretUnoptimized =>
-              assert(agg.isEmpty)
-              Interpret[Any](ctx, x, env, args, optimize = false)
-            case ExecStrategy.JvmCompile =>
-              assert(Forall(x, node => Compilable(node)))
-              eval(x, env, args, agg, bytecodePrinter =
-                Option(HailContext.getFlag("jvm_bytecode_dump"))
-                  .map { path =>
-                    val pw = new PrintWriter(new File(path))
-                    pw.print(s"/* JVM bytecode dump for IR:\n${Pretty(x)}\n */\n\n")
-                    pw
-                  })
-            case ExecStrategy.JvmCompileUnoptimized =>
-              assert(Forall(x, node => Compilable(node)))
-              eval(x, env, args, agg, bytecodePrinter =
-                Option(HailContext.getFlag("jvm_bytecode_dump"))
-                  .map { path =>
-                    val pw = new PrintWriter(new File(path))
-                    pw.print(s"/* JVM bytecode dump for IR:\n${Pretty(x)}\n */\n\n")
-                    pw
-                  },
-                optimize = false)
-            case ExecStrategy.LoweredJVMCompile =>
-              loweredExecute(x, env, args, agg)
-          }
-          if (t != TVoid) {
-            assert(t.typeCheck(res), s"\n  t=$t\n  result=$res\n  strategy=$strat")
-            assert(t.valuesSimilar(res, expected), s"\n  result=$res\n  expect=$expected\n  strategy=$strat)")
-          }
-        } catch {
-          case e: Exception =>
-            error(s"error from strategy $strat")
-            if (execStrats.contains(strat)) throw e
+    ExecuteContext.scoped() { ctx =>
+      try {
+        val res = Pass2.interpret(ctx, closed.deepCopy())
+        if (t != TVoid) {
+          assert(t.typeCheck(res), s"\n  t=$t\n  result=$res\n  strategy=interpret")
+          assert(t.valuesSimilar(res, expected), s"\n  result=$res\n  expect=$expected\n  strategy=interpret)")
         }
+      } catch {
+        case _: InterpretUnsupportedOperation =>
+      }
+
+      {
+        val res = Pass2.executeSafe(ctx, closed.deepCopy())
+        if (t != TVoid) {
+          assert(t.typeCheck(res), s"\n  t=$t\n  result=$res\n  strategy=compile")
+          assert(t.valuesSimilar(res, expected), s"\n  result=$res\n  expect=$expected\n  strategy=compile)")
+        }
+      }
+
+      try {
+        val res = Pass2.lowerAndExecuteSafe(ctx, closed.deepCopy())
+        if (t != TVoid) {
+          assert(t.typeCheck(res), s"\n  t=$t\n  result=$res\n  strategy=lower")
+          assert(t.valuesSimilar(res, expected), s"\n  result=$res\n  expect=$expected\n  strategy=lower)")
+        }
+      } catch {
+        case _: LowererUnsupportedOperation =>
       }
     }
   }
@@ -425,32 +371,27 @@ object TestUtils {
     assertCompiledThrows[HailException](x, regex)
   }
 
-  def assertNDEvals(nd: IR, expected: Any)
-    (implicit execStrats: Set[ExecStrategy]) {
+  def assertNDEvals(nd: IR, expected: Any) {
     assertNDEvals(nd, Env.empty, FastIndexedSeq(), None, expected)
   }
 
-  def assertNDEvals(nd: IR, expected: (Any, IndexedSeq[Long]))
-    (implicit execStrats: Set[ExecStrategy]) {
+  def assertNDEvals(nd: IR, expected: (Any, IndexedSeq[Long])) {
     if (expected == null)
       assertNDEvals(nd, Env.empty, FastIndexedSeq(), None, null, null)
     else
       assertNDEvals(nd, Env.empty, FastIndexedSeq(), None, expected._2, expected._1)
   }
 
-  def assertNDEvals(nd: IR, args: IndexedSeq[(Any, Type)], expected: Any)
-    (implicit execStrats: Set[ExecStrategy]) {
+  def assertNDEvals(nd: IR, args: IndexedSeq[(Any, Type)], expected: Any) {
     assertNDEvals(nd, Env.empty, args, None, expected)
   }
 
-  def assertNDEvals(nd: IR, agg: (IndexedSeq[Row], TStruct), expected: Any)
-    (implicit execStrats: Set[ExecStrategy]) {
+  def assertNDEvals(nd: IR, agg: (IndexedSeq[Row], TStruct), expected: Any) {
     assertNDEvals(nd, Env.empty, FastIndexedSeq(), Some(agg), expected)
   }
 
   def assertNDEvals(nd: IR, env: Env[(Any, Type)], args: IndexedSeq[(Any, Type)],
-    agg: Option[(IndexedSeq[Row], TStruct)], expected: Any)
-    (implicit execStrats: Set[ExecStrategy]): Unit = {
+    agg: Option[(IndexedSeq[Row], TStruct)], expected: Any): Unit = {
     var e: IndexedSeq[Any] = expected.asInstanceOf[IndexedSeq[Any]]
     val dims = Array.fill(nd.typ.asInstanceOf[TNDArray].nDims) {
       val n = e.length
@@ -462,8 +403,7 @@ object TestUtils {
   }
 
   def assertNDEvals(nd: IR, env: Env[(Any, Type)], args: IndexedSeq[(Any, Type)],
-    agg: Option[(IndexedSeq[Row], TStruct)], dims: IndexedSeq[Long], expected: Any)
-    (implicit execStrats: Set[ExecStrategy]): Unit = {
+    agg: Option[(IndexedSeq[Row], TStruct)], dims: IndexedSeq[Long], expected: Any): Unit = {
     val arrayIR = if (expected == null) nd else {
       val refs = Array.fill(nd.typ.asInstanceOf[TNDArray].nDims) { Ref(genUID(), TInt32) }
       Let("nd", nd,
@@ -475,15 +415,11 @@ object TestUtils {
     assertEvalsTo(arrayIR, env, args, agg, expected)
   }
 
-  def assertBMEvalsTo(bm: BlockMatrixIR, expected: DenseMatrix[Double])
-    (implicit execStrats: Set[ExecStrategy]): Unit = {
+  def assertBMEvalsTo(bm: BlockMatrixIR, expected: DenseMatrix[Double]): Unit = {
+    ???
+
+    /*
     ExecuteContext.scoped() { ctx =>
-      val filteredExecStrats: Set[ExecStrategy] =
-        if (HailContext.backend.isInstanceOf[SparkBackend]) execStrats
-        else {
-          info("skipping interpret and non-lowering compile steps on non-spark backend")
-          execStrats.intersect(ExecStrategy.backendOnly)
-        }
       filteredExecStrats.filter(ExecStrategy.interpretOnly).foreach { strat =>
         try {
           val res = strat match {
@@ -496,12 +432,14 @@ object TestUtils {
         } catch {
           case e: Exception =>
             error(s"error from strategy $strat")
-            if (execStrats.contains(strat)) throw e
+            throw e
         }
       }
-      val expectedArray = Array.tabulate(expected.rows)(i => Array.tabulate(expected.cols)(j => expected(i, j)).toFastIndexedSeq).toFastIndexedSeq
-      assertNDEvals(BlockMatrixCollect(bm), expectedArray)(filteredExecStrats.filterNot(ExecStrategy.interpretOnly))
     }
+     */
+
+    val expectedArray = Array.tabulate(expected.rows)(i => Array.tabulate(expected.cols)(j => expected(i, j)).toFastIndexedSeq).toFastIndexedSeq
+    assertNDEvals(BlockMatrixCollect(bm), expectedArray)
   }
 
   def importVCF(ctx: ExecuteContext, file: String, force: Boolean = false,

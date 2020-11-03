@@ -6,7 +6,6 @@ import is.hail.annotations._
 import is.hail.asm4s._
 import is.hail.expr.ir.Stream.Source
 import is.hail.expr.ir.agg.AggStateSig
-import is.hail.expr.ir.lowering.LoweringPipeline
 import is.hail.rvd.RVDContext
 import is.hail.types.physical.{PStream, PStruct, PType}
 import is.hail.types.virtual.Type
@@ -24,7 +23,6 @@ object Compile {
     params: IndexedSeq[(String, PType)],
     expectedCodeParamTypes: IndexedSeq[TypeInfo[_]], expectedCodeReturnType: TypeInfo[_],
     body: IR,
-    optimize: Boolean = true,
     print: Option[PrintWriter] = None
   ): (PType, (Int, Region) => F) = {
 
@@ -42,7 +40,7 @@ object Compile {
     ir = Subst(ir, BindingEnv(params
       .zipWithIndex
       .foldLeft(Env.empty[IR]) { case (e, ((n, t), i)) => e.bind(n, In(i, t)) }))
-    ir = LoweringPipeline.compileLowerer(optimize).apply(ctx, ir).asInstanceOf[IR].noSharing
+    ir = ir.noSharing
 
     TypeCheck(ir, BindingEnv.empty)
     InferPType(ir)
@@ -86,8 +84,7 @@ object CompileWithAggregators {
     aggSigs: Array[AggStateSig],
     params: IndexedSeq[(String, PType)],
     expectedCodeParamTypes: IndexedSeq[TypeInfo[_]], expectedCodeReturnType: TypeInfo[_],
-    body: IR,
-    optimize: Boolean = true
+    body: IR
   ): (PType, (Int, Region) => (F with FunctionWithAggRegion)) = {
     val normalizeNames = new NormalizeNames(_.toString)
     val normalizedBody = normalizeNames(body,
@@ -103,11 +100,11 @@ object CompileWithAggregators {
     ir = Subst(ir, BindingEnv(params
       .zipWithIndex
       .foldLeft(Env.empty[IR]) { case (e, ((n, t), i)) => e.bind(n, In(i, t)) }))
-    ir = LoweringPipeline.compileLowerer(optimize).apply(ctx, ir).asInstanceOf[IR].noSharing
+    ir = ir.noSharing
 
     TypeCheck(ir, BindingEnv(Env.fromSeq[Type](params.map { case (name, t) => name -> t.virtualType })))
 
-    InferPType(ir, Env.empty[PType])
+    InferPType(ir)
 
     val returnType = ir.pType
     val fb = EmitFunctionBuilder[F](ctx, "CompiledWithAggs",
@@ -197,9 +194,9 @@ object CompileIterator {
     val eltRegion = outerRegion.createChildRegion(stepF)
     val emitter = new Emit(ctx, stepFECB)
 
-    val ir = LoweringPipeline.compileLowerer(true)(ctx, body).asInstanceOf[IR].noSharing
+    val ir = Pass2.precompile.runAny(ctx, body).asInstanceOf[IR].noSharing
     TypeCheck(ir)
-    InferPType(ir, Env.empty[PType])
+    InferPType(ir)
     val returnType = ir.pType.asInstanceOf[PStream].elementType.asInstanceOf[PStruct].setRequired(true)
 
     val optStream = EmitStream.emit(ctx, emitter, ir, stepF, outerRegion, Env.empty, None)

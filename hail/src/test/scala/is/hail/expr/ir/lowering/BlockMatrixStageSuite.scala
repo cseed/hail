@@ -1,16 +1,13 @@
 package is.hail.expr.ir.lowering
 
-import is.hail.{ExecStrategy, HailSuite}
+import is.hail.HailSuite
 import is.hail.expr.ir._
 import is.hail.types.virtual._
 import is.hail.TestUtils._
-import is.hail.types.BlockMatrixSparsity
 import is.hail.utils._
 import org.testng.annotations.Test
 
 class BlockMatrixStageSuite extends HailSuite {
-
-  private[this] implicit val execStrats: Set[ExecStrategy.ExecStrategy] = ExecStrategy.compileOnly
 
   def collected(
     ctxs: Array[((Int, Int), IR)],

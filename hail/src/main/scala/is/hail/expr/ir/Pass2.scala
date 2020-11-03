@@ -3,10 +3,11 @@ package is.hail.expr.ir
 import java.io.OutputStream
 
 import is.hail.HailContext
-import is.hail.annotations.Region
+import is.hail.annotations.{Annotation, Region, UnsafeRow}
 import is.hail.asm4s._
 import is.hail.expr.ir.agg.Extract
 import is.hail.expr.ir.lowering.{DArrayLowering, LowerToCDA, LowererUnsupportedOperation}
+import is.hail.linalg.BlockMatrix
 import is.hail.types.physical.{PTuple, PType}
 import is.hail.types.virtual.TVoid
 import is.hail.utils._
@@ -34,8 +35,24 @@ object RawValuePass2Type extends Pass2Type {
   def dump(t: BaseRawValue, os: OutputStream): Unit = ???
 }
 
+case class UnsafeValue(v: Any)
+
+object UnsafeValuePass2Type extends Pass2Type {
+  type T = UnsafeValue
+
+  def dump(v: UnsafeValue, os: OutputStream): Unit = ???
+}
+
+case class SafeValue(v: Any)
+
+object SafeValuePass2Type extends Pass2Type {
+  type T = SafeValue
+
+  def dump(v: SafeValue, os: OutputStream): Unit = ???
+}
+
 object Pass2 {
-  val optimize: Pass2 = new IteratedOptimizePass2(new SequencePass2(FastIndexedSeq(
+  val optimizePass: Pass2 = new IteratedOptimizePass2(new SequencePass2(FastIndexedSeq(
     FoldConstantsPass2,
     ExtractIntervalFiltersPass2,
     SimplifyPass2,
@@ -43,18 +60,52 @@ object Pass2 {
     ForwardRelationalLetsPass2,
     PruneDeadFieldsPass2)))
 
-  val compileAndExecute: Pass2 = new SequencePass2(FastIndexedSeq(
-    InlineApplyIRPass2,
-    LowerArrayAggsToRunAggsPass2,
-    optimize,
-    CompileAndExecutePass2
-  ))
+  val precompile: Pass2 = new SequencePass2(FastIndexedSeq(
+      InlineApplyIRPass2,
+      LowerArrayAggsToRunAggsPass2,
+      optimizePass))
 
-  val default: Pass2 =
+  val compileAndExecute: Pass2 = new SequencePass2(FastIndexedSeq(
+    precompile,
+    CompileAndExecutePass2))
+
+  val relational: Pass2 =
     new SequencePass2(FastIndexedSeq(
-      optimize,
+      optimizePass,
       LowerMatrixPass2,
-      optimize,
+      optimizePass,
+      InterpretNonCompilablePass2,
+      optimizePass))
+
+  val interpret: Pass2 =
+    new SequencePass2(FastIndexedSeq(
+      optimizePass,
+      LowerMatrixPass2,
+      optimizePass,
+      InterpretPass2))
+
+  val compile: Pass2 =
+    new SequencePass2(FastIndexedSeq(
+      optimizePass,
+      LowerMatrixPass2,
+      optimizePass,
+      InterpretNonCompilablePass2,
+      compileAndExecute))
+
+  val lower: Pass2 =
+    new SequencePass2(FastIndexedSeq(
+      optimizePass,
+      LowerMatrixPass2,
+      optimizePass,
+      LiftRelationalValuesToRelationalLetsPass2,
+      LowerToCDAPass2,
+      compileAndExecute))
+
+  val lowerFallbackCompile: Pass2 =
+    new SequencePass2(FastIndexedSeq(
+      optimizePass,
+      LowerMatrixPass2,
+      optimizePass,
       new TryLowering(
         new SequencePass2(FastIndexedSeq(
           LiftRelationalValuesToRelationalLetsPass2,
@@ -63,6 +114,44 @@ object Pass2 {
         new SequencePass2(FastIndexedSeq(
           InterpretNonCompilablePass2,
           compileAndExecute)))))
+
+  // Top-level entrypoints.  These entrypoints fully optimize,
+  // lower, compile and execute entire IRs.
+  def executeTable(ctx: ExecuteContext, tir: TableIR): TableValue = {
+    relational.runAny(ctx, tir).asInstanceOf[TableIR].execute(ctx)
+  }
+
+  def executeMatrix(ctx: ExecuteContext, mir: MatrixIR): TableValue = {
+    relational.runAny(ctx, mir).asInstanceOf[TableIR].execute(ctx)
+  }
+
+  def executeBlockMatrix(ctx: ExecuteContext, bmir: BlockMatrixIR): BlockMatrix = {
+    relational.runAny(ctx, bmir).asInstanceOf[BlockMatrixIR].execute(ctx)
+  }
+
+  def executeRaw(ctx: ExecuteContext, ir: IR): (PTuple, Long) = {
+    val RawValue(pt, a) = compile.runAny(ctx, ir)
+    (pt, a)
+  }
+
+  def executeUnsafe(ctx: ExecuteContext, ir: IR): Any = {
+    val (pt, a) = executeRaw(ctx, ir)
+    new UnsafeRow(pt, null, a).get(0)
+  }
+
+  def executeSafe(ctx: ExecuteContext, ir: IR): Any =
+    Annotation.copy(ir.typ, executeUnsafe(ctx, ir))
+
+  def lowerAndExecuteSafe(ctx: ExecuteContext, ir: IR): Any = {
+    val RawValue(pt, a) = lower.runAny(ctx, ir)
+    Annotation.copy(ir.typ, new UnsafeRow(pt, null, a).get(0))
+  }
+
+  def interpret(ctx: ExecuteContext, ir: IR): Any =
+    interpret.runAny(ctx, ir)
+
+  // FIXME entrypoint for calling back during execution
+  // FIXME entrypoint for just compiling IR
 }
 
 abstract class Pass2 {
@@ -98,7 +187,7 @@ class SequencePass2(passes: IndexedSeq[Pass2]) extends Pass2 {
 
   val inT: Pass2Type = passes(0).inT
 
-  val outT: Pass2Type = passes(0).outT
+  val outT: Pass2Type = passes.last.outT
 
   def run1(ctx: ExecuteContext, in: inT.T): outT.T = {
     var t: Any = in
@@ -181,11 +270,14 @@ class IteratedOptimizePass2(pass: Pass2) extends BaseIRPass2 {
         .asInstanceOf[BaseIR]
     }
     val maxIterations = HailContext.get.optimizerIterations
-    val i = 1
+    var i = 1
     while (i < maxIterations && prev != t) {
       prev = t
-      t = pass.runAny(ctx, t)
-        .asInstanceOf[BaseIR]
+      t = ctx.timer.time(i.toString) {
+        pass.runAny(ctx, t)
+          .asInstanceOf[BaseIR]
+      }
+      i += 1
     }
     t
   }
@@ -264,6 +356,17 @@ object LowerArrayAggsToRunAggsPass2 extends BaseIRPass2 {
 object InterpretNonCompilablePass2 extends BaseIRPass2 {
   def run2(ctx: ExecuteContext, in: BaseIR): BaseIR = {
     InterpretNonCompilable(ctx, in)
+  }
+}
+
+object InterpretPass2 extends Pass2 {
+  val inT: Pass2Type = BaseIRPass2Type
+
+  val outT: Pass2Type = SafeValuePass2Type
+
+  override def run1(ctx: ExecuteContext, in: inT.T): outT.T = {
+    val ir = in.asInstanceOf[IR]
+    Interpret(ctx, ir)
   }
 }
 

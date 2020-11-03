@@ -3,13 +3,11 @@ package is.hail.expr.ir
 import is.hail.TestUtils._
 import is.hail.types.virtual._
 import is.hail.utils._
-import is.hail.{ExecStrategy, HailSuite}
+import is.hail.HailSuite
 import org.apache.spark.sql.Row
 import org.testng.annotations.Test
 
 class IntervalSuite extends HailSuite {
-
-  implicit val execStrats = ExecStrategy.javaOnly
 
   val tpoint1 = TTuple(TInt32)
   val tinterval1 = TInterval(tpoint1)

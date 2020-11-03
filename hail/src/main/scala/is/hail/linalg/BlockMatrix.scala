@@ -12,7 +12,7 @@ import is.hail.backend.BroadcastValue
 import is.hail.backend.spark.SparkBackend
 import is.hail.utils._
 import is.hail.expr.Parser
-import is.hail.expr.ir.{CompileAndEvaluate, ExecuteContext, IR, TableValue}
+import is.hail.expr.ir.{ExecuteContext, IR, TableValue}
 import is.hail.types._
 import is.hail.types.physical.{PArray, PCanonicalArray, PCanonicalStruct, PFloat64, PFloat64Optional, PFloat64Required, PInt64, PInt64Optional, PInt64Required, PStruct}
 import is.hail.types.virtual._

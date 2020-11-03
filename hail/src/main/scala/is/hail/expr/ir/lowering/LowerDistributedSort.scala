@@ -14,12 +14,12 @@ object LowerDistributedSort {
     val numPartitions = stage.partitioner.numPartitions
     val collected = stage.collectWithGlobals(relationalLetsAbove)
 
-    val (resultPType: PStruct, f) = ctx.timer.time("LowerDistributedSort.localSort.compile")(Compile[AsmFunction1RegionLong](ctx,
+    val (resultPType: PStruct, f) = ctx.timer.time("LowerDistributedSort.localSort.compile")(Compile[AsmFunction1RegionLong]
+      (ctx,
       FastIndexedSeq(),
       FastIndexedSeq(classInfo[Region]), LongInfo,
       collected,
-      print = None,
-      optimize = true))
+      print = None))
 
     val fRunnable = ctx.timer.time("LowerDistributedSort.localSort.initialize")(f(0, ctx.r))
     val resultAddress = ctx.timer.time("LowerDistributedSort.localSort.run")(fRunnable(ctx.r))

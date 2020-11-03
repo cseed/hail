@@ -3,7 +3,7 @@ package is.hail.variant.vsm
 import is.hail.HailSuite
 import is.hail.annotations.BroadcastRow
 import is.hail.expr.ir
-import is.hail.expr.ir.{ExecuteContext, Interpret, MatrixAnnotateRowsTable, TableLiteral, TableRange, TableValue}
+import is.hail.expr.ir.{ExecuteContext, Interpret, MatrixAnnotateRowsTable, Pass2, TableLiteral, TableRange, TableValue}
 import is.hail.types._
 import is.hail.types.virtual.{TInt32, TStruct}
 import is.hail.rvd.RVD
@@ -16,18 +16,17 @@ class PartitioningSuite extends HailSuite {
     val t = TableLiteral(TableValue(ctx,
       typ, BroadcastRow.empty(ctx), RVD.empty(typ.canonicalRVDType)))
     val rangeReader = ir.MatrixRangeReader(100, 10, Some(10))
-    Interpret(
+    Pass2.executeMatrix(ctx,
       MatrixAnnotateRowsTable(
         ir.MatrixRead(rangeReader.fullMatrixType, false, false, rangeReader),
         t,
         "foo",
-        product = false),
-      ctx, optimize = false)
+        product = false))
       .rvd.count()
   }
 
   @Test def testEmptyRDDOrderedJoin() {
-    val tv = Interpret.apply(TableRange(100, 6), ctx)
+    val tv = Pass2.executeTable(ctx, TableRange(100, 6))
 
     val nonEmptyRVD = tv.rvd
     val rvdType = nonEmptyRVD.typ

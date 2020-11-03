@@ -2,52 +2,37 @@ package is.hail.expr.ir
 
 import is.hail.annotations._
 import is.hail.asm4s._
-import is.hail.expr.ir.lowering.LoweringPipeline
 import is.hail.types.physical.{PTuple, PType}
 import is.hail.types.virtual._
 import is.hail.io.BufferSpec
-import is.hail.linalg.BlockMatrix
 import is.hail.rvd.RVDContext
 import is.hail.utils._
-import is.hail.HailContext
 import org.apache.spark.sql.Row
 
+class InterpretUnsupportedOperation(msg: String = null) extends Exception(msg)
+
 object Interpret {
-  type Agg = (IndexedSeq[Row], TStruct)
-
-  def apply(tir: TableIR, ctx: ExecuteContext): TableValue =
-    apply(tir, ctx, optimize = true)
-
-  def apply(tir: TableIR, ctx: ExecuteContext, optimize: Boolean): TableValue = {
-    val lowered = LoweringPipeline.legacyRelationalLowerer(optimize)(ctx, tir).asInstanceOf[TableIR]
-    lowered.execute(ctx)
-  }
-
-  def apply(mir: MatrixIR, ctx: ExecuteContext, optimize: Boolean): TableValue = {
-    val lowered = LoweringPipeline.legacyRelationalLowerer(optimize)(ctx, mir).asInstanceOf[TableIR]
-    lowered.execute(ctx)
-  }
-
-  def apply(bmir: BlockMatrixIR, ctx: ExecuteContext, optimize: Boolean): BlockMatrix = {
-    val lowered = LoweringPipeline.legacyRelationalLowerer(optimize)(ctx, bmir).asInstanceOf[BlockMatrixIR]
-    lowered.execute(ctx)
-  }
-
   def apply[T](ctx: ExecuteContext, ir: IR): T = apply(ctx, ir, Env.empty[(Any, Type)], FastIndexedSeq[(Any, Type)]()).asInstanceOf[T]
 
+  def substArgs(x: IR, args: IndexedSeq[(Any, Type)]): IR = {
+    RewriteBottomUp(x, {
+      case x@In(i, _) =>
+        val (v, t) = args(i)
+        assert(x.typ == t)
+        Some(Literal.coerce(t, v))
+      case _ => None
+    })
+      .asInstanceOf[IR]
+  }
+
   def apply[T](ctx: ExecuteContext,
-    ir0: IR,
+    ir: IR,
     env: Env[(Any, Type)],
     args: IndexedSeq[(Any, Type)],
     optimize: Boolean = true
   ): T = {
-    val rwIR = env.m.foldLeft[IR](ir0) { case (acc, (k, (value, t))) => Let(k, Literal.coerce(t, value), acc) }
-
-    val lowered = LoweringPipeline.relationalLowerer(optimize).apply(ctx, rwIR).asInstanceOf[IR]
-
-    val result = run(ctx, lowered, Env.empty[Any], args, Memo.empty).asInstanceOf[T]
-
-    result
+    val closed = env.m.foldLeft[IR](substArgs(ir, args)) { case (acc, (k, (value, t))) => Let(k, Literal.coerce(t, value), acc) }
+    run(ctx, closed, Env.empty[Any], args, Memo.empty).asInstanceOf[T]
   }
 
   def alreadyLowered(ctx: ExecuteContext, ir: IR): Any = run(ctx, ir, Env.empty, FastIndexedSeq(), Memo.empty)
@@ -786,8 +771,7 @@ object Interpret {
             val (rt, makeFunction) = Compile[AsmFunction2RegionLongLong](ctx,
               FastIndexedSeq(("in", argTuple)),
               FastIndexedSeq(classInfo[Region], LongInfo), LongInfo,
-              MakeTuple.ordered(FastSeq(wrappedIR)),
-              optimize = false)
+              MakeTuple.ordered(FastSeq(wrappedIR)))
             (rt, makeFunction(0, region))
           })
           val rvb = new RegionValueBuilder()
@@ -961,13 +945,14 @@ object Interpret {
         val (rt, makeFunction) = Compile[AsmFunction1RegionLong](ctx,
           FastIndexedSeq(),
           FastIndexedSeq(classInfo[Region]), LongInfo,
-          MakeTuple.ordered(FastSeq(child)),
-          optimize = false)
+          MakeTuple.ordered(FastSeq(child)))
         Region.scoped { r =>
           SafeRow.read(rt, makeFunction(0, r)(r)).asInstanceOf[Row](0)
         }
       case UUID4(_) =>
          uuid4()
+      case _ =>
+        throw new InterpretUnsupportedOperation
     }
   }
 }

@@ -44,7 +44,6 @@ sealed trait IR extends BaseIR {
     Copy(this, newChildren)
 
   override def deepCopy(): this.type = {
-
     val cp = super.deepCopy()
     if (_typ != null)
       cp._typ = _typ
@@ -473,7 +472,6 @@ object ApplyAggOp {
 }
 
 final case class ApplyAggOp(initOpArgs: IndexedSeq[IR], seqOpArgs: IndexedSeq[IR], aggSig: AggSignature) extends IR {
-
   def nSeqOpArgs = seqOpArgs.length
 
   def nInitArgs = initOpArgs.length

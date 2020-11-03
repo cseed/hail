@@ -1,6 +1,6 @@
 package is.hail.expr.ir
 
-import is.hail.{ExecStrategy, HailSuite}
+import is.hail.HailSuite
 import is.hail.types.virtual._
 import is.hail.TestUtils._
 import is.hail.utils._
@@ -8,8 +8,6 @@ import org.apache.spark.sql.Row
 import org.testng.annotations.Test
 
 class ArrayDeforestationSuite extends HailSuite {
-  implicit val execStrats = ExecStrategy.values
-
   def primitiveArrayNoRegion(len: IR): IR =
     ToArray(StreamMap(
       StreamRange(0, len, 1),

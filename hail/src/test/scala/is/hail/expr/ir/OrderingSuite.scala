@@ -1,12 +1,10 @@
 package is.hail.expr.ir
 
-import is.hail.ExecStrategy
 import is.hail.HailSuite
 import is.hail.annotations._
 import is.hail.check.{Gen, Prop}
 import is.hail.asm4s._
 import is.hail.TestUtils._
-import is.hail.rvd.RVDType
 import is.hail.types.physical._
 import is.hail.types.virtual._
 import is.hail.utils._
@@ -14,8 +12,6 @@ import org.apache.spark.sql.Row
 import org.testng.annotations.{DataProvider, Test}
 
 class OrderingSuite extends HailSuite {
-
-  implicit val execStrats = ExecStrategy.values
 
   def recursiveSize(t: Type): Int = {
     val inner = t match {
@@ -325,7 +321,6 @@ class OrderingSuite extends HailSuite {
   }
 
   @Test def testSortOnRandomArray() {
-    implicit val execStrats = ExecStrategy.javaOnly
     val compareGen = for {
       elt <- Type.genArb
       a <- TArray(elt).genNonmissingValue
@@ -342,7 +337,6 @@ class OrderingSuite extends HailSuite {
   }
 
   def testToSetOnRandomDuplicatedArray() {
-    implicit val execStrats = ExecStrategy.javaOnly
     val compareGen = for {
       elt <- Type.genArb
       a <- TArray(elt).genNonmissingValue
@@ -358,7 +352,6 @@ class OrderingSuite extends HailSuite {
   }
 
   def testToDictOnRandomDuplicatedArray() {
-    implicit val execStrats = ExecStrategy.javaOnly
     val compareGen = for {
       kt <- Type.genArb
       vt <- Type.genArb
@@ -380,7 +373,6 @@ class OrderingSuite extends HailSuite {
   }
 
   @Test def testSortOnMissingArray() {
-    implicit val execStrats = ExecStrategy.javaOnly
     val ts = TStream(TStruct("key" -> TInt32, "value" -> TInt32))
     val irs: Array[IR => IR] = Array(ArraySort(_, True()), ToSet(_), ToDict(_))
 
@@ -388,7 +380,6 @@ class OrderingSuite extends HailSuite {
   }
 
   @Test def testSetContainsOnRandomSet() {
-    implicit val execStrats = ExecStrategy.javaOnly
     val compareGen = Type.genArb
       .flatMap(t => Gen.zip(Gen.const(TSet(t)), TSet(t).genNonmissingValue, t.genValue))
     val p = Prop.forAll(compareGen) { case (tset: TSet, set: Set[Any]@unchecked, test1) =>
@@ -411,8 +402,6 @@ class OrderingSuite extends HailSuite {
   }
 
   def testDictGetOnRandomDict() {
-    implicit val execStrats = ExecStrategy.javaOnly
-
     val compareGen = Gen.zip(Type.genArb, Type.genArb).flatMap {
       case (k, v) =>
         Gen.zip(Gen.const(TDict(k, v)), TDict(k, v).genNonmissingValue, k.genNonmissingValue)
@@ -534,7 +523,6 @@ class OrderingSuite extends HailSuite {
   }
 
   @Test def testContainsWithArrayFold() {
-    implicit val execStrats = ExecStrategy.javaOnly
     val set1 = ToSet(MakeStream(Seq(I32(1), I32(4)), TStream(TInt32)))
     val set2 = ToSet(MakeStream(Seq(I32(9), I32(1), I32(4)), TStream(TInt32)))
     assertEvalsTo(StreamFold(ToStream(set1), True(), "accumulator", "setelt",

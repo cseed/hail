@@ -6,18 +6,17 @@ import is.hail.utils._
 import scala.collection.mutable
 
 object InterpretNonCompilable {
-
   def apply(ctx: ExecuteContext, ir: BaseIR): BaseIR = {
-
     def interpretAndCoerce(value: IR): IR = {
       val preTime = System.nanoTime()
       log.info(s"interpreting non compilable node: ${ value.getClass.getSimpleName }")
 
       val v = Interpret.alreadyLowered(ctx, value)
       log.info(s"took ${ formatTime(System.nanoTime() - preTime) }")
-      if (value.typ == TVoid) {
+      if (value.typ == TVoid)
         Begin(FastIndexedSeq())
-      } else Literal.coerce(value.typ, v)
+      else
+        Literal.coerce(value.typ, v)
     }
 
     def rewriteChildren(x: BaseIR, m: mutable.Map[String, IR]): BaseIR = {
@@ -31,9 +30,7 @@ object InterpretNonCompilable {
         x.copy(newChildren)
     }
 
-
     def rewrite(x: BaseIR, m: mutable.Map[String, IR]): BaseIR = {
-
       x match {
         case RelationalLet(name, value, body) =>
           rewrite(body, m += (name -> interpretAndCoerce(rewrite(value, m).asInstanceOf[IR])))

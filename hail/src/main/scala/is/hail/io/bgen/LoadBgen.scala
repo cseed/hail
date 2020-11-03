@@ -4,7 +4,7 @@ import is.hail.HailContext
 import is.hail.backend.BroadcastValue
 import is.hail.backend.spark.SparkBackend
 import is.hail.expr.ir
-import is.hail.expr.ir.{ExecuteContext, IRParser, IRParserEnvironment, Interpret, MatrixHybridReader, Pretty, TableIR, TableRead, TableValue}
+import is.hail.expr.ir.{ExecuteContext, IRParser, IRParserEnvironment, Interpret, MatrixHybridReader, Pass2, Pretty, TableIR, TableRead, TableValue}
 import is.hail.types._
 import is.hail.types.physical.{PCanonicalStruct, PStruct, PType}
 import is.hail.types.virtual._
@@ -371,7 +371,7 @@ object MatrixBGENReader {
         assert(rowType.isPrefixOf(fullMatrixType.rowKeyStruct))
         assert(rowType.types.nonEmpty)
 
-        val rvd = Interpret(ir.TableDistinct(variantsTableIR), ctx).rvd
+        val rvd = Pass2.executeTable(ctx, ir.TableDistinct(variantsTableIR)).rvd
 
         val repartitioned = RepartitionedOrderedRDD2(rvd, partitionRangeBounds.map(_.coarsen(rowType.types.length)))
           .toRows(rvd.rowPType)

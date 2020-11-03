@@ -299,14 +299,7 @@ object LoweredTableReader {
                       "minkey")))))),
           "sortedPartData" -> Ref("sortedPartData", sortedPartDataIR.typ))))
 
-    val (resultPType, f) = Compile[AsmFunction1RegionLong](ctx,
-      FastIndexedSeq[(String, PType)](),
-      FastIndexedSeq[TypeInfo[_]](classInfo[Region]), LongInfo,
-      summary,
-      optimize = true)
-
-    val a = f(0, ctx.r)(ctx.r)
-    val s = SafeRow(resultPType.asInstanceOf[PStruct], a)
+    val s = Pass2.executeSafe(ctx, summary).asInstanceOf[Row]
 
     val ksorted = s.getBoolean(0)
     val pksorted = s.getBoolean(1)
@@ -1122,8 +1115,8 @@ case class TableParallelize(rowsAndGlobal: IR, nPartitions: Option[Int] = None) 
     globalsType)
 
   protected[ir] override def execute(ctx: ExecuteContext): TableValue = {
-    val (ptype: PStruct, res) = CompileAndEvaluate._apply(ctx, rowsAndGlobal, optimize = false) match {
-      case Right((t: PTuple, off)) => (t.fields(0).typ, t.loadField(off, 0))
+    val (ptype: PStruct, res) = Pass2.executeRaw(ctx, rowsAndGlobal) match {
+      case (t: PTuple, off) => (t.fields(0).typ, t.loadField(off, 0))
     }
 
     val globalsT = ptype.types(1).asInstanceOf[PStruct]
@@ -2780,7 +2773,7 @@ case class BlockMatrixToTableApply(
 
   protected[ir] override def execute(ctx: ExecuteContext): TableValue = {
     val b = bm.execute(ctx)
-    val a = CompileAndEvaluate[Any](ctx, aux, optimize = false)
+    val a = Pass2.executeSafe(ctx, aux)
     function.execute(ctx, b, a)
   }
 }

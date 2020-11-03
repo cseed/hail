@@ -6,7 +6,7 @@ import is.hail.check.Arbitrary._
 import is.hail.check.Gen._
 import is.hail.check.Prop._
 import is.hail.check._
-import is.hail.expr.ir.{CompileAndEvaluate, GetField, TableCollect, TableLiteral}
+import is.hail.expr.ir.{GetField, Pass2, TableCollect, TableLiteral}
 import is.hail.types.virtual.{TFloat64, TInt64, TStruct}
 import is.hail.linalg.BlockMatrix.ops._
 import is.hail.utils._
@@ -742,8 +742,8 @@ class BlockMatrixSuite extends HailSuite {
     for {blockSize <- Seq(1, 4, 10)} {
       val entriesLiteral = TableLiteral(toBM(lm, blockSize).entriesTable(ctx))
       assert(entriesLiteral.typ.rowType == expectedSignature)
-      val rows = CompileAndEvaluate[IndexedSeq[Row]](ctx,
-        GetField(TableCollect(entriesLiteral), "rows"))
+      val rows = Pass2.executeSafe(ctx, GetField(TableCollect(entriesLiteral), "rows"))
+        .asInstanceOf[IndexedSeq[Row]]
       val entries = rows.map(row => (row.get(0), row.get(1), row.get(2))).toSet
       // block size affects order of rows in table, but sets will be the same
       assert(entries === expectedEntries)
@@ -756,10 +756,11 @@ class BlockMatrixSuite extends HailSuite {
     val lm = new BDM[Double](5, 10, data)
     val bm = toBM(lm, blockSize = 2)
 
-    val rows = CompileAndEvaluate[IndexedSeq[Row]](ctx, GetField(TableCollect(TableLiteral(bm
+    val rows = Pass2.executeSafe(ctx, GetField(TableCollect(TableLiteral(bm
       .filterBlocks(Array(0, 1, 6))
       .entriesTable(ctx))),
       "rows"))
+      .asInstanceOf[IndexedSeq[Row]]
     val expected = rows
       .sortBy(r => (r.get(0).asInstanceOf[Long], r.get(1).asInstanceOf[Long]))
       .map(r => r.get(2).asInstanceOf[Double])

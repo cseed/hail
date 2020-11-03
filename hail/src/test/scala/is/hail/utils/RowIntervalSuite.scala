@@ -1,6 +1,6 @@
 package is.hail.utils
 
-import is.hail.{ExecStrategy, HailSuite}
+import is.hail.HailSuite
 import is.hail.annotations.Region
 import is.hail.types.virtual.{TBoolean, TInt32, TStruct, TTuple}
 import is.hail.rvd.{PartitionBoundOrdering, RVDPartitioner}
@@ -32,7 +32,7 @@ class RowIntervalSuite extends HailSuite {
     assertEvalsTo(
       ir.invoke("partitionIntervalContains", TBoolean, in1, in2),
       args = FastIndexedSeq((intervalIRRep, irRepIntervalType), (point, tt)),
-      shouldContain)(ExecStrategy.compileOnly)
+      shouldContain)
   }
 
   @Test def testContains() {

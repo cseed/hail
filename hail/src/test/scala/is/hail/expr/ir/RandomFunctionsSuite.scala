@@ -7,7 +7,7 @@ import is.hail.expr.ir.functions.{IRRandomness, RegistryFunctions}
 import is.hail.types.physical.{PInt32, PInt64}
 import is.hail.types.virtual.{TArray, TFloat64, TInt32, TInt64, TStream}
 import is.hail.utils._
-import is.hail.{ExecStrategy, HailContext, HailSuite}
+import is.hail.HailSuite
 import org.apache.spark.sql.Row
 import org.testng.annotations.{BeforeClass, Test}
 
@@ -51,8 +51,6 @@ object TestRandomFunctions extends RegistryFunctions {
 
 class RandomFunctionsSuite extends HailSuite {
 
-  implicit val execStrats = ExecStrategy.javaOnly
-
   def counter = ApplySeeded("counter_seeded", FastSeq(), 0L, TInt32)
   val partitionIdx = ApplySeeded("pi_seeded", FastSeq(), 0L, TInt32)
 
@@ -68,7 +66,7 @@ class RandomFunctionsSuite extends HailSuite {
   }
 
   @Test def testRandomAcrossJoins() {
-    def asArray(ir: TableIR) = Interpret(ir, ctx).rdd.collect()
+    def asArray(ir: TableIR) = Pass2.executeTable(ctx, ir).rdd.collect()
 
     val joined = TableJoin(
       mapped2(10, 4),
@@ -85,7 +83,7 @@ class RandomFunctionsSuite extends HailSuite {
   }
 
   @Test def testRepartitioningAfterRandomness() {
-    val mapped = Interpret(mapped2(15, 4), ctx).rvd
+    val mapped = Pass2.executeTable(ctx, mapped2(15, 4)).rvd
     val newRangeBounds = FastIndexedSeq(
       Interval(Row(0), Row(4), true, true),
       Interval(Row(4), Row(10), false, true),
@@ -135,8 +133,8 @@ class RandomFunctionsSuite extends HailSuite {
           "pi" -> partitionIdx,
           "counter" -> counter)))
 
-    val expected = Interpret(tir, ctx).rvd.toRows.collect()
-    val actual = CompileAndEvaluate[IndexedSeq[Row]](ctx, GetField(collect(tir), "rows"), false)
+    val expected = Pass2.executeTable(ctx, tir).rvd.toRows.collect()
+    val actual = Pass2.executeSafe(ctx, GetField(collect(tir), "rows")).asInstanceOf[IndexedSeq[Row]]
 
     assert(expected.sameElements(actual))
   }

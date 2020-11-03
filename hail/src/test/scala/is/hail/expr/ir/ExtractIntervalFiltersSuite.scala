@@ -4,7 +4,7 @@ import is.hail.TestUtils._
 import is.hail.types.virtual._
 import is.hail.utils.{FastIndexedSeq, FastSeq, Interval, IntervalEndpoint}
 import is.hail.variant.{Locus, ReferenceGenome}
-import is.hail.{ExecStrategy, HailSuite}
+import is.hail.HailSuite
 import org.apache.spark.sql.Row
 import org.testng.annotations.Test
 
@@ -330,6 +330,6 @@ class ExtractIntervalFiltersSuite extends HailSuite {
       ), False())))
 
     assert(ExtractIntervalFilters(tf).asInstanceOf[TableFilter].child.isInstanceOf[TableFilterIntervals])
-    assertEvalsTo(TableCount(tf), 6L)(ExecStrategy.interpretOnly)
+    assertEvalsTo(TableCount(tf), 6L)
   }
 }

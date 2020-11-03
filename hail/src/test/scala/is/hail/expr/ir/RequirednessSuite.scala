@@ -493,7 +493,8 @@ class RequirednessSuite extends HailSuite {
     ), None)
 
     val path = ctx.createTmpPath("test-table-requiredness", "ht")
-    CompileAndEvaluate[Unit](ctx, TableWrite(table, TableNativeWriter(path, overwrite = true)), false)
+
+    Pass2.executeRaw(ctx, TableWrite(table, TableNativeWriter(path, overwrite = true)))
 
     val reader = TableNativeReader(fs, TableNativeReaderParameters(path, None))
     for (rType <- Array(table.typ,

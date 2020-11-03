@@ -1808,7 +1808,9 @@ object IRParser {
         punctuation(it, ")")
         ir_value_expr(env)(it).map { ir =>
           val Row(starts: IndexedSeq[Long @unchecked], stops: IndexedSeq[Long @unchecked]) =
-            ExecuteContext.scoped() { ctx => CompileAndEvaluate[Row](ctx, ir) }
+            ExecuteContext.scoped() { ctx =>
+              Pass2.executeSafe(ctx, ir)
+            }
           RowIntervalSparsifier(blocksOnly, starts, stops)
         }
       case "PyBandSparsifier" =>
@@ -1816,21 +1818,25 @@ object IRParser {
         punctuation(it, ")")
         ir_value_expr(env)(it).map { ir =>
           val Row(l: Long, u: Long) =
-            ExecuteContext.scoped() { ctx => CompileAndEvaluate[Row](ctx, ir) }
+            ExecuteContext.scoped() { ctx =>
+              Pass2.executeSafe(ctx, ir)
+            }
           BandSparsifier(blocksOnly, l, u)
         }
       case "PyPerBlockSparsifier" =>
         punctuation(it, ")")
         ir_value_expr(env)(it).map { ir =>
-          val indices: IndexedSeq[Int] =
-            ExecuteContext.scoped() { ctx => CompileAndEvaluate[IndexedSeq[Int]](ctx, ir) }
+          val indices: IndexedSeq[Int] = ExecuteContext.scoped() { ctx =>
+              Pass2.executeSafe(ctx, ir).asInstanceOf[IndexedSeq[Int]]
+            }
           PerBlockSparsifier(indices)
         }
       case "PyRectangleSparsifier" =>
         punctuation(it, ")")
         ir_value_expr(env)(it).map { ir =>
-          val rectangles: IndexedSeq[Long] =
-            ExecuteContext.scoped() { ctx => CompileAndEvaluate[IndexedSeq[Long]](ctx, ir) }
+          val rectangles: IndexedSeq[Long] = ExecuteContext.scoped() { ctx =>
+              Pass2.executeSafe(ctx, ir).asInstanceOf[IndexedSeq[Long]]
+            }
           RectangleSparsifier(rectangles.grouped(4).toIndexedSeq)
         }
       case "RowIntervalSparsifier" =>

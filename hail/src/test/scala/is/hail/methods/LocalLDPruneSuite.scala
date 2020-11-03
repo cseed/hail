@@ -4,7 +4,7 @@ import breeze.linalg.{Vector => BVector}
 import is.hail.annotations.{Annotation, Region, RegionValue, RegionValueBuilder}
 import is.hail.check.Prop._
 import is.hail.check.{Gen, Properties}
-import is.hail.expr.ir.{Interpret, MatrixValue, TableValue}
+import is.hail.expr.ir.{Interpret, MatrixValue, Pass2, TableValue}
 import is.hail.types._
 import is.hail.types.physical.{PStruct, PType}
 import is.hail.types.virtual.{TArray, TString, TStruct}
@@ -138,8 +138,8 @@ object LocalLDPruneSuite {
 class LocalLDPruneSuite extends HailSuite {
   val memoryPerCoreBytes = 256 * 1024 * 1024
   val nCores = 4
-  lazy val mt = Interpret(TestUtils.importVCF(ctx, "src/test/resources/sample.vcf.bgz", nPartitions = Option(10)),
-    ctx, false).toMatrixValue(Array("s"))
+  lazy val mt = Pass2.executeMatrix(ctx, TestUtils.importVCF(ctx, "src/test/resources/sample.vcf.bgz", nPartitions = Option(10)))
+    .toMatrixValue(Array("s"))
 
   lazy val maxQueueSize = LocalLDPruneSuite.estimateMemoryRequirements(
     mt.rvd.count(),

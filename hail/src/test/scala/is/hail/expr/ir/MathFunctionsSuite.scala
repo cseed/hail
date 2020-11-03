@@ -1,10 +1,9 @@
 package is.hail.expr.ir
 
-import is.hail.{ExecStrategy, HailSuite, stats}
+import is.hail.{HailSuite, stats}
 import is.hail.types._
 import is.hail.utils._
 import is.hail.TestUtils._
-import is.hail.expr.ir.functions.MathFunctions
 import is.hail.types.virtual._
 import org.apache.spark.sql.Row
 import org.testng.annotations.{DataProvider, Test}
@@ -12,13 +11,10 @@ import org.testng.annotations.{DataProvider, Test}
 
 class MathFunctionsSuite extends HailSuite {
   hc
-  implicit val execStrats = ExecStrategy.values
 
   val tfloat = TFloat64
 
   @Test def isnan() {
-    implicit val execStrats = ExecStrategy.javaOnly
-
     assertEvalsTo(invoke("isnan", TBoolean, F32(0)), false)
     assertEvalsTo(invoke("isnan", TBoolean, F32(Float.NaN)), true)
 
@@ -27,8 +23,6 @@ class MathFunctionsSuite extends HailSuite {
   }
 
   @Test def is_finite() {
-    implicit val execStrats = ExecStrategy.javaOnly
-
     assertEvalsTo(invoke("is_finite", TBoolean, F32(0)), expected = true)
     assertEvalsTo(invoke("is_finite", TBoolean, F32(Float.MaxValue)), expected = true)
     assertEvalsTo(invoke("is_finite", TBoolean, F32(Float.NaN)), expected = false)
@@ -43,8 +37,6 @@ class MathFunctionsSuite extends HailSuite {
   }
 
   @Test def is_infinite() {
-    implicit val execStrats = ExecStrategy.javaOnly
-
     assertEvalsTo(invoke("is_infinite", TBoolean, F32(0)), expected = false)
     assertEvalsTo(invoke("is_infinite", TBoolean, F32(Float.MaxValue)), expected = false)
     assertEvalsTo(invoke("is_infinite", TBoolean, F32(Float.NaN)), expected = false)
@@ -60,8 +52,6 @@ class MathFunctionsSuite extends HailSuite {
 
 
   @Test def sign() {
-    implicit val execStrats = ExecStrategy.javaOnly
-
     assertEvalsTo(invoke("sign", TInt32, I32(2)), 1)
     assertEvalsTo(invoke("sign", TInt32, I32(0)), 0)
     assertEvalsTo(invoke("sign", TInt32, I32(-2)), -1)
@@ -84,8 +74,6 @@ class MathFunctionsSuite extends HailSuite {
   }
 
   @Test def approxEqual() {
-    implicit val execStrats = ExecStrategy.javaOnly
-
     assertEvalsTo(invoke("approxEqual", TBoolean, F64(0.025), F64(0.0250000001), F64(1e-4), False(), False()), true)
     assertEvalsTo(invoke("approxEqual", TBoolean, F64(0.0154), F64(0.0156), F64(1e-4), True(), False()), false)
     assertEvalsTo(invoke("approxEqual", TBoolean, F64(0.0154), F64(0.0156), F64(1e-3), True(), False()), true)
@@ -97,8 +85,6 @@ class MathFunctionsSuite extends HailSuite {
   }
 
   @Test def entropy() {
-    implicit val execStrats = ExecStrategy.javaOnly
-
     assertEvalsTo(invoke("entropy", TFloat64, Str("")), 0.0)
     assertEvalsTo(invoke("entropy", TFloat64, Str("a")), 0.0)
     assertEvalsTo(invoke("entropy", TFloat64, Str("aa")), 0.0)
@@ -176,7 +162,6 @@ class MathFunctionsSuite extends HailSuite {
   }
 
   @Test def testMinMax() {
-    implicit val execStrats = ExecStrategy.javaOnly
     assertAllEvalTo(
       (invoke("min", TFloat32, F32(1.0f), F32(2.0f)), 1.0f),
       (invoke("max", TFloat32, F32(1.0f), F32(2.0f)), 2.0f),

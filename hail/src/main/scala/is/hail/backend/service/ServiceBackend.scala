@@ -7,8 +7,8 @@ import is.hail.annotations.{Region, UnsafeRow}
 import is.hail.asm4s._
 import is.hail.backend.{Backend, BackendContext, BroadcastValue}
 import is.hail.expr.JSONAnnotationImpex
-import is.hail.expr.ir.lowering.{DArrayLowering, LowerDistributedSort, LoweringPipeline, TableStage, TableStageDependency}
-import is.hail.expr.ir.{Compile, ExecuteContext, IR, IRParser, MakeTuple, SortField}
+import is.hail.expr.ir.lowering.{DArrayLowering, LowerDistributedSort, TableStage, TableStageDependency}
+import is.hail.expr.ir.{Compile, ExecuteContext, IR, IRParser, MakeTuple, Pass2, SortField}
 import is.hail.io.fs.GoogleStorageFS
 import is.hail.linalg.BlockMatrix
 import is.hail.services.batch_client.BatchClient
@@ -290,21 +290,10 @@ class ServiceBackend() extends Backend {
       ExecutionTimer.logTime("ServiceBackend.execute") { timer =>
         userContext(username, timer) { ctx =>
           ctx.backendContext = new ServiceBackendContext(username, sessionID, billingProject, bucket)
-
           var x = IRParser.parse_value_ir(ctx, code)
-          x = LoweringPipeline.darrayLowerer(true)(DArrayLowering.All).apply(ctx, x)
-            .asInstanceOf[IR]
-          val (pt, f) = Compile[AsmFunction1RegionLong](ctx,
-            FastIndexedSeq[(String, PType)](),
-            FastIndexedSeq[TypeInfo[_]](classInfo[Region]), LongInfo,
-            MakeTuple.ordered(FastIndexedSeq(x)),
-            optimize = true)
-
-          val a = f(0, ctx.r)(ctx.r)
-          val v = new UnsafeRow(pt.asInstanceOf[PBaseStruct], ctx.r, a)
-
+          val v = Pass2.executeUnsafe(ctx, x)
           JsonMethods.compact(
-            JObject(List("value" -> JSONAnnotationImpex.exportAnnotation(v.get(0), x.typ),
+            JObject(List("value" -> JSONAnnotationImpex.exportAnnotation(v, x.typ),
               "type" -> JString(x.typ.toString))))
         }
       }

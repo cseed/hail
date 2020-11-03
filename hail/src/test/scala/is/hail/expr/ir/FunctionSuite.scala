@@ -2,7 +2,7 @@ package is.hail.expr.ir
 
 import java.io.PrintWriter
 
-import is.hail.{ExecStrategy, HailSuite}
+import is.hail.HailSuite
 import is.hail.annotations._
 import is.hail.asm4s._
 import is.hail.expr.ir.functions.{IRFunctionRegistry, RegistryFunctions}
@@ -39,8 +39,6 @@ object TestRegisterFunctions extends RegistryFunctions {
 }
 
 class FunctionSuite extends HailSuite {
-
-  implicit val execStrats = ExecStrategy.javaOnly
   val region = Region()
 
   TestRegisterFunctions.registerAll()

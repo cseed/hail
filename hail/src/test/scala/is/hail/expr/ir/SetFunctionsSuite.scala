@@ -1,19 +1,15 @@
 package is.hail.expr.ir
 
-import is.hail.{ExecStrategy, HailSuite}
+import is.hail.HailSuite
 import is.hail.types._
 import is.hail.TestUtils._
 import is.hail.expr.ir.TestUtils._
 import is.hail.types.virtual._
-import is.hail.utils.FastSeq
 import org.testng.annotations.Test
-import org.scalatest.testng.TestNGSuite
 
 class SetFunctionsSuite extends HailSuite {
   val naa = NA(TArray(TInt32))
   val nas = NA(TSet(TInt32))
-
-  implicit val execStrats = ExecStrategy.javaOnly
 
   @Test def toSet() {
     assertEvalsTo(IRSet(3, 7), Set(3, 7))

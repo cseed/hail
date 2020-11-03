@@ -76,66 +76,13 @@ class LocalBackend(
 
   def stop(): Unit = LocalBackend.stop()
 
-  private[this] def _jvmLowerAndExecute(ctx: ExecuteContext, ir0: IR, print: Option[PrintWriter] = None): (PType, Long) = {
-    val ir = LoweringPipeline.darrayLowerer(true)(DArrayLowering.All).apply(ctx, ir0).asInstanceOf[IR]
-
-    if (!Compilable(ir))
-      throw new LowererUnsupportedOperation(s"lowered to uncompilable IR: ${ Pretty(ir) }")
-
-    if (ir.typ == TVoid) {
-      val (pt, f) = ctx.timer.time("Compile") {
-        Compile[AsmFunction1RegionUnit](ctx,
-          FastIndexedSeq[(String, PType)](),
-          FastIndexedSeq(classInfo[Region]), UnitInfo,
-          ir,
-          print = print)
-      }
-
-      ctx.timer.time("Run") {
-        f(0, ctx.r).apply(ctx.r)
-        (pt, 0)
-      }
-    } else {
-      val (pt, f) = ctx.timer.time("Compile") {
-        Compile[AsmFunction1RegionLong](ctx,
-          FastIndexedSeq[(String, PType)](),
-          FastIndexedSeq(classInfo[Region]), LongInfo,
-          MakeTuple.ordered(FastSeq(ir)),
-          print = print)
-      }
-
-      ctx.timer.time("Run") {
-        (pt, f(0, ctx.r).apply(ctx.r))
-      }
-    }
-  }
-
-  private[this] def _execute(ctx: ExecuteContext, ir: IR): (PType, Long) = {
-    TypeCheck(ir)
-    Validate(ir)
-    _jvmLowerAndExecute(ctx, ir)
-  }
-
-  def execute(timer: ExecutionTimer, ir: IR): Any =
-    withExecuteContext(timer) { ctx =>
-      val queryID = Backend.nextID()
-      log.info(s"starting execution of query $queryID of initial size ${ IRSize(ir) }")
-      val (pt, a) = _execute(ctx, ir)
-      log.info(s"finished execution of query $queryID")
-      val result = pt match {
-        case PVoid =>
-          (null, ctx.timer)
-        case pt: PTuple =>
-          (SafeRow(pt, a).get(0), ctx.timer)
-      }
-      result
-    }
-
   def executeJSON(ir: IR): String = {
     val (jsonValue, timer) = ExecutionTimer.time("LocalBackend.executeJSON") { timer =>
       val t = ir.typ
-      val (value, timings) = execute(timer, ir)
-      JsonMethods.compact(JSONAnnotationImpex.exportAnnotation(value, t))
+      withExecuteContext(timer) { ctx =>
+        val value = Pass2.executeUnsafe(ctx, ir)
+        JsonMethods.compact(JSONAnnotationImpex.exportAnnotation(value, t))
+      }
     }
     timer.logInfo()
     Serialization.write(Map("value" -> jsonValue, "timings" -> timer.toMap))(new DefaultFormats {})
@@ -143,10 +90,11 @@ class LocalBackend(
 
   def executeLiteral(ir: IR): IR = {
     ExecutionTimer.logTime("LocalBackend.executeLiteral") { timer =>
-      val t = ir.typ
-      assert(t.isRealizable)
-      val (value, timings) = execute(timer, ir)
-      Literal.coerce(t, value)
+      withExecuteContext(timer) { ctx =>
+        val t = ir.typ
+        assert(t.isRealizable)
+        Literal.coerce(t, Pass2.executeSafe(ctx, ir))
+      }
     }
   }
 
@@ -155,7 +103,7 @@ class LocalBackend(
       val bs = BufferSpec.parseOrDefault(bufferSpecString)
       withExecuteContext(timer) { ctx =>
         assert(ir.typ != TVoid)
-        val (pt: PTuple, a) = _execute(ctx, ir)
+        val (pt: PTuple, a) = Pass2.executeRaw(ctx, ir)
         assert(pt.size == 1)
         val elementType = pt.fields(0).typ
         val codec = TypedCodecSpec(

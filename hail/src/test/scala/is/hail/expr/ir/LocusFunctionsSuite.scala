@@ -1,9 +1,7 @@
 package is.hail.expr.ir
 
-import is.hail.ExecStrategy
 import is.hail.HailSuite
-import is.hail.TestUtils.assertEvalsTo
-import is.hail.types.physical.{PCanonicalLocus, PInterval}
+import is.hail.TestUtils._
 import is.hail.types.virtual._
 import is.hail.utils.{FastIndexedSeq, FastSeq, Interval}
 import is.hail.variant.{Locus, ReferenceGenome}
@@ -11,8 +9,6 @@ import org.apache.spark.sql.Row
 import org.testng.annotations.Test
 
 class LocusFunctionsSuite extends HailSuite {
-
-  implicit val execStrats = ExecStrategy.javaOnly
 
   private def grch38: ReferenceGenome = ReferenceGenome.GRCh38
   private def tlocus = TLocus(grch38)
@@ -74,8 +70,6 @@ class LocusFunctionsSuite extends HailSuite {
   }
 
   @Test def testMultipleReferenceGenomes() {
-    implicit val execStrats = ExecStrategy.compileOnly
-
     val ir = MakeTuple.ordered(FastSeq(
       invoke("Locus", TLocus(ReferenceGenome.GRCh37), Str("1"), I32(1)),
       invoke("Locus", TLocus(ReferenceGenome.GRCh38), Str("chr1"), I32(1))))

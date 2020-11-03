@@ -22,7 +22,6 @@ object Subst {
             .iterator
             .zipWithIndex
             .map { case (child: IR, i) =>
-
               val childEnv = ChildEnvWithoutBindings(e, i, env)
               val newBindings = NewBindings(e, i, childEnv)
               subst(child, childEnv.subtract(newBindings))

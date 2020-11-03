@@ -1,6 +1,6 @@
 package is.hail.expr.ir
 
-import is.hail.{ExecStrategy, HailSuite}
+import is.hail.HailSuite
 import is.hail.types.virtual.TInt64
 import is.hail.utils.FastSeq
 import is.hail.TestUtils._
@@ -8,7 +8,6 @@ import org.apache.spark.sql.Row
 import org.testng.annotations.Test
 
 class LiftLiteralsSuite extends HailSuite {
-  implicit val execStrats = ExecStrategy.interpretOnly
 
   @Test def testNestedGlobalsRewrite() {
     val tab = TableLiteral(TableRange(10, 1).execute(ctx))
