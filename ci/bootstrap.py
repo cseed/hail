@@ -277,7 +277,7 @@ git checkout {shq(self._sha)}
 
 async def main():
     scope = 'deploy'
-    code = Branch('cseed', 'hail', 'infra-1', SHA)
+    code = Branch('cseed', 'hail', 'infra-deploy-test', SHA)
 
     with open(f'build.yaml', 'r') as f:
         config = BuildConfiguration(code, f.read(), scope, requested_step_names=['deploy_batch'])
