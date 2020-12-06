@@ -135,17 +135,28 @@ You can now install Hail:
   kubectl -n default create secret generic auth-oauth2-client-secret --from-file=./client_secret.json
   ```
 
+- Create the batch worker image.  In `$HAIL/batch`, run:
+
+  ```
+  make create-build-worker-image-instance
+  ```
+
+  Wait for the `build-batch-worker-image` instance to be stopped.  Then run:
+
+  ```
+  make create-worker-image
+  ```
+
 - Bootstrap the cluster by running:
 
   ```
-  HAIL_SHA=$(git rev-parse HEAD) \
   HAIL_CI_UTILS_IMAGE=gcr.io/<gcp-project>/ci-utils:latest \
-  HAIL_CI_BUCKET_NAME=dummy \
-  KUBERNETES_SERVER_URL='<k8s-server-url>' \
-  HAIL_DEFAULT_NAMESPACE='default' \
-  HAIL_DOMAIN=<domain> \
-  HAIL_GCP_ZONE=<gcp-zone> \
-  HAIL_GCP_PROJECT=<gcp-project> \
-  PYTHONPATH=$HOME/hail/ci:$HOME/hail/batch:$HOME/hail/hail/python \
-  python3 $HAIL/ci/bootstrap.py
+    HAIL_CI_BUCKET_NAME=dummy \
+    KUBERNETES_SERVER_URL='<k8s-server-url>' \
+    HAIL_DEFAULT_NAMESPACE='default' \
+    HAIL_DOMAIN=<domain> \
+    HAIL_GCP_ZONE=<gcp-zone> \
+    HAIL_GCP_PROJECT=<gcp-project> \
+    PYTHONPATH=$HOME/hail/ci:$HOME/hail/batch:$HOME/hail/hail/python \
+    python3 $HAIL/ci/bootstrap.py hail-is/hail:main $(git rev-parse HEAD) test_batch_0
   ```
