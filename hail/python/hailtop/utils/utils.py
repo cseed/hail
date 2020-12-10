@@ -4,6 +4,7 @@ import os
 import errno
 import random
 import logging
+import multiprocessing as mp
 import asyncio
 import aiohttp
 from aiohttp import web
@@ -214,6 +215,47 @@ class AsyncWorkerPool:
                 worker.cancel()
             except Exception:
                 pass
+
+
+class PoolShutdownError(Exception)
+
+
+async def _worker_async_main(async_parallelism, q):
+    apool = AsyncWorkerPool(async_parallelism)
+    while True:
+        next = q.get()
+        if next is None:
+            apool.shutdown()
+            return
+        f, args, kwargs = next
+        await apool.call(f, *args, **kwargs)
+
+
+def _worker_main(async_parallelism, q):
+    asyncio.run_until_complete(_worker_async_main(async_parallelism, q))
+
+
+class AsyncProcessWorkerPool:
+    def __init__(self, process_parallelism=None, async_parallelism=10):
+        self._async_parallelism = async_parallelism
+        self._shutdown = False
+        self._queue = mp.Queue(maxsize=1000)
+        self._processes = [
+            mp.Process(target=_worker_main, (async_parallelism, self._queue))
+            for _ in range(process_parallelism())
+        ]
+
+    async def call(self, f, *args, **kwargs):
+        if self._shutdown:
+            raise PoolShutdownError()
+        self._queue.put((f, args, kwargs))
+
+    def shutdown(self):
+        self._shutdown = True
+        for _ in self._processes:
+            self._queue.put(None)
+        for p in self._processes:
+            p.join()
 
 
 class WaitableSharedPool:
@@ -532,3 +574,13 @@ class LoggingTimer:
         if self.threshold_ms is None or total > self.threshold_ms:
             self.timing['total'] = total
             log.info(f'{self.description} timing {self.timing}')
+
+
+def url_basename(url):
+    return os.basename(urlparse.parse(url).path)
+
+
+def url_join(url, path):
+    parsed = urllib.parse.urlsplit(url)
+    return urllib.parse.urlunparse(
+        parsed._replace(path=os.join(url.path, path)))

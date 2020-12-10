@@ -242,13 +242,23 @@ class GoogleStorageAsyncFS(AsyncFS):
                 for item in page['items']:
                     yield GoogleStorageFileListEntry(f'gs://{bucket}/{item["name"]}', item)
 
-    def listfiles(self, url: str, recursive: bool = False) -> AsyncIterator[FileListEntry]:
+    async def _listfiles(self, url: str, recursive: bool = False) -> AsyncIterator[FileListEntry]:
         bucket, name = self._get_bucket_name(url)
         if not name.endswith('/'):
             name = f'{name}/'
         if recursive:
             return self._listfiles_recursive(bucket, name)
         return self._listfiles_flat(bucket, name)
+
+    async def listfiles(self, url: str, recursive: bool = False) -> AsyncIterator[FileListEntry]:
+        it = aiter(self._listfiles(url, recursive))
+        try:
+            n = anext(it)
+        except StopAsyncIteration:
+            raise FileNotFoundError(url)
+        yield n
+        async for item in it:
+            yield item
 
     async def isfile(self, url: str) -> bool:
         try:
@@ -261,9 +271,19 @@ class GoogleStorageAsyncFS(AsyncFS):
             raise
 
     async def isdir(self, url: str) -> bool:
-        async for _ in self.listfiles(url):
-            return True
-        return False
+        bucket, name = self._get_bucket_name(url)
+        assert name.endswith('/')
+        params = {
+            'prefix': name,
+            'delimiter': '/',
+            'includeTrailingDelimiter': 'true',
+            'maxResults': 1
+        }
+        async for page in await self._storage_client.list_objects(bucket, params=params):
+            prefixes = page.get('prefixes')
+            items = page.get('items')
+            return prefixes or items
+        raise UnreachableError()
 
     async def remove(self, url: str) -> None:
         bucket, name = self._get_bucket_name(url)

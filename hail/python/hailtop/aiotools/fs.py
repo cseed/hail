@@ -7,7 +7,7 @@ import stat
 import shutil
 from concurrent.futures import ThreadPoolExecutor
 import urllib.parse
-from hailtop.utils import blocking_to_async
+from hailtop.utils import blocking_to_async, url_basename, url_join
 from .stream import ReadableStream, WritableStream, blocking_readable_stream_to_async, blocking_writable_stream_to_async
 
 AsyncFSType = TypeVar('AsyncFSType', bound='AsyncFS')
@@ -215,6 +215,223 @@ class LocalAsyncFS(AsyncFS):
         await blocking_to_async(self._thread_pool, shutil.rmtree, path)
 
 
+class Transfer:
+    def __init__(src:  Union[str, List[str]], dest: str, *, dest_is_directory=None):
+        if dest_is_directory is False and isinstance(src, list):
+            raise NotDirectoryError(dest)
+
+        self.src = src
+        self.dest = dest
+        self.dest_is_directory = dest_is_directory
+
+
+class SourceCopier:
+    def __init__(self, router_fs, src, dest, dest_is_directory, stat_dest_task):
+        self.router_fs = router_fs
+        self.src = src
+        self.dest = dest
+        self.dest_is_directory = dest_is_directory
+        self.stat_dest_task = stat_dest_task
+
+        self.src_is_file = None
+        self.src_is_dir = None
+
+        self.pending = 2
+        self.barrier = asyncio.Event()
+
+    async def release_barrier(self):
+        self.pending -= 1
+        if self.pending == 0:
+            self.barrier.set()
+
+    async def wait_barrier(self):
+        self.release_barrier()
+        await self.barrier.wait()
+
+    async def _copy_file(self, srcfile, destfile):
+        async with await self.router_fs.open(srcfile) as srcf:
+            try:
+                destf = await self.router_fs.create(destfile)
+            except FileNotFoundError:
+                await self.router_fs.makedirs(os.dirname(destfile), exists_ok=True)
+                destf = await self.router_fs.create(destfile)
+
+            async with destf:
+                while True:
+                    b = await srcf.read(Copier.BUFFER_SIZE)
+                    if not b:
+                        return
+                    await destf.write(b)
+
+    async def _full_dest(self):
+        try:
+            dest_exists, dest_type = await self.stat_dest_task
+        except:
+            # if the dest is malformed, the driver will raise
+            return None
+
+        dest = self.dest
+        if self.dest_is_directory
+                or (self.dest_is_directory is None
+                    and dest_exists
+                    and dest_type == AsyncFS.DIR):
+            return url_join(dest, url_basename(src))
+        else:
+            return dest
+
+    async def copy_as_file(self):
+        src = self.src.rstrip('/')
+
+        try:
+            src_status = await self.router_fs.statfile(src)
+        except FileNotFoundError:
+            self.src_is_file = False
+            self.release_barrier()
+            return
+
+        self.src_is_file = True
+
+        if src.endswith('/'):
+            # caller will raise NotADirectoryError
+            self.release_barrier()
+            return
+
+        self.wait_barrier()
+
+        if self.src_is_dir:
+            # caller will raise FileAndDirectoryError
+            return
+
+        full_dest = self._full_dest(src)
+        if not full_dest:
+            # if the dest was malformed, driver will raise an error
+            return
+        await self._copy_file(src, full_dest)
+
+    async def copy_as_dir(self):
+        src = self.src
+        if not src.endswith('/'):
+            src = src + '/'
+
+        try:
+            srcfiles = await self.router_fs.listfiles(src, recursive=True)
+        except FileNotFoundError:
+            self.src_is_dir = False
+            self.release_barrier()
+            return
+
+        self.src_is_dir = True
+        self.wait_barrier()
+
+        if self.src_is_file:
+            # caller will raise FileAndDirectoryError
+            return
+
+        full_dest = self._full_dest(src)
+        if full_dest is None:
+            # if the dest was malformed, driver will raise an error
+            return
+
+        async for srcfile in srcfiles:
+            assert srcfile.startswith(src)
+
+            # skip files with empty names
+            if srcfile.endswith('/'):
+                continue
+
+            relsrcfile = srcfile[len(src):]
+            assert not relsrcfile.startswith('/')
+
+            # this should be asynchronous
+            await copy_file(srcfile, url_join(dest, relsrcfile))
+
+    async def copy(self):
+        await asyncio.gather(
+            self.copy_as_file(),
+            self.copy_as_dir())
+
+        assert self.pending == 0
+        assert self.src_is_file is not None
+        assert self.src_is_dir is not None
+
+        if self.src_is_file and self.src_is_dir:
+            raise FileAndDirectoryError(self.src)
+        if self.src_is_file and self.src.endswith('/'):
+            raise NotDirectoryError(self.src)
+
+        if not self.src_is_file and not self.src_is_dir:
+            raise FileNotFoundError(self.src)
+
+
+class Copier:
+    BUFFER_SIZE = 8192
+
+    def __init__(self, router_fs):
+        self.router_fs = router_fs
+
+    async def _stat_dest(self):
+        dest = self.dest
+
+        if dest.endswith('/'):
+            dest_as_file = dest.rstrip('/')
+            dest_as_dir = dest
+        else:
+            dest_as_file = dest
+            dest_as_dir = dest + '/'
+
+        [is_file, is_dir] = await asyncio.gather(
+            self.router_fs.isfile(dest_as_file)
+            self.router_fs.isdir(dest_as_dir))
+
+        dest_type = None
+        if is_file:
+            if is_dir:
+                raise FileAndDirectoryError()
+            dest_exists = True
+            dest_type = AsyncFS.FILE
+        else:
+            if is_dir:
+                dest_exists = True
+                dest_type = AsyncFS.DIR
+            else:
+                dest_exists = False
+
+        if (dest_exists
+            and dest_type == AsyncFS.FILE
+            and (self.dest_is_directory
+                 or isinstance(self.src, list)
+                 or dest.endswith('/'))):
+            raise NotADirectoryError(dest)
+
+        return dest_exists, dest_type
+
+    async def copy_source(self, stat_dest_task, src):
+        src_copier = SourceCopier(self.router_fs, src, self.dest, self.stat_dest_task)
+        src_copier.copy()
+
+    async def _copy1(transfer: Transfer):
+        src = trasnfer.src
+        dest = transfer.dest
+        dest_is_directory = transfer.dest_is_directory
+
+        stat_dest_task = asyncio.create_task(self._stat_dest)
+
+        if isinstance(src, list):
+            aws = [stat_dest_task]
+            for s in src:
+                aws.append(self.copy_source(stat_dest_task, s))
+            await asyncio.gather(*aws)
+        else:
+            await asyncio.gather(
+                stat_desk_task,
+                self.copy_source(stat_desk_task, src))
+
+    async def copy(transfers: List[Transfer]):
+        await asyncio.gather(*[
+            self._copy1(transfer)
+            for transfer in transfers])
+
+
 class RouterAsyncFS(AsyncFS):
     def __init__(self, default_scheme: Optional[str], filesystems: List[AsyncFS]):
         scheme_fs = {}
@@ -290,3 +507,9 @@ class RouterAsyncFS(AsyncFS):
     async def close(self) -> None:
         for fs in self._filesystems:
             await fs.close()
+
+    @staticmethod
+    def copy(transfers: List[Transfer]):
+        copier = Copier(self)
+        copier.execute(transfers)
+
