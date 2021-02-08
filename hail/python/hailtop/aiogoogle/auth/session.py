@@ -78,7 +78,15 @@ class Session(BaseSession):
             kwargs['headers'].update(auth_headers)
         else:
             kwargs['headers'] = auth_headers
-        return await request_retry_transient_errors(self._session, method, url, **kwargs)
+
+        resp = None
+        try:
+            log.info(f'request {method} {url}')
+            resp = await request_retry_transient_errors(self._session, method, url, **kwargs)
+        finally:
+            _, exc, _ = sys.exc_info()
+            log.info(f'request {method} {url} resp {resp} {exc}')
+        return resp
 
     async def close(self) -> None:
         if self._session is not None:
